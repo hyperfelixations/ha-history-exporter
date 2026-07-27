@@ -1,0 +1,36 @@
+# Local configuration and credentials
+/export_config.yaml
+.env
+.env.*
+!.env.example
+
+# Python environments and bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Test, type-checker, and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Packaging output
+build/
+dist/
+*.egg-info/
+
+# Export output if a local override points into the repository
+/data/
+/exports/
+/metadata/
+/logs/
+*.log
+
+# Operating systems and editors
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
