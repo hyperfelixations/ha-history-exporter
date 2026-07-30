@@ -1,0 +1,25 @@
+[tool.pytest.ini_options]
+addopts = [
+  "-ra",
+  "--strict-config",
+  "--strict-markers",
+  "--disable-socket",
+]
+testpaths = ["tests"]
+xfail_strict = true
+markers = [
+  "known_bug: executable specification for a confirmed product defect",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ha_history_exporter"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
