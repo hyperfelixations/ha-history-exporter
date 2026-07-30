@@ -62,11 +62,27 @@ def test_check_api_rejects_unexpected_message(monkeypatch):
         client.check_api()
 
 
+def test_check_api_requires_object(monkeypatch):
+    client = make_client()
+    install_get(monkeypatch, client, [FakeResponse(payload=["API running."])])
+
+    with pytest.raises(HAAPIError, match="Expected object"):
+        client.check_api()
+
+
 def test_get_states_requires_list(monkeypatch):
     client = make_client()
     install_get(monkeypatch, client, [FakeResponse(payload={"not": "a list"})])
 
     with pytest.raises(HAAPIError, match="Expected list"):
+        client.get_states()
+
+
+def test_get_states_requires_state_objects(monkeypatch):
+    client = make_client()
+    install_get(monkeypatch, client, [FakeResponse(payload=[["not", "a", "state"]])])
+
+    with pytest.raises(HAAPIError, match="state objects"):
         client.get_states()
 
 
@@ -197,11 +213,6 @@ def test_requests_connection_error_is_retried(monkeypatch):
     assert client.total_retries == 1
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="JSON decoding failures are not wrapped in HAAPIError",
-)
 def test_invalid_json_is_reported_as_api_error(monkeypatch):
     client = make_client()
     decode_error = json.JSONDecodeError("synthetic", "x", 0)
@@ -215,11 +226,6 @@ def test_invalid_json_is_reported_as_api_error(monkeypatch):
         client.get_states()
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="history response validates only the outer list",
-)
 def test_history_rejects_non_list_inner_payload(monkeypatch):
     client = make_client()
     install_get(
@@ -229,6 +235,22 @@ def test_history_rejects_non_list_inner_payload(monkeypatch):
     )
 
     with pytest.raises(HAAPIError, match="history"):
+        client.get_history(
+            datetime(2026, 7, 28, tzinfo=UTC),
+            datetime(2026, 7, 29, tzinfo=UTC),
+            ["sensor.one"],
+        )
+
+
+def test_history_rejects_non_object_state(monkeypatch):
+    client = make_client()
+    install_get(
+        monkeypatch,
+        client,
+        [FakeResponse(payload=[["not a state object"]])],
+    )
+
+    with pytest.raises(HAAPIError, match="state objects"):
         client.get_history(
             datetime(2026, 7, 28, tzinfo=UTC),
             datetime(2026, 7, 29, tzinfo=UTC),

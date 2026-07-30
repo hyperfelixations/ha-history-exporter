@@ -120,13 +120,25 @@ class HomeAssistantClient:
             f"Last error: {last_exc}"
         )
 
+    @staticmethod
+    def _decode_json(resp: requests.Response, endpoint: str) -> Any:
+        """Decode a response without exposing its body in parse errors."""
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise HAAPIError(f"Invalid JSON from {endpoint}") from exc
+
     # ── public API ────────────────────────────────────────────────────────────
 
     def check_api(self) -> None:
         """Verify the HA API is reachable and the token is valid."""
         logger.debug("GET /api/ — checking connectivity and token …")
         resp = self._get("/api/")
-        data = resp.json()
+        data = self._decode_json(resp, "/api/")
+        if not isinstance(data, dict):
+            raise HAAPIError(
+                f"Expected object from /api/, got {type(data).__name__}"
+            )
         if data.get("message") != "API running.":
             raise HAAPIError(f"Unexpected /api/ response: {data}")
         logger.info("HA API is reachable at %s.", self._base)
@@ -135,11 +147,13 @@ class HomeAssistantClient:
         """Return all current entity states from /api/states."""
         logger.debug("GET /api/states …")
         resp = self._get("/api/states")
-        data = resp.json()
+        data = self._decode_json(resp, "/api/states")
         if not isinstance(data, list):
             raise HAAPIError(
                 f"Expected list from /api/states, got {type(data).__name__}"
             )
+        if any(not isinstance(state, dict) for state in data):
+            raise HAAPIError("Expected state objects from /api/states")
         logger.info("Received %d entity states from /api/states.", len(data))
         return data
 
@@ -174,12 +188,21 @@ class HomeAssistantClient:
             params["significant_changes_only"] = "true"
 
         resp = self._get(f"/api/history/period/{start_str}", params=params)
-        data = resp.json()
+        endpoint = "/api/history/period"
+        data = self._decode_json(resp, endpoint)
         if not isinstance(data, list):
             raise HAAPIError(
                 f"Expected list from history endpoint, got {type(data).__name__}"
             )
-        return data  # type: ignore[return-value]
+        if any(not isinstance(history, list) for history in data):
+            raise HAAPIError("Expected entity history lists from history endpoint")
+        if any(
+            not isinstance(state, dict)
+            for history in data
+            for state in history
+        ):
+            raise HAAPIError("Expected state objects in history endpoint response")
+        return data
 
     def close(self) -> None:
         self._session.close()

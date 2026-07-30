@@ -92,11 +92,26 @@ class DayManifest:
     _started_ts: Optional[float] = field(default=None, repr=False, compare=False)
 
     def mark_started(self, tz) -> None:
+        """Start a clean export attempt while preserving day identity/config."""
         from .time_utils import format_iso
+
         now = datetime.now(tz)
         self.export_started_at = format_iso(now)
+        self.export_finished_at = None
+        self.duration_seconds = None
         self._started_ts = time.monotonic()
         self.status = "pending"
+        self.entity_count_with_history = 0
+        self.entity_count_zero_history = 0
+        self.state_object_count = 0
+        self.request_count = 0
+        self.failed_request_count = 0
+        self.retried_request_count = 0
+        self.output_files = {"jsonl": None, "csv": None, "parquet": None}
+        self.zero_history_entities = []
+        self.failed_batches = []
+        self.skipped_reason = None
+        self.error = None
 
     def mark_finished(self, tz, status: str = "ok") -> None:
         from .time_utils import format_iso

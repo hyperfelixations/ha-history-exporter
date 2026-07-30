@@ -226,11 +226,6 @@ def test_chunks_preserve_order_and_handle_empty_list():
     assert list(exporter._chunks([], 2)) == []
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="AuthError is swallowed by the per-batch generic exception handler",
-)
 def test_auth_error_aborts_day_and_propagates_immediately(tmp_path):
     cfg = make_config(tmp_path, batch_size=1)
     client = FakeHomeAssistantClient(
@@ -248,17 +243,18 @@ def test_auth_error_aborts_day_and_propagates_immediately(tmp_path):
         )
 
     assert len(client.calls) == 1
+    day_manifest = json.loads(
+        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+    )
+    assert day_manifest["status"] == "failed"
+    assert day_manifest["failed_request_count"] == 1
+    assert "synthetic authentication failure" in day_manifest["error"]
 
 
-@pytest.mark.known_bug
 @pytest.mark.parametrize(
     ("csv_enabled", "parquet_enabled"),
     [(True, False), (False, True)],
     ids=["csv-only", "parquet-only"],
-)
-@pytest.mark.xfail(
-    strict=True,
-    reason="formats.jsonl=false still finalizes a JSONL file",
 )
 def test_non_jsonl_exports_do_not_leave_final_jsonl(
     tmp_path, csv_enabled, parquet_enabled
@@ -286,3 +282,65 @@ def test_non_jsonl_exports_do_not_leave_final_jsonl(
     if parquet_enabled:
         assert cfg.day_file(DAY, "parquet").exists()
     assert not cfg.day_file(DAY, "jsonl").exists()
+    assert not (cfg.resolved_temp_dir / f"{DAY}.jsonl.tmp").exists()
+
+    day_manifest = json.loads(
+        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+    )
+    assert day_manifest["status"] == "ok"
+    assert day_manifest["output_files"]["jsonl"] is None
+
+
+@pytest.mark.parametrize(
+    ("jsonl_enabled", "csv_enabled", "parquet_enabled"),
+    [
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+        (True, True, False),
+        (True, False, True),
+        (False, True, True),
+        (True, True, True),
+    ],
+)
+def test_export_respects_every_valid_format_combination(
+    tmp_path,
+    jsonl_enabled,
+    csv_enabled,
+    parquet_enabled,
+):
+    cfg = make_config(
+        tmp_path,
+        jsonl=jsonl_enabled,
+        csv=csv_enabled,
+        parquet=parquet_enabled,
+    )
+    client = FakeHomeAssistantClient([[[state_row()]]])
+
+    assert (
+        exporter.run_export(
+            cfg,
+            make_export_plan(DAY),
+            ["sensor.test_temperature"],
+            1,
+            client,
+            BERLIN,
+        )
+        == 0
+    )
+
+    enabled = {
+        "jsonl": jsonl_enabled,
+        "csv": csv_enabled,
+        "parquet": parquet_enabled,
+    }
+    for suffix, is_enabled in enabled.items():
+        assert cfg.day_file(DAY, suffix).exists() is is_enabled
+
+    day_manifest = json.loads(
+        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+    )
+    assert day_manifest["output_files"] == {
+        suffix: f"{DAY}.{suffix}" if is_enabled else None
+        for suffix, is_enabled in enabled.items()
+    }

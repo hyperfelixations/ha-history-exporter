@@ -64,12 +64,10 @@ def test_build_plan_skips_incomplete_days(tmp_path, monkeypatch):
     assert plan.days_skipped_incomplete == [today]
 
 
-def test_build_plan_skips_existing_ok_manifest_and_jsonl(tmp_path, monkeypatch):
+def test_build_plan_skips_existing_ok_manifest(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     patch_calendar(monkeypatch)
     write_manifest(cfg)
-    jsonl = cfg.day_file(DAY, "jsonl")
-    jsonl.write_text("{}\n", encoding="utf-8")
 
     plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False, resume=True)
 
@@ -152,11 +150,6 @@ def test_print_summary_reports_every_decision_category(capsys):
     assert "not yet complete (1)" in output
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="resume incorrectly requires the previously generated JSONL file",
-)
 def test_successful_manifest_skips_when_artifacts_were_archived(tmp_path):
     cfg = make_config(tmp_path)
     write_manifest(cfg)

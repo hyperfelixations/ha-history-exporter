@@ -156,20 +156,23 @@ def build_plan(
 
 
 def _check_existing(day: date, cfg) -> Optional[str]:
-    """Return a reason string if this day already has a valid export, else None."""
+    """Return a reason if this day has a successful manifest, else ``None``.
+
+    The manifest is the durable source of truth for resume decisions. Export
+    artifacts may have been archived or moved after a successful run.
+    """
     manifest_path = cfg.day_file(day, "manifest.json")
-    jsonl_path = cfg.day_file(day, "jsonl")
 
     if not manifest_path.exists():
-        return None
-    if not jsonl_path.exists():
         return None
 
     try:
         with manifest_path.open("r", encoding="utf-8") as f:
             m = json.load(f)
+        if not isinstance(m, dict):
+            return None
         if m.get("status") != "ok":
             return None
         return f"manifest.json status=ok, {m.get('state_object_count', '?')} state objects"
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return None

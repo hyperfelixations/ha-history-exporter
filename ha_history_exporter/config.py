@@ -15,9 +15,7 @@ import yaml
 
 from .exceptions import ConfigError
 
-_DEFAULT_OUTPUT_DIR = (
-    r"./data"
-)
+_DEFAULT_OUTPUT_DIR = "./data"
 
 
 # ── Sub-sections ─────────────────────────────────────────────────────────────

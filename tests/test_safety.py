@@ -46,3 +46,23 @@ def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
         text = path.read_text(encoding="utf-8")
         for pattern in forbidden_patterns:
             assert not pattern.search(text), f"{path} contains {pattern.pattern}"
+
+
+def test_publishable_sources_contain_no_private_workspace_paths():
+    publishable_paths = [
+        ROOT / "README.md",
+        ROOT / "export_config.example.yaml",
+        ROOT / "ha_history_batch_export.py",
+        ROOT / "ha_history_export_last_10_days.bat",
+        *(ROOT / "ha_history_exporter").glob("*.py"),
+    ]
+    forbidden_patterns = [
+        re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE),
+        re.compile(r"\buser\b", re.IGNORECASE),
+        re.compile(r"\bInternal-(?:Data|HomeAssistant)\b", re.IGNORECASE),
+    ]
+
+    for path in publishable_paths:
+        text = path.read_text(encoding="utf-8")
+        for pattern in forbidden_patterns:
+            assert not pattern.search(text), f"{path} contains {pattern.pattern}"

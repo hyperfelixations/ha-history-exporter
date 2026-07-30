@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from ha_history_exporter.config import AppConfig, ConfigError, FormatsConfig, load_config
+from ha_history_exporter.config import (
+    AppConfig,
+    ConfigError,
+    FormatsConfig,
+    _DEFAULT_OUTPUT_DIR,
+    load_config,
+)
 
 
 MINIMAL_CONFIG = """
@@ -100,6 +106,11 @@ def test_app_config_builds_daily_paths(tmp_path):
     assert cfg.day_file(day, "jsonl") == expected_dir / "2026-07-28.jsonl"
     assert cfg.metadata_dir == tmp_path / "metadata"
     assert cfg.logs_dir == tmp_path / "logs"
+
+
+def test_default_output_directory_is_portable():
+    assert _DEFAULT_OUTPUT_DIR == "./data"
+    assert AppConfig().export.output_dir == "./data"
 
 
 def test_example_config_is_generic_and_loadable(

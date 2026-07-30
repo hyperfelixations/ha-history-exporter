@@ -105,27 +105,41 @@ def test_is_complete_only_accepts_ok():
     assert not manifest.is_complete(manifest.DayManifest(status="failed"))
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="mark_started does not clear stale counters and error details",
-)
 def test_mark_started_resets_previous_attempt_state():
     item = manifest.DayManifest(
         status="failed",
+        export_finished_at="2026-07-28T12:00:00+02:00",
+        duration_seconds=12.3,
+        entity_count_with_history=8,
+        entity_count_zero_history=2,
         request_count=5,
         failed_request_count=1,
         retried_request_count=2,
         state_object_count=99,
+        output_files={
+            "jsonl": "old.jsonl",
+            "csv": "old.csv",
+            "parquet": "old.parquet",
+        },
+        zero_history_entities=["sensor.old"],
         failed_batches=[{"batch_index": 1}],
+        skipped_reason="synthetic previous skip",
         error="synthetic previous failure",
     )
 
     item.mark_started(BERLIN)
 
+    assert item.status == "pending"
+    assert item.export_finished_at is None
+    assert item.duration_seconds is None
+    assert item.entity_count_with_history == 0
+    assert item.entity_count_zero_history == 0
     assert item.request_count == 0
     assert item.failed_request_count == 0
     assert item.retried_request_count == 0
     assert item.state_object_count == 0
+    assert item.output_files == {"jsonl": None, "csv": None, "parquet": None}
+    assert item.zero_history_entities == []
     assert item.failed_batches == []
+    assert item.skipped_reason is None
     assert item.error is None

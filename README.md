@@ -12,10 +12,12 @@ modifying the Home Assistant database directly.
 - Fetches the current entity list from Home Assistant
 - Exports Recorder state changes in configurable entity batches
 - Uses complete local calendar days with timezone and daylight-saving support
-- Writes streamable JSON Lines as the primary archive format
-- Optionally creates compact Parquet and CSV files
+- Writes any configured combination of JSONL, Parquet, and CSV
+- Uses temporary JSONL streaming internally when only Parquet or CSV is wanted
 - Records per-day manifests and entity snapshots
-- Supports retries, resumable date ranges, and validation before finalization
+- Uses successful manifests for resumable date ranges, even after artifacts
+  have been archived elsewhere
+- Supports retries and validation before finalization
 
 All communication with Home Assistant is read-only. Authentication uses a
 Home Assistant Long-Lived Access Token supplied through an environment

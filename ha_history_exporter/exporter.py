@@ -155,7 +155,10 @@ def run_export(
                 len(entity_ids),
             )
 
-        except AuthError:
+        except AuthError as exc:
+            logger.error("Day %s aborted due to an authentication error.", day_str)
+            m.mark_finished(tz, status="failed")
+            m.error = str(exc)
             raise  # fatal for the whole run
         except Exception as exc:
             logger.error("Day %s failed: %s", day_str, exc, exc_info=True)
@@ -245,6 +248,9 @@ def _export_day(
                 retried_this_day += client.total_retries - retries_before
                 manifest.request_count += 1
 
+            except AuthError:
+                manifest.failed_request_count += 1
+                raise
             except Exception as exc:
                 logger.error("  Batch %d failed: %s", batch_idx, exc)
                 failed_batches.append(
@@ -304,19 +310,24 @@ def _export_day(
         )
         validate_parquet(tmp_parquet, expected_rows=state_count)
 
-    # Atomic move from temp dir → cloud-storage target (all formats at once,
-    # after all local validations passed).
-    writers.atomic_replace(
-        tmp_jsonl, final_jsonl,
-        cfg.storage.cloud_storage_retry_count,
-        cfg.storage.cloud_storage_retry_sleep_seconds,
-    )
+    # Finalize only the configured output formats after all local validations
+    # have passed. JSONL remains an internal streaming/intermediate format when
+    # disabled as a final artifact.
+    written_files: list[str] = []
+    if cfg.formats.jsonl:
+        writers.atomic_replace(
+            tmp_jsonl, final_jsonl,
+            cfg.storage.cloud_storage_retry_count,
+            cfg.storage.cloud_storage_retry_sleep_seconds,
+        )
+        written_files.append(final_jsonl.name)
     if cfg.formats.csv:
         writers.atomic_replace(
             tmp_csv, final_csv,
             cfg.storage.cloud_storage_retry_count,
             cfg.storage.cloud_storage_retry_sleep_seconds,
         )
+        written_files.append(final_csv.name)
     else:
         tmp_csv.unlink(missing_ok=True)
 
@@ -326,8 +337,12 @@ def _export_day(
             cfg.storage.cloud_storage_retry_count,
             cfg.storage.cloud_storage_retry_sleep_seconds,
         )
+        written_files.append(final_parquet.name)
     else:
         tmp_parquet.unlink(missing_ok=True)
+
+    if not cfg.formats.jsonl:
+        tmp_jsonl.unlink(missing_ok=True)
 
     # Populate manifest counters.
     zero_history = sorted(set(entity_ids) - entities_with_history)
@@ -348,11 +363,7 @@ def _export_day(
             len(zero_history),
         )
 
-    logger.info(
-        "  Written: %s%s",
-        final_jsonl.name,
-        f", {final_csv.name}" if cfg.formats.csv else "",
-    )
+    logger.info("  Written: %s", ", ".join(written_files))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

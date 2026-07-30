@@ -251,7 +251,6 @@ def test_main_short_circuits_existing_day_before_client(
         tmp_path / "output" / "exports" / "daily" / "2026" / "07"
     )
     export.mkdir(parents=True)
-    (export / "2026-07-28.jsonl").write_text("{}\n", encoding="utf-8")
     (export / "2026-07-28.manifest.json").write_text(
         json.dumps({"status": "ok", "state_object_count": 1}),
         encoding="utf-8",
