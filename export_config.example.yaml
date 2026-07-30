@@ -19,9 +19,10 @@ requests:
   backoff_seconds: [2, 5, 15]
 
 formats:
+  # Set all three values to false for snapshot-only mode (no History API call).
   jsonl: true
   csv: false
-  parquet: true
+  parquet: false
 
 storage:
   use_temp_dir: true

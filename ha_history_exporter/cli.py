@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from .config import load_config
+from .config import load_config, validate_config
 from .exceptions import AuthError, ConfigError
 from .exporter import run_export
 from .time_utils import is_day_complete, iter_days, parse_date_arg, today_local
@@ -47,13 +47,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         cfg.export.output_dir = args.outdir
     if args.timezone:
         cfg.home_assistant.timezone = args.timezone
-    if args.batch_size:
+    if args.batch_size is not None:
         cfg.requests.batch_size_entities = args.batch_size
     if args.sleep_between_requests is not None:
         cfg.requests.sleep_between_requests_seconds = args.sleep_between_requests
     if args.sleep_between_days is not None:
         cfg.requests.sleep_between_days_seconds = args.sleep_between_days
-    if args.timeout:
+    if args.timeout is not None:
         cfg.requests.request_timeout_seconds = args.timeout
     if args.max_retries is not None:
         cfg.requests.max_retries = args.max_retries
@@ -66,18 +66,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.log_level:
         args.log_level_str = args.log_level  # used below
 
+    try:
+        validate_config(cfg)
+        tz = ZoneInfo(cfg.home_assistant.timezone)
+    except ConfigError as exc:
+        print(f"\n[ERROR] {exc}\n", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(
+            f"\n[ERROR] Invalid timezone '{cfg.home_assistant.timezone}': {exc}\n",
+            file=sys.stderr,
+        )
+        return 2
+
     # ── logging setup ─────────────────────────────────────────────────────────
     log_level = getattr(logging, (args.log_level or "INFO").upper(), logging.INFO)
-    _configure_logging(log_level, cfg)
+    _configure_logging(log_level, cfg, tz)
 
     logger = logging.getLogger(__name__)
-
-    # ── timezone ──────────────────────────────────────────────────────────────
-    try:
-        tz = ZoneInfo(cfg.home_assistant.timezone)
-    except Exception as exc:
-        logger.error("Invalid timezone '%s': %s", cfg.home_assistant.timezone, exc)
-        return 2
 
     # ── date range ────────────────────────────────────────────────────────────
     try:
@@ -102,7 +108,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     # ── short-circuit if nothing to do and not a dry-run ─────────────────────
-    if not plan.days_to_export and not args.dry_run:
+    if not plan.days_to_export and not args.dry_run and not cfg.snapshot_only:
         logger.info(
             "Nothing to export — %d day(s) skipped (existing) and %d day(s) "
             "skipped (not yet complete).",
@@ -137,6 +143,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             snapshot = build_snapshot(states, tz)
             save_snapshot(snapshot, cfg.metadata_dir)
+
+            if cfg.snapshot_only:
+                logger.info(
+                    "Snapshot-only mode complete — saved %d current entity states; "
+                    "no history was requested and no daily manifest was written.",
+                    snapshot["entity_count"],
+                )
+                return 0
 
             entity_ids = extract_entity_ids(states)
             entity_count_total = len(entity_ids)
@@ -286,12 +300,9 @@ def _resolve_date_range(args, tz):
     return start, end
 
 
-def _configure_logging(level: int, cfg) -> None:
+def _configure_logging(level: int, cfg, tz: ZoneInfo) -> None:
     """Set up stderr + file logging."""
     from datetime import datetime as _dt
-    from zoneinfo import ZoneInfo as _ZI
-
-    tz = ZoneInfo(cfg.home_assistant.timezone)
     ts = _dt.now(tz).strftime("%Y-%m-%d_%H%M%S")
 
     log_dir = cfg.logs_dir

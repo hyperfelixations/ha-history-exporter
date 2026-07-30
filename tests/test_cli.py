@@ -161,11 +161,6 @@ def test_main_returns_two_for_missing_config(capsys):
     assert "Config file not found" in capsys.readouterr().err
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="logging initializes ZoneInfo before main's invalid-timezone handler",
-)
 def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch):
     path = write_config(tmp_path)
     text = path.read_text(encoding="utf-8").replace(
@@ -175,6 +170,60 @@ def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
 
     assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 2
+    assert not (tmp_path / "output" / "logs").exists()
+
+
+def test_main_rejects_invalid_numeric_override_before_client(
+    tmp_path, monkeypatch, capsys
+):
+    path = write_config(tmp_path)
+    set_synthetic_env(monkeypatch)
+
+    class ForbiddenClient:
+        def __init__(self, **kwargs):
+            raise AssertionError("client must not be constructed")
+
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", ForbiddenClient)
+
+    assert (
+        cli.main(
+            [
+                "--config",
+                str(path),
+                "--date",
+                "2026-07-28",
+                "--batch-size",
+                "0",
+            ]
+        )
+        == 2
+    )
+    assert "batch_size_entities" in capsys.readouterr().err
+
+
+def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
+    tmp_path, monkeypatch
+):
+    path = write_config(tmp_path)
+    text = path.read_text(encoding="utf-8").replace(
+        "jsonl: true\n  csv: false\n  parquet: false",
+        "jsonl: false\n  csv: false\n  parquet: false",
+    )
+    path.write_text(text, encoding="utf-8")
+    set_synthetic_env(monkeypatch)
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+
+    instance = FakeCliClient.instances[0]
+    assert instance.history_calls == []
+    assert instance.closed
+    snapshots = list((tmp_path / "output" / "metadata").glob("entity_snapshot_*.json"))
+    assert len(snapshots) == 1
+    snapshot = json.loads(snapshots[0].read_text(encoding="utf-8"))
+    assert snapshot["entity_count"] == 1
+    assert snapshot["entities"][0]["state_at_snapshot"] == "1"
+    assert not (tmp_path / "output" / "exports").exists()
 
 
 def test_main_dry_run_uses_only_synthetic_client(

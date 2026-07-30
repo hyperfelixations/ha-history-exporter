@@ -13,6 +13,7 @@ modifying the Home Assistant database directly.
 - Exports Recorder state changes in configurable entity batches
 - Uses complete local calendar days with timezone and daylight-saving support
 - Writes any configured combination of JSONL, Parquet, and CSV
+- Uses JSONL as the sole default output format
 - Uses temporary JSONL streaming internally when only Parquet or CSV is wanted
 - Records per-day manifests and entity snapshots
 - Uses successful manifests for resumable date ranges, even after artifacts
@@ -35,9 +36,13 @@ variable.
 Exports are organized by calendar day and accompanied by a manifest containing
 status, timing, request, entity, and row-count information.
 
+If all three history formats are disabled, HHE runs in snapshot-only mode. It
+saves the current entity list and states from `/api/states`, makes no History
+API request, and does not create a daily success manifest.
+
 ## Project status
 
-The project is currently at version `1.3.1` and is under active development.
+The project is currently at version `1.3.2` and is under active development.
 Its command-line interface, configuration, and output contracts may still
 evolve as the project is prepared for public release.
 

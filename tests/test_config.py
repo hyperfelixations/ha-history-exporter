@@ -12,6 +12,7 @@ from ha_history_exporter.config import (
     FormatsConfig,
     _DEFAULT_OUTPUT_DIR,
     load_config,
+    validate_config,
 )
 
 
@@ -124,17 +125,13 @@ def test_example_config_is_generic_and_loadable(
     cfg = load_config(example)
 
     assert cfg.export.output_dir == "./data"
+    assert cfg.formats == FormatsConfig(jsonl=True, csv=False, parquet=False)
     assert cfg.ha_url.endswith(".invalid")
     assert "synthetic-test-token" not in text
     assert not re.search(r"[A-Za-z]:\\\\Users\\\\", text)
     assert "private-data" not in text
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="load_config defaults for CSV and Parquet differ from FormatsConfig",
-)
 def test_missing_format_section_uses_dataclass_defaults(
     tmp_path, synthetic_ha_environment
 ):
@@ -146,11 +143,6 @@ def test_missing_format_section_uses_dataclass_defaults(
     assert cfg.formats == FormatsConfig()
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="numeric configuration values are not range-validated",
-)
 def test_zero_batch_size_is_rejected(tmp_path, synthetic_ha_environment):
     path = tmp_path / "config.yaml"
     path.write_text(
@@ -162,12 +154,7 @@ def test_zero_batch_size_is_rejected(tmp_path, synthetic_ha_environment):
         load_config(path)
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="configuration currently permits disabling every output format",
-)
-def test_at_least_one_output_format_is_required(
+def test_disabling_every_output_format_enables_snapshot_only_mode(
     tmp_path, synthetic_ha_environment
 ):
     path = tmp_path / "config.yaml"
@@ -179,5 +166,67 @@ def test_at_least_one_output_format_is_required(
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigError, match="format"):
+    cfg = load_config(path)
+
+    assert cfg.snapshot_only
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "field_name"),
+    [
+        ("batch_size_entities: 7", "batch_size_entities: -1", "batch_size_entities"),
+        (
+            "sleep_between_requests_seconds: 0.25",
+            "sleep_between_requests_seconds: -0.1",
+            "sleep_between_requests_seconds",
+        ),
+        ("batch_size_entities: 7", "batch_size_entities: true", "batch_size_entities"),
+    ],
+)
+def test_invalid_numeric_config_is_rejected(
+    tmp_path, synthetic_ha_environment, old, new, field_name
+):
+    path = tmp_path / "config.yaml"
+    path.write_text(MINIMAL_CONFIG.replace(old, new), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=field_name):
         load_config(path)
+
+
+def test_retries_require_a_backoff_value(tmp_path, synthetic_ha_environment):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        MINIMAL_CONFIG.replace(
+            "sleep_between_requests_seconds: 0.25",
+            "sleep_between_requests_seconds: 0.25\n"
+            "  max_retries: 1\n"
+            "  backoff_seconds: []",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="backoff_seconds"):
+        load_config(path)
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value"),
+    [
+        ("requests", "sleep_between_requests_seconds", -1),
+        ("requests", "sleep_between_days_seconds", float("nan")),
+        ("requests", "request_timeout_seconds", 0),
+        ("requests", "max_retries", -1),
+        ("requests", "backoff_seconds", [-1]),
+        ("storage", "cloud_storage_retry_count", -1),
+        ("storage", "cloud_storage_retry_sleep_seconds", -1),
+        ("recorder", "expected_purge_keep_days", 0),
+    ],
+)
+def test_validate_config_rejects_invalid_numeric_ranges(
+    section, field, value
+):
+    cfg = AppConfig()
+    setattr(getattr(cfg, section), field, value)
+
+    with pytest.raises(ConfigError, match=field):
+        validate_config(cfg)

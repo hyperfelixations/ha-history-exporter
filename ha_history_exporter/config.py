@@ -6,6 +6,7 @@ environment variables — they are never written to files or logs.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,14 +44,14 @@ class RequestsConfig:
     sleep_between_days_seconds: float = 5.0
     request_timeout_seconds: int = 120
     max_retries: int = 3
-    backoff_seconds: List[int] = field(default_factory=lambda: [2, 5, 15])
+    backoff_seconds: List[float] = field(default_factory=lambda: [2, 5, 15])
 
 
 @dataclass
 class FormatsConfig:
     jsonl: bool = True
     csv: bool = False
-    parquet: bool = True
+    parquet: bool = False
 
 
 @dataclass
@@ -115,6 +116,11 @@ class AppConfig:
     @property
     def logs_dir(self) -> Path:
         return Path(self.export.output_dir) / "logs"
+
+    @property
+    def snapshot_only(self) -> bool:
+        """True when no history output format is enabled."""
+        return not any((self.formats.jsonl, self.formats.csv, self.formats.parquet))
 
     def day_dir(self, day) -> Path:
         """Return the directory for a given date: .../YYYY/MM/
@@ -182,19 +188,34 @@ def load_config(path: str | Path) -> AppConfig:
     # ── requests ──────────────────────────────────────────────────────────────
     rq = raw.get("requests", {})
     cfg.requests = RequestsConfig(
-        batch_size_entities=int(rq.get("batch_size_entities", 5)),
-        sleep_between_requests_seconds=float(rq.get("sleep_between_requests_seconds", 1.0)),
-        sleep_between_days_seconds=float(rq.get("sleep_between_days_seconds", 5.0)),
-        request_timeout_seconds=int(rq.get("request_timeout_seconds", 120)),
-        max_retries=int(rq.get("max_retries", 3)),
-        backoff_seconds=list(rq.get("backoff_seconds", [2, 5, 15])),
+        batch_size_entities=_positive_int(
+            rq.get("batch_size_entities", 5), "requests.batch_size_entities"
+        ),
+        sleep_between_requests_seconds=_non_negative_number(
+            rq.get("sleep_between_requests_seconds", 1.0),
+            "requests.sleep_between_requests_seconds",
+        ),
+        sleep_between_days_seconds=_non_negative_number(
+            rq.get("sleep_between_days_seconds", 5.0),
+            "requests.sleep_between_days_seconds",
+        ),
+        request_timeout_seconds=_positive_int(
+            rq.get("request_timeout_seconds", 120),
+            "requests.request_timeout_seconds",
+        ),
+        max_retries=_non_negative_int(
+            rq.get("max_retries", 3), "requests.max_retries"
+        ),
+        backoff_seconds=_non_negative_number_list(
+            rq.get("backoff_seconds", [2, 5, 15]), "requests.backoff_seconds"
+        ),
     )
 
     # ── formats ───────────────────────────────────────────────────────────────
     fm = raw.get("formats", {})
     cfg.formats = FormatsConfig(
         jsonl=bool(fm.get("jsonl", True)),
-        csv=bool(fm.get("csv", True)),
+        csv=bool(fm.get("csv", False)),
         parquet=bool(fm.get("parquet", False)),
     )
 
@@ -203,8 +224,13 @@ def load_config(path: str | Path) -> AppConfig:
     cfg.storage = StorageConfig(
         use_temp_dir=bool(st.get("use_temp_dir", True)),
         temp_dir=st.get("temp_dir", r"%LOCALAPPDATA%\ha_history_export_tmp"),
-        cloud_storage_retry_count=int(st.get("cloud_storage_retry_count", 5)),
-        cloud_storage_retry_sleep_seconds=float(st.get("cloud_storage_retry_sleep_seconds", 2.0)),
+        cloud_storage_retry_count=_non_negative_int(
+            st.get("cloud_storage_retry_count", 5), "storage.cloud_storage_retry_count"
+        ),
+        cloud_storage_retry_sleep_seconds=_non_negative_number(
+            st.get("cloud_storage_retry_sleep_seconds", 2.0),
+            "storage.cloud_storage_retry_sleep_seconds",
+        ),
     )
 
     # ── history_request ───────────────────────────────────────────────────────
@@ -219,7 +245,10 @@ def load_config(path: str | Path) -> AppConfig:
     rc = raw.get("recorder", {})
     cfg.recorder = RecorderConfig(
         export_long_term_statistics=bool(rc.get("export_long_term_statistics", False)),
-        expected_purge_keep_days=rc.get("expected_purge_keep_days"),
+        expected_purge_keep_days=_optional_positive_int(
+            rc.get("expected_purge_keep_days"),
+            "recorder.expected_purge_keep_days",
+        ),
     )
 
     # ── entity_selection ─────────────────────────────────────────────────────
@@ -258,4 +287,90 @@ def load_config(path: str | Path) -> AppConfig:
     cfg.ha_url = ha_url.rstrip("/")
     cfg.ha_token = ha_token
 
+    validate_config(cfg)
     return cfg
+
+
+def validate_config(cfg: AppConfig) -> None:
+    """Validate values that may also be changed through CLI overrides."""
+    _positive_int(
+        cfg.requests.batch_size_entities, "requests.batch_size_entities"
+    )
+    _non_negative_number(
+        cfg.requests.sleep_between_requests_seconds,
+        "requests.sleep_between_requests_seconds",
+    )
+    _non_negative_number(
+        cfg.requests.sleep_between_days_seconds,
+        "requests.sleep_between_days_seconds",
+    )
+    _positive_int(
+        cfg.requests.request_timeout_seconds,
+        "requests.request_timeout_seconds",
+    )
+    _non_negative_int(cfg.requests.max_retries, "requests.max_retries")
+    backoff = _non_negative_number_list(
+        cfg.requests.backoff_seconds, "requests.backoff_seconds"
+    )
+    if cfg.requests.max_retries > 0 and not backoff:
+        raise ConfigError(
+            "requests.backoff_seconds must contain at least one value "
+            "when requests.max_retries is greater than 0."
+        )
+    _non_negative_int(
+        cfg.storage.cloud_storage_retry_count, "storage.cloud_storage_retry_count"
+    )
+    _non_negative_number(
+        cfg.storage.cloud_storage_retry_sleep_seconds,
+        "storage.cloud_storage_retry_sleep_seconds",
+    )
+    _optional_positive_int(
+        cfg.recorder.expected_purge_keep_days,
+        "recorder.expected_purge_keep_days",
+    )
+
+
+def _positive_int(value, field_name: str) -> int:
+    value = _integer(value, field_name)
+    if value <= 0:
+        raise ConfigError(f"{field_name} must be greater than 0.")
+    return value
+
+
+def _non_negative_int(value, field_name: str) -> int:
+    value = _integer(value, field_name)
+    if value < 0:
+        raise ConfigError(f"{field_name} must be greater than or equal to 0.")
+    return value
+
+
+def _optional_positive_int(value, field_name: str) -> Optional[int]:
+    if value is None:
+        return None
+    return _positive_int(value, field_name)
+
+
+def _integer(value, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{field_name} must be an integer.")
+    return value
+
+
+def _non_negative_number(value, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{field_name} must be a number.")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ConfigError(
+            f"{field_name} must be a finite number greater than or equal to 0."
+        )
+    return number
+
+
+def _non_negative_number_list(value, field_name: str) -> List[float]:
+    if not isinstance(value, list):
+        raise ConfigError(f"{field_name} must be a list of numbers.")
+    return [
+        _non_negative_number(item, f"{field_name}[{index}]")
+        for index, item in enumerate(value)
+    ]

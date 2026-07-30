@@ -20,7 +20,7 @@ instance.
   snapshots, writers, and validators
 - HTTP contract tests with synthetic responses and exceptions
 - Export and CLI integration tests with synthetic clients and temporary output
-- Strict expected-failure tests for confirmed product defects
+- A strict expected-failure test for the remaining confirmed product defect
 
 Known defects use `xfail(strict=True)`. They keep the normal suite green while
 remaining executable specifications. If a defect unexpectedly stops

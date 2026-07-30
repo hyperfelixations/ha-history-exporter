@@ -63,6 +63,13 @@ def run_export(
     if dry_run:
         return 0  # Plan was already printed by caller
 
+    if cfg.snapshot_only:
+        logger.info(
+            "Snapshot-only configuration: no history formats are enabled, "
+            "so no daily export or manifest will be created."
+        )
+        return 0
+
     # Fail fast: verify pyarrow is available before touching HA or writing files.
     if cfg.formats.parquet:
         try:

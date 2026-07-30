@@ -41,7 +41,7 @@ class HomeAssistantClient:
         token: str,
         timeout: int = 120,
         max_retries: int = 3,
-        backoff_seconds: List[int] | None = None,
+        backoff_seconds: List[float] | None = None,
     ) -> None:
         self._base = url.rstrip("/")
         self._timeout = timeout

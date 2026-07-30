@@ -169,6 +169,25 @@ def test_run_export_with_empty_plan_is_noop(tmp_path):
     assert client.calls == []
 
 
+def test_run_export_snapshot_only_never_calls_history_or_writes_manifest(tmp_path):
+    cfg = make_config(tmp_path, jsonl=False, csv=False, parquet=False)
+    client = FakeHomeAssistantClient([])
+
+    assert (
+        exporter.run_export(
+            cfg,
+            make_export_plan(DAY),
+            ["sensor.one"],
+            1,
+            client,
+            BERLIN,
+        )
+        == 0
+    )
+    assert client.calls == []
+    assert not cfg.day_file(DAY, "manifest.json").exists()
+
+
 def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_path):
     cfg = make_config(tmp_path, jsonl=True, csv=False, parquet=False, batch_size=1)
     client = FakeHomeAssistantClient(
