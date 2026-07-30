@@ -37,7 +37,7 @@ status, timing, request, entity, and row-count information.
 
 ## Project status
 
-The project is currently at version `1.3.0` and is under active development.
+The project is currently at version `1.3.1` and is under active development.
 Its command-line interface, configuration, and output contracts may still
 evolve as the project is prepared for public release.
 

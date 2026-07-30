@@ -31,7 +31,7 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.3"
-SCRIPT_VERSION = "1.3.0"
+SCRIPT_VERSION = "1.3.1"
 
 
 @dataclass
