@@ -1,3 +1,52 @@
+[build-system]
+requires = ["setuptools>=77.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ha-history-exporter"
+dynamic = ["version"]
+description = "Local command-line tool that exports Home Assistant state history to JSONL, CSV, and Parquet through the REST API."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "hyperfelixations" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Developers",
+  "Topic :: Home Automation",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "requests>=2.31.0",
+  "PyYAML>=6.0",
+  "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=15.0"]
+
+[project.scripts]
+ha-history-exporter = "ha_history_exporter.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/hyperfelixations/ha-history-exporter"
+Repository = "https://github.com/hyperfelixations/ha-history-exporter"
+Issues = "https://github.com/hyperfelixations/ha-history-exporter/issues"
+
+[tool.setuptools]
+packages = ["ha_history_exporter"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ha_history_exporter.__version__" }
+
 [tool.pytest.ini_options]
 addopts = [
   "-ra",

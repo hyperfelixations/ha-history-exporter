@@ -46,8 +46,47 @@ The project is currently at version `1.3.2` and is under active development.
 Its command-line interface, configuration, and output contracts may still
 evolve as the project is prepared for public release.
 
-More detailed installation, configuration, and usage instructions will be
-added as the project is prepared for public release.
+## Installation
+
+### Option A: pipx (recommended)
+
+[pipx](https://pipx.pypa.io/) installs the tool into its own isolated
+environment and puts a single `ha-history-exporter` command on your `PATH`:
+
+```bash
+pipx install "git+https://github.com/hyperfelixations/ha-history-exporter.git"
+```
+
+Without pipx, `pip install` works the same way inside a virtual environment.
+
+This installs JSONL and CSV support. Parquet output depends on
+[pyarrow](https://arrow.apache.org/docs/python/), a large, platform-specific
+package, so it is an opt-in extra:
+
+```bash
+pipx install "ha-history-exporter[parquet] @ git+https://github.com/hyperfelixations/ha-history-exporter.git"
+```
+
+Once installed, `ha-history-exporter --date yesterday` and
+`python -m ha_history_exporter --date yesterday` are equivalent. `--config`
+defaults to the relative path `export_config.yaml`, so either run the command
+from the directory containing your configuration file, or pass
+`--config /path/to/export_config.yaml` explicitly.
+
+A release on [PyPI](https://pypi.org/) (`pip install ha-history-exporter`
+without a Git URL) is planned but not available yet.
+
+### Option B: clone and run
+
+```bash
+git clone https://github.com/hyperfelixations/ha-history-exporter.git
+cd ha-history-exporter
+pip install -r requirements.txt
+python ha_history_batch_export.py --date yesterday
+```
+
+This installs Parquet support unconditionally and is unaffected by the pipx
+path above.
 
 ## Configuration
 
@@ -70,3 +109,7 @@ python -m pytest --cov=ha_history_exporter --cov-report=term-missing
 ```
 
 The same isolated suite runs on Linux and Windows through GitHub Actions.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

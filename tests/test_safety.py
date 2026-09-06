@@ -51,9 +51,12 @@ def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
 def test_publishable_sources_contain_no_private_workspace_paths():
     publishable_paths = [
         ROOT / "README.md",
+        ROOT / "LICENSE",
+        ROOT / "pyproject.toml",
         ROOT / "export_config.example.yaml",
         ROOT / "ha_history_batch_export.py",
         ROOT / "ha_history_export_last_10_days.bat",
+        ROOT / ".github" / "workflows" / "release.yml",
         *(ROOT / "ha_history_exporter").glob("*.py"),
     ]
     forbidden_patterns = [

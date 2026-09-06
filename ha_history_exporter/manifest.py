@@ -28,10 +28,11 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
+from . import __version__ as SCRIPT_VERSION
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.3"
-SCRIPT_VERSION = "1.3.2"
 
 
 @dataclass

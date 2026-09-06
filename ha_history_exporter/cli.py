@@ -4,9 +4,13 @@ Quick start (PowerShell):
     $env:HA_URL   = "http://homeassistant.local:8123"   # or Tailscale IP, etc.
     $env:HA_TOKEN = "<your-long-lived-access-token>"
 
-    python ha_history_batch_export.py --date yesterday --dry-run
-    python ha_history_batch_export.py --date yesterday
-    python ha_history_batch_export.py --start-date 2026-06-10 --end-date 2026-06-15
+    ha-history-exporter --date yesterday --dry-run
+    ha-history-exporter --date yesterday
+    ha-history-exporter --start-date 2026-06-10 --end-date 2026-06-15
+
+    When installed with pip/pipx, run the command above. In a cloned
+    checkout, run "python ha_history_batch_export.py" instead — same
+    arguments, same behaviour.
 
 Why a package and not a single file?
     Robustness requires modular design: each concern (auth, time zones, streaming
@@ -222,7 +226,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 def _parse_args(argv):
     p = argparse.ArgumentParser(
-        prog="ha_history_batch_export.py",
         description="Export Home Assistant history to JSONL/CSV via the REST API.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,

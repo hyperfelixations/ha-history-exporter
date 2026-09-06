@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -132,6 +133,22 @@ def test_parse_args_accepts_tuning_options():
     assert args.max_retries == 0
     assert args.parquet
     assert args.no_csv
+
+
+def test_parse_args_prog_follows_invocation_name(monkeypatch, capsys):
+    """`prog` must not be hardcoded to the legacy launcher filename.
+
+    Before packaging, argparse always advertised `ha_history_batch_export.py`
+    in --help usage, even when invoked as the `ha-history-exporter` console
+    script. argparse derives the default prog from sys.argv[0] at parser
+    construction time, independent of the argv list passed to parse_args().
+    """
+    monkeypatch.setattr(sys, "argv", ["ha-history-exporter", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        cli._parse_args(["--help"])
+    assert exc.value.code == 0
+    usage_line = capsys.readouterr().out.splitlines()[0]
+    assert usage_line.startswith("usage: ha-history-exporter ")
 
 
 def test_resolve_date_range_requires_end_date():
