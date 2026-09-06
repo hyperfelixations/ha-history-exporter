@@ -21,8 +21,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..errors import ExportError, Remedy
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..settings import AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +41,8 @@ STALE_AFTER_HOURS = 48
 def new_run_id() -> str:
     """A run identifier that is unique across processes and sub-second runs."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    alphabet = string.ascii_lowercase + string.digits
+    suffix = "".join(random.choices(alphabet, k=6))  # noqa: S311 - uniqueness, not secrecy
     return f"{stamp}-{os.getpid()}-{suffix}"
 
 
@@ -94,12 +99,12 @@ class Workspace:
 def same_filesystem(first: Path, second: Path) -> bool:
     """True when both paths live on the same device."""
     try:
-        return os.stat(first).st_dev == os.stat(second).st_dev
+        return first.stat().st_dev == second.stat().st_dev
     except OSError:
         return False
 
 
-def open_workspace(cfg) -> Workspace:
+def open_workspace(cfg: AppConfig) -> Workspace:
     """Create the working directory for one run and take the output lock."""
     temp_root = cfg.resolved_temp_dir
     output_dir = Path(cfg.export.output_dir)

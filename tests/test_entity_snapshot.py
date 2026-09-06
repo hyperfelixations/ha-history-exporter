@@ -10,7 +10,6 @@ from ha_history_exporter.entity_snapshot import (
     save_snapshot,
 )
 
-
 BERLIN = ZoneInfo("Europe/Berlin")
 
 
@@ -51,7 +50,8 @@ def test_build_snapshot_sorts_and_counts_entities():
 
 
 def test_extract_entity_ids_is_sorted_unique_and_ignores_missing_ids():
-    states = synthetic_states() + [
+    states = [
+        *synthetic_states(),
         {"entity_id": "sensor.beta", "state": "13"},
         {"state": "missing id"},
     ]
@@ -114,9 +114,10 @@ def test_extract_entity_ids_can_skip_unavailable_entities():
 
 
 def test_extract_entity_ids_can_skip_both():
-    assert extract_entity_ids(
+    selected = extract_entity_ids(
         synthetic_states(), include_unknown=False, include_unavailable=False
-    ) == ["sensor.beta"]
+    )
+    assert selected == ["sensor.beta"]
 
 
 def test_snapshot_stays_complete_even_when_history_selection_is_narrowed():

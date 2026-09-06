@@ -11,6 +11,7 @@ not manipulate ACLs, it reports the location so ``doctor`` can show it.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 from pathlib import Path
@@ -91,7 +92,7 @@ def write_token(token: str, config_dir: Path | None = None) -> Path:
         tmp.unlink(missing_ok=True)
         raise
 
-    os.replace(tmp, path)
+    tmp.replace(path)
     _harden(path)
     return path
 
@@ -108,10 +109,8 @@ def clear_token(config_dir: Path | None = None) -> bool:
 def _harden(path: Path) -> None:
     if os.name == "nt":  # ACLs are inherited from the user profile.
         return
-    try:
-        os.chmod(path, OWNER_ONLY)
-    except OSError:  # pragma: no cover - unusual filesystem
-        pass
+    with contextlib.suppress(OSError):  # pragma: no cover - unusual filesystem
+        path.chmod(OWNER_ONLY)
 
 
 def is_owner_only(path: Path) -> bool | None:

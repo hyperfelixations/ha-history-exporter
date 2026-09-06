@@ -9,7 +9,6 @@ import pytest
 from ha_history_exporter import planner
 from tests.helpers import make_config
 
-
 BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 28)
 

@@ -9,7 +9,7 @@ Both forms stay valid: ``hhe export --date yesterday`` and the historical
 from __future__ import annotations
 
 import argparse
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 from .. import __version__
 
@@ -181,7 +181,7 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
                    help="Log level (default: INFO).")
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse *argv*, accepting both the command form and the legacy flag form."""
     import sys
 

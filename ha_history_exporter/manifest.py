@@ -25,8 +25,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from . import __version__ as SCRIPT_VERSION
 
@@ -49,9 +48,9 @@ class DayManifest:
     end_utc: str = ""
 
     # ── Timing ────────────────────────────────────────────────────────────────
-    export_started_at: Optional[str] = None
-    export_finished_at: Optional[str] = None
-    duration_seconds: Optional[float] = None
+    export_started_at: str | None = None
+    export_finished_at: str | None = None
+    duration_seconds: float | None = None
 
     # ── Entity counts ─────────────────────────────────────────────────────────
     entity_count_current: int = 0          # total from /api/states
@@ -85,12 +84,12 @@ class DayManifest:
     failed_batches: List[dict] = field(default_factory=list)
 
     # ── Misc ──────────────────────────────────────────────────────────────────
-    skipped_reason: Optional[str] = None
-    error: Optional[str] = None
+    skipped_reason: str | None = None
+    error: str | None = None
     script_version: str = SCRIPT_VERSION
 
     # ── Private (not serialised) ──────────────────────────────────────────────
-    _started_ts: Optional[float] = field(default=None, repr=False, compare=False)
+    _started_ts: float | None = field(default=None, repr=False, compare=False)
 
     def mark_started(self, tz) -> None:
         """Start a clean export attempt while preserving day identity/config."""
@@ -158,11 +157,17 @@ def load_or_create(
     )
 
 
-def save(manifest: DayManifest, cfg, cloud_storage_retry_count: int = 5, cloud_storage_retry_sleep: float = 2.0) -> None:
+def save(
+    manifest: DayManifest,
+    cfg,
+    cloud_storage_retry_count: int = 5,
+    cloud_storage_retry_sleep: float = 2.0,
+) -> None:
     """Write manifest atomically to its final path."""
     from .writers import atomic_replace
 
-    path = cfg.day_file(manifest.date if isinstance(manifest.date, str) else str(manifest.date), "manifest.json")
+    day = manifest.date if isinstance(manifest.date, str) else str(manifest.date)
+    path = cfg.day_file(day, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
 

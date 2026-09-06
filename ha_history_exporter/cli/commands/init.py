@@ -7,19 +7,20 @@ file. Nothing is written before the questions are answered.
 
 from __future__ import annotations
 
+import argparse
 import getpass
 import sys
 from zoneinfo import ZoneInfo
 
 from ... import ha_client
 from ...errors import HHEError, Remedy, UsageError
-from ...settings import document, paths, resolve, secrets
+from ...settings import ResolvedSettings, document, paths, resolve, secrets
 from .export import parse_format_list
 
 DEFAULT_URL = "http://homeassistant.local:8123"
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     interactive = not args.non_interactive
 
     if paths.user_config_file().is_file() and not args.force:
@@ -68,7 +69,9 @@ def run(args) -> int:
 
 # ── questions ─────────────────────────────────────────────────────────────────
 
-def _ask_url(args, current, interactive: bool) -> str:
+def _ask_url(
+    args: argparse.Namespace, current: ResolvedSettings, interactive: bool
+) -> str:
     if args.url:
         return args.url.rstrip("/")
     if not interactive:
@@ -77,7 +80,7 @@ def _ask_url(args, current, interactive: bool) -> str:
     return _ask(None, "Home Assistant URL", default, interactive).rstrip("/")
 
 
-def _ask_token(args, interactive: bool) -> str:
+def _ask_token(args: argparse.Namespace, interactive: bool) -> str:
     token = secrets.read_token()
     if not interactive:
         if not sys.stdin.isatty():
@@ -106,7 +109,9 @@ def _ask_token(args, interactive: bool) -> str:
     )
 
 
-def _ask_formats(args, current, interactive: bool) -> dict:
+def _ask_formats(
+    args: argparse.Namespace, current: ResolvedSettings, interactive: bool
+) -> dict[str, bool]:
     cfg = current.config
     enabled = [
         name
@@ -130,7 +135,9 @@ def _ask_formats(args, current, interactive: bool) -> dict:
     return selection
 
 
-def _ask_timezone(args, current, interactive: bool) -> str:
+def _ask_timezone(
+    args: argparse.Namespace, current: ResolvedSettings, interactive: bool
+) -> str:
     value = args.timezone or _ask(
         None, "Timezone", current.config.home_assistant.timezone, interactive
     )
@@ -144,7 +151,9 @@ def _ask_timezone(args, current, interactive: bool) -> str:
     return value
 
 
-def _verify(url: str, token: str, current, interactive: bool) -> None:
+def _verify(
+    url: str, token: str, current: ResolvedSettings, interactive: bool
+) -> None:
     print(f"  -> Contacting {url} ...")
     try:
         with ha_client.HomeAssistantClient(
@@ -166,7 +175,9 @@ def _verify(url: str, token: str, current, interactive: bool) -> None:
 
 # ── prompting ─────────────────────────────────────────────────────────────────
 
-def _ask(explicit, label: str, default: str, interactive: bool) -> str:
+def _ask(
+    explicit: str | None, label: str, default: str, interactive: bool
+) -> str:
     if explicit:
         return explicit
     if not interactive:

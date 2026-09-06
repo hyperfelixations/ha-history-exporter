@@ -92,7 +92,7 @@ class FakeCliClient:
     and is called by an autouse fixture before every test.
     """
 
-    instances: ClassVar[list["FakeCliClient"]] = []
+    instances: ClassVar[list[FakeCliClient]] = []
     check_error: ClassVar[Exception | None] = None
     states: ClassVar[list[dict[str, Any]]] = []
     history_payload: ClassVar[list[list[dict[str, Any]]]] = []
@@ -118,7 +118,7 @@ class FakeCliClient:
         self.closed = False
         type(self).instances.append(self)
 
-    def __enter__(self) -> "FakeCliClient":
+    def __enter__(self) -> FakeCliClient:
         return self
 
     def __exit__(self, *_: Any) -> None:

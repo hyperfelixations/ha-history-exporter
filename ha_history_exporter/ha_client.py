@@ -249,7 +249,7 @@ class HomeAssistantClient:
     def close(self) -> None:
         self._session.close()
 
-    def __enter__(self) -> "HomeAssistantClient":
+    def __enter__(self) -> HomeAssistantClient:
         return self
 
     def __exit__(self, *_: Any) -> None:

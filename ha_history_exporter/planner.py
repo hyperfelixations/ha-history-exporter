@@ -12,16 +12,13 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 from zoneinfo import ZoneInfo
 
 from .time_utils import (
-    format_iso,
     is_day_complete,
     iter_days,
     latest_complete_day,
-    local_day_bounds,
     today_local,
 )
 
@@ -32,7 +29,7 @@ logger = logging.getLogger(__name__)
 class DayDecision:
     day: date
     action: str            # "export" | "skip_existing" | "skip_incomplete"
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @dataclass
@@ -67,7 +64,7 @@ class ExportPlan:
 
         batches_per_day = math.ceil(entity_count / batch_size) if entity_count else 0
         print(f"\n{'=' * 60}")
-        print(f"  Home Assistant REST History Exporter")
+        print("  Home Assistant REST History Exporter")
         print(f"{'=' * 60}")
         print(f"  Requested range : {self.requested_start} → {self.requested_end}")
         print(f"  Current local   : {self.today}")
@@ -155,7 +152,7 @@ def build_plan(
     return plan
 
 
-def _check_existing(day: date, cfg) -> Optional[str]:
+def _check_existing(day: date, cfg) -> str | None:
     """Return a reason if this day has a successful manifest, else ``None``.
 
     The manifest is the durable source of truth for resume decisions. Export

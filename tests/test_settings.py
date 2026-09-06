@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -277,7 +278,7 @@ def test_invalid_yaml_is_reported_with_the_file(tmp_path):
 def test_unsupported_value_for_a_default_only_key_is_rejected(tmp_path):
     write(tmp_path / "export_config.yaml", "export:\n  include_current_day: true\n")
 
-    with pytest.raises(ConfigError, match="export.include_current_day"):
+    with pytest.raises(ConfigError, match=re.escape("export.include_current_day")):
         resolve(cwd=tmp_path, environ=SYNTHETIC_ENV)
 
 

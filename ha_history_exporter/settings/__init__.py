@@ -37,9 +37,8 @@ __all__ = [
 ]
 
 
-def load_settings(**kwargs) -> ResolvedSettings:
-    """Resolve every configuration source; see :func:`resolver.resolve`."""
-    return resolve(**kwargs)
+#: Resolve every configuration source; see :func:`resolver.resolve`.
+load_settings = resolve
 
 
 def load_config(path: str | Path) -> AppConfig:

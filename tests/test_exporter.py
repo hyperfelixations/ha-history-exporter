@@ -18,7 +18,6 @@ from tests.helpers import (
     state_row,
 )
 
-
 BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 28)
 

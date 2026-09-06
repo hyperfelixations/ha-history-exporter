@@ -12,7 +12,6 @@ from ha_history_exporter.exceptions import AuthError, HAAPIError, HAConnectionEr
 from ha_history_exporter.ha_client import HomeAssistantClient
 from tests.helpers import FakeResponse, SequenceGet, state_row, timeout_error
 
-
 UTC = ZoneInfo("UTC")
 BASE_URL = "http://home-assistant.invalid"
 TOKEN = "synthetic-test-token"
@@ -194,9 +193,8 @@ def test_http_error_never_exposes_the_response_body(monkeypatch, caplog):
         [FakeResponse(status_code=400, text="synthetic-private-body-marker")],
     )
 
-    with caplog.at_level(logging.DEBUG):
-        with pytest.raises(HAAPIError) as exc:
-            client.check_api()
+    with caplog.at_level(logging.DEBUG), pytest.raises(HAAPIError) as exc:
+        client.check_api()
 
     rendered = " ".join(
         [

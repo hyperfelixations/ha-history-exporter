@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from ..errors import ConfigError
 from . import paths, schema
@@ -20,7 +20,7 @@ from . import paths, schema
 @dataclass
 class HAConfig:
     url_env: str = "HA_URL"
-    token_env: str = "HA_TOKEN"
+    token_env: str = "HA_TOKEN"  # noqa: S105 - variable name, not a secret
     timezone: str = "Europe/Berlin"
 
 
@@ -68,7 +68,7 @@ class HistoryRequestConfig:
 @dataclass
 class RecorderConfig:
     export_long_term_statistics: bool = False
-    expected_purge_keep_days: Optional[int] = None
+    expected_purge_keep_days: int | None = None
 
 
 @dataclass
@@ -120,7 +120,7 @@ class AppConfig:
         """True when no history output format is enabled."""
         return not any((self.formats.jsonl, self.formats.csv, self.formats.parquet))
 
-    def day_dir(self, day) -> Path:
+    def day_dir(self, day: date | str) -> Path:
         """Return the directory for a given date: .../YYYY/MM/
 
         Accepts both a datetime.date object and an ISO string ("2026-06-15").
@@ -128,7 +128,7 @@ class AppConfig:
         d, _ = self._normalize_day(day)
         return self.daily_export_root / str(d.year) / f"{d.month:02d}"
 
-    def day_file(self, day, suffix: str) -> Path:
+    def day_file(self, day: date | str, suffix: str) -> Path:
         """Return the path for a day file, e.g. .../2026/06/2026-06-15.jsonl
 
         Accepts both a datetime.date object and an ISO string ("2026-06-15").
@@ -137,7 +137,7 @@ class AppConfig:
         return self.day_dir(d) / f"{s}.{suffix}"
 
     @staticmethod
-    def _normalize_day(day) -> tuple:
+    def _normalize_day(day: date | str) -> tuple[date, str]:
         """Return (date_obj, date_str) for any day input (date or ISO str)."""
         if isinstance(day, str):
             return date.fromisoformat(day), day

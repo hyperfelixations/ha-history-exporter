@@ -72,7 +72,9 @@ def validate_csv(path: Path, expected_rows: int) -> int:
         try:
             next(reader)  # skip header
         except StopIteration:
-            raise ValidationError(f"CSV file is empty (no header): {path.name}")
+            raise ValidationError(
+                f"CSV file is empty (no header): {path.name}"
+            ) from None
         for _ in reader:
             actual += 1
 

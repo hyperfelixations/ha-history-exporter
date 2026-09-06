@@ -55,20 +55,20 @@ def test_str_returns_the_summary_so_manifests_stay_readable():
 def test_render_error_formats_summary_details_remedies_and_context():
     stream = io.StringIO()
     exc = ConfigError(
-        "Config file not found: /tmp/absent.yaml",
+        "Config file not found: <path>/absent.yaml",
         details="HHE was asked to read this file, but it does not exist.",
         remedies=(
             Remedy("Copy the bundled example:", "cp a.yaml b.yaml"),
             Remedy("Or pass an existing file."),
         ),
-        context={"config_file": "/tmp/absent.yaml"},
+        context={"config_file": "<path>/absent.yaml"},
     )
 
     console.render_error(exc, stream=stream)
 
     assert stream.getvalue() == (
         "\n"
-        "error: Config file not found: /tmp/absent.yaml\n"
+        "error: Config file not found: <path>/absent.yaml\n"
         "\n"
         "  HHE was asked to read this file, but it does not exist.\n"
         "\n"
@@ -77,7 +77,7 @@ def test_render_error_formats_summary_details_remedies_and_context():
         "\n"
         "  Or pass an existing file.\n"
         "\n"
-        "  Configuration file: /tmp/absent.yaml\n"
+        "  Configuration file: <path>/absent.yaml\n"
         "\n"
     )
 

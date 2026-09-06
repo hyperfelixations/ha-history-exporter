@@ -7,7 +7,6 @@ import pytest
 
 from ha_history_exporter import time_utils
 
-
 BERLIN = ZoneInfo("Europe/Berlin")
 UTC = ZoneInfo("UTC")
 

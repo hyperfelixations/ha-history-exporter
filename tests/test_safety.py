@@ -8,14 +8,15 @@ from pathlib import Path
 import pytest
 from pytest_socket import SocketBlockedError
 
-
 ROOT = Path(__file__).parents[1]
 
 
 def test_socket_access_is_blocked_by_default():
-    with pytest.warns(UserWarning, match="tried to use socket.socket"):
-        with pytest.raises(SocketBlockedError):
-            socket.socket()
+    with (
+        pytest.warns(UserWarning, match="tried to use socket.socket"),
+        pytest.raises(SocketBlockedError),
+    ):
+        socket.socket()
 
 
 def test_production_environment_is_removed():

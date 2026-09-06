@@ -8,7 +8,6 @@ its comments and ordering stay in sync with the supported options.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -53,7 +52,7 @@ def write_user_values(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(render(values), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.replace(path)
     return path
 
 

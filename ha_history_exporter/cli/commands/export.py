@@ -7,8 +7,10 @@ This module owns the export flow only. Argument grammar lives in
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -23,7 +25,7 @@ from ...errors import ConfigError, Remedy, UsageError
 from ...exporter import run_export
 from ...planner import build_plan
 from ...runtime.workspace import new_run_id
-from ...settings import load_settings
+from ...settings import AppConfig, load_settings
 from ...time_utils import last_n_complete_days, parse_date_arg
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ _LEGACY_FORMAT_SWITCHES = ("jsonl", "parquet", "no_csv")
 _VALID_FORMATS = ("jsonl", "csv", "parquet", "none")
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """Execute one export run and return the process exit code."""
     settings = load_settings(
         explicit_config=args.config,
@@ -231,9 +233,9 @@ def parse_format_list(raw: str) -> dict[str, bool]:
     }
 
 
-def cli_overrides(args) -> dict:
+def cli_overrides(args: argparse.Namespace) -> dict[str, object]:
     """Translate parsed arguments into configuration overrides."""
-    overrides: dict = {}
+    overrides: dict[str, object] = {}
     for dest, key_path in _VALUE_OVERRIDES.items():
         value = getattr(args, dest, None)
         if value is not None:
@@ -268,7 +270,7 @@ def cli_overrides(args) -> dict:
     return overrides
 
 
-def resolve_date_range(args, tz):
+def resolve_date_range(args: argparse.Namespace, tz: ZoneInfo) -> tuple[date, date]:
     """Return (start_date, end_date) as date objects."""
     if getattr(args, "last_days", None) is not None:
         return last_n_complete_days(args.last_days, tz)
@@ -299,7 +301,7 @@ def resolve_date_range(args, tz):
 _HHE_HANDLER = "_hhe_handler"
 
 
-def configure_logging(level: int, cfg, tz: ZoneInfo) -> None:
+def configure_logging(level: int, cfg: AppConfig, tz: ZoneInfo) -> None:
     """Set up stderr and file logging, idempotently.
 
     Repeated calls in one process replace HHE's own handlers instead of

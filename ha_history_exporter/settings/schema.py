@@ -39,7 +39,7 @@ class KeyType(str, Enum):
 class KeyStatus(str, Enum):
     SUPPORTED = "supported"
     DEFAULT_ONLY = "default-only"
-    SECRET = "secret"
+    SECRET = "secret"  # noqa: S105 - status name, not a secret
 
 
 # ── value checks ──────────────────────────────────────────────────────────────

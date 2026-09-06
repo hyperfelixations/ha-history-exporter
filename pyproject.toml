@@ -52,8 +52,50 @@ packages = [
   "ha_history_exporter.settings",
 ]
 
+[tool.setuptools.package-data]
+ha_history_exporter = ["py.typed"]
+
 [tool.setuptools.dynamic]
 version = { attr = "ha_history_exporter.__version__" }
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [".venv", "dist", "build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
+ignore = [
+  "S101",     # assert is the idiom the test suite is built on
+  "UP006",    # typing.List/Dict spellings stay until the codebase moves as a whole
+  "UP007",    # same for Optional/Union
+  "UP035",
+  "RUF002",   # en dashes and other typography in prose are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S603", "S607"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["ha_history_exporter"]
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "ha_history_exporter.cli.*",
+  "ha_history_exporter.errors",
+  "ha_history_exporter.console",
+  "ha_history_exporter.runtime.*",
+  "ha_history_exporter.settings.*",
+]
+disallow_untyped_defs = true
+strict_equality = true
 
 [tool.pytest.ini_options]
 addopts = [

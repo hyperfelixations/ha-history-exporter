@@ -17,8 +17,9 @@ This module owns dispatch and the mapping from errors to exit codes:
 
 from __future__ import annotations
 
+import argparse
 import logging
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional  # noqa: F401 - Optional is part of main()'s signature
 from zoneinfo import ZoneInfo  # re-exported: callers build timezones from here
 
 from ..console import render_error
@@ -26,7 +27,7 @@ from ..errors import HHEError, Remedy
 from .commands import config_cmd, doctor, export, init
 from .parser import COMMANDS, build_parser, normalize_argv, parse_args
 
-_HANDLERS: dict[str, Callable[[object], int]] = {
+_HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "config": config_cmd.run,
     "doctor": doctor.run,
     "export": export.run,
@@ -34,7 +35,7 @@ _HANDLERS: dict[str, Callable[[object], int]] = {
 }
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv)
     handler = _HANDLERS[args.command]
     logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except KeyboardInterrupt:
         _log_if_configured(logger.info, "Interrupted by user.")
         return 130
-    except Exception as exc:  # noqa: BLE001 - last line of defence
+    except Exception as exc:
         _log_if_configured(logger.exception, "Unexpected error: %s", exc)
         render_error(
             HHEError(
@@ -69,7 +70,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
 
-def _log_if_configured(log, message: str, *args) -> None:
+def _log_if_configured(
+    log: Callable[..., None], message: str, *args: object
+) -> None:
     """Log only once logging is set up.
 
     A failure before the log file exists would otherwise reach the terminal

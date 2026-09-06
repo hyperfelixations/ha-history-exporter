@@ -8,6 +8,7 @@ to the caller.
 
 from __future__ import annotations
 
+import argparse
 import getpass
 import os
 import subprocess
@@ -15,13 +16,13 @@ import sys
 from pathlib import Path
 
 from ...errors import ConfigError, Remedy, UsageError
-from ...settings import document, paths, resolve, schema, secrets
-from ...settings.schema import KeyStatus
+from ...settings import ResolvedSettings, document, paths, resolve, schema, secrets
+from ...settings.schema import Key, KeyStatus
 
-TOKEN_KEY = "homeassistant.token"
+TOKEN_KEY = "homeassistant.token"  # noqa: S105 - key path, not a secret
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     actions = {
         "get": _get,
         "set": _set,
@@ -35,20 +36,20 @@ def run(args) -> int:
 
 # ── read ──────────────────────────────────────────────────────────────────────
 
-def _effective(args):
+def _effective(args: argparse.Namespace) -> ResolvedSettings:
     return resolve(
         explicit_config=getattr(args, "config", None), require_credentials=False
     )
 
 
-def _get(args) -> int:
+def _get(args: argparse.Namespace) -> int:
     key = _known_key(args.key)
     settings = _effective(args)
     print(_display_value(settings, key))
     return 0
 
 
-def _list(args) -> int:
+def _list(args: argparse.Namespace) -> int:
     settings = _effective(args)
     width = max(len(key.path) for key in schema.KEYS)
     for key in schema.KEYS:
@@ -60,7 +61,7 @@ def _list(args) -> int:
     return 0
 
 
-def _path(args) -> int:
+def _path(args: argparse.Namespace) -> int:
     entries = [
         ("configuration file", paths.user_config_file()),
         ("credentials file", paths.user_credentials_file()),
@@ -85,7 +86,7 @@ def _path(args) -> int:
 
 # ── write ─────────────────────────────────────────────────────────────────────
 
-def _set(args) -> int:
+def _set(args: argparse.Namespace) -> int:
     key = _known_key(args.key)
     _refuse_explicit_config(args)
 
@@ -118,7 +119,7 @@ def _set(args) -> int:
     return 0
 
 
-def _unset(args) -> int:
+def _unset(args: argparse.Namespace) -> int:
     key = _known_key(args.key)
     _refuse_explicit_config(args)
 
@@ -142,7 +143,7 @@ def _unset(args) -> int:
     return 0
 
 
-def _edit(args) -> int:
+def _edit(args: argparse.Namespace) -> int:
     _refuse_explicit_config(args)
     path = paths.user_config_file()
     if not path.is_file():
@@ -151,7 +152,7 @@ def _edit(args) -> int:
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
     start_file = getattr(os, "startfile", None)  # Windows only
     if editor:
-        subprocess.call([*editor.split(), str(path)])
+        subprocess.call([*editor.split(), str(path)])  # noqa: S603 - the user's own editor
     elif start_file is not None:
         start_file(str(path))
         print(f"Opened {path} in the default editor.")
@@ -170,7 +171,7 @@ def _edit(args) -> int:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _known_key(key_path: str):
+def _known_key(key_path: str) -> Key:
     key = schema.BY_PATH.get(key_path)
     if key is None:
         suggestion = schema.suggest(key_path)
@@ -185,14 +186,14 @@ def _known_key(key_path: str):
     return key
 
 
-def _display_value(settings, key) -> str:
+def _display_value(settings: ResolvedSettings, key: Key) -> str:
     """Never echo a secret; report only whether one is stored."""
     if key.status is KeyStatus.SECRET:
         return str(settings.values.get(key.path, "<not set>"))
     return str(settings.values.get(key.path, ""))
 
 
-def _refuse_explicit_config(args) -> None:
+def _refuse_explicit_config(args: argparse.Namespace) -> None:
     if getattr(args, "config", None):
         raise UsageError(
             "config set, unset, and edit always write the user configuration.",

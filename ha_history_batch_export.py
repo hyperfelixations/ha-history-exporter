@@ -11,7 +11,6 @@ Environment variables required:
     HA_URL    e.g. http://homeassistant.local:8123
     HA_TOKEN  Long-Lived Access Token from your HA user profile
 """
-import sys
 
 from ha_history_exporter.cli import main
 

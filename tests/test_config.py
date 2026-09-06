@@ -15,7 +15,6 @@ from ha_history_exporter.config import (
     validate_config,
 )
 
-
 MINIMAL_CONFIG = """
 home_assistant:
   url_env: HA_URL

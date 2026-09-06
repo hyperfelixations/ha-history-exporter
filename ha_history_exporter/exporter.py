@@ -21,8 +21,7 @@ import json
 import logging
 import time
 from datetime import date, datetime
-from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
@@ -77,11 +76,29 @@ def run_export(
     if cfg.formats.parquet:
         try:
             import pyarrow  # noqa: F401
-        except ImportError:
+        except ImportError as exc:
             raise ConfigError(
-                "formats.parquet is enabled in the config but pyarrow is not installed.\n"
-                "  Install it with:  pip install pyarrow>=15.0"
-            )
+                "Parquet output is enabled but pyarrow is not installed.",
+                details=(
+                    "Parquet needs pyarrow, a large platform-specific package "
+                    "that HHE keeps optional. Nothing was requested from Home "
+                    "Assistant."
+                ),
+                remedies=(
+                    Remedy(
+                        "Add it to an existing pipx installation:",
+                        "pipx inject ha-history-exporter pyarrow",
+                    ),
+                    Remedy(
+                        "Or install HHE with the extra:",
+                        'pip install "ha-history-exporter[parquet]"',
+                    ),
+                    Remedy(
+                        "Or turn Parquet off:",
+                        "hhe config set formats.parquet false",
+                    ),
+                ),
+            ) from exc
 
     days = plan.days_to_export
 
@@ -133,7 +150,6 @@ def _run_days(
 
         # Warn if this day is likely outside Recorder retention.
         if cfg.recorder.expected_purge_keep_days is not None:
-            from datetime import date as date_type, timedelta
             today = datetime.now(tz).date()
             days_ago = (today - day).days
             if days_ago > cfg.recorder.expected_purge_keep_days:
@@ -200,7 +216,12 @@ def _run_days(
             m.error = str(exc)
             any_error = True
         finally:
-            mf.save(m, cfg, cfg.storage.cloud_storage_retry_count, cfg.storage.cloud_storage_retry_sleep_seconds)
+            mf.save(
+                m,
+                cfg,
+                cfg.storage.cloud_storage_retry_count,
+                cfg.storage.cloud_storage_retry_sleep_seconds,
+            )
             _append_run_log(cfg, day_str, m)
 
         if day_idx < len(days) - 1:

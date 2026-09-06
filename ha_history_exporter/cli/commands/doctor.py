@@ -6,6 +6,7 @@ resolves it. ``--offline`` skips everything that would contact Home Assistant.
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import sys
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from ... import __version__, ha_client
 from ...errors import HHEError
-from ...settings import paths, resolve, secrets
+from ...settings import AppConfig, ResolvedSettings, paths, resolve, secrets
 
 OK = "ok"
 WARN = "warn"
@@ -33,7 +34,7 @@ class Result:
     remedy: str = ""
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     results: list[Result] = []
     results.append(
         Result(OK, "HHE version", f"{__version__} on Python {_python_version()}")
@@ -81,7 +82,7 @@ def run(args) -> int:
 
 # ── individual checks ─────────────────────────────────────────────────────────
 
-def _check_timezone(cfg) -> list[Result]:
+def _check_timezone(cfg: AppConfig) -> list[Result]:
     name = cfg.home_assistant.timezone
     try:
         ZoneInfo(name)
@@ -97,7 +98,7 @@ def _check_timezone(cfg) -> list[Result]:
     return [Result(OK, "timezone", name)]
 
 
-def _check_credentials(settings) -> list[Result]:
+def _check_credentials(settings: ResolvedSettings) -> list[Result]:
     cfg = settings.config
     results: list[Result] = []
 
@@ -154,7 +155,7 @@ def _check_credentials(settings) -> list[Result]:
     return results
 
 
-def _check_output_dir(cfg) -> list[Result]:
+def _check_output_dir(cfg: AppConfig) -> list[Result]:
     path = Path(cfg.export.output_dir)
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -186,7 +187,7 @@ def _check_output_dir(cfg) -> list[Result]:
     return results
 
 
-def _check_temp_dir(cfg) -> list[Result]:
+def _check_temp_dir(cfg: AppConfig) -> list[Result]:
     path = cfg.resolved_temp_dir
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -205,7 +206,7 @@ def _check_temp_dir(cfg) -> list[Result]:
     return [Result(OK, "temporary directory", str(path))]
 
 
-def _check_formats(cfg) -> list[Result]:
+def _check_formats(cfg: AppConfig) -> list[Result]:
     enabled = [
         name
         for name, on in (
@@ -243,7 +244,7 @@ def _check_formats(cfg) -> list[Result]:
     return results
 
 
-def _check_exports(cfg) -> list[Result]:
+def _check_exports(cfg: AppConfig) -> list[Result]:
     root = cfg.daily_export_root
     if not root.exists():
         return [Result(OK, "existing exports", "none yet")]
@@ -262,7 +263,7 @@ def _check_exports(cfg) -> list[Result]:
     ]
 
 
-def _check_home_assistant(cfg) -> list[Result]:
+def _check_home_assistant(cfg: AppConfig) -> list[Result]:
     if not (cfg.ha_url and cfg.ha_token):
         return [
             Result(

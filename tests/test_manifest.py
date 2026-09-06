@@ -4,11 +4,8 @@ import json
 from datetime import date
 from zoneinfo import ZoneInfo
 
-import pytest
-
 from ha_history_exporter import manifest
 from tests.helpers import make_config
-
 
 BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 28)

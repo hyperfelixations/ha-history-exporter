@@ -23,7 +23,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import ClassVar, TextIO
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +45,16 @@ class JsonlWriter:
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._f = None
+        self._f: TextIO | None = None
         self._count = 0
 
-    def __enter__(self) -> "JsonlWriter":
+    def __enter__(self) -> JsonlWriter:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._f = self._path.open("w", encoding="utf-8")
         return self
 
     def write(self, row: dict) -> None:
+        assert self._f is not None, "JsonlWriter must be used as a context manager"
         self._f.write(json.dumps(row, ensure_ascii=False, default=str))
         self._f.write("\n")
         self._count += 1
@@ -80,15 +81,22 @@ class CsvWriter:
     (attribute keys differ across entities and change over time).
     """
 
-    _FIELDS = ["entity_id", "state", "last_changed", "last_updated", "attributes_json", "local_offset"]
+    _FIELDS: ClassVar[list[str]] = [
+        "entity_id",
+        "state",
+        "last_changed",
+        "last_updated",
+        "attributes_json",
+        "local_offset",
+    ]
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._f = None
-        self._writer = None
+        self._f: TextIO | None = None
+        self._writer: csv.DictWriter[str] | None = None
         self._count = 0
 
-    def __enter__(self) -> "CsvWriter":
+    def __enter__(self) -> CsvWriter:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._f = self._path.open("w", encoding="utf-8", newline="")
         self._writer = csv.DictWriter(self._f, fieldnames=self._FIELDS, extrasaction="ignore")
@@ -96,6 +104,7 @@ class CsvWriter:
         return self
 
     def write(self, row: dict) -> None:
+        assert self._writer is not None, "CsvWriter must be used as a context manager"
         self._writer.writerow(
             {
                 "entity_id": row.get("entity_id", ""),
@@ -276,7 +285,7 @@ def convert_jsonl_to_parquet(
     buf_attributes:    list = []
     buf_local_offsets: list = []
 
-    def _flush(writer: "pq.ParquetWriter") -> None:
+    def _flush(writer: pq.ParquetWriter) -> None:
         if not buf_entity_ids:
             return
         table = pa.table(
