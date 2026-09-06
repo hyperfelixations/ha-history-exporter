@@ -1,17 +1,31 @@
-"""Custom exceptions for the HA history exporter."""
+"""Backwards-compatible import path for the error taxonomy.
 
+The definitions live in :mod:`ha_history_exporter.errors`. This module keeps
+``from ha_history_exporter.exceptions import AuthError`` working.
+"""
 
-class AuthError(Exception):
-    """Raised on HTTP 401/403 — stop immediately, do not retry."""
+from .errors import (
+    AuthError,
+    ConfigError,
+    CredentialsError,
+    ExportError,
+    HAAPIError,
+    HAConnectionError,
+    HHEError,
+    Remedy,
+    UsageError,
+    ValidationError,
+)
 
-
-class HAConnectionError(Exception):
-    """Raised when the HA instance cannot be reached after retries."""
-
-
-class HAAPIError(Exception):
-    """Raised on unexpected HTTP errors or malformed API responses."""
-
-
-class ConfigError(Exception):
-    """Raised when the YAML configuration is invalid or incomplete."""
+__all__ = [
+    "AuthError",
+    "ConfigError",
+    "CredentialsError",
+    "ExportError",
+    "HAAPIError",
+    "HAConnectionError",
+    "HHEError",
+    "Remedy",
+    "UsageError",
+    "ValidationError",
+]

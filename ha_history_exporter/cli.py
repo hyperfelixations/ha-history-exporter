@@ -30,7 +30,8 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from .config import load_config, validate_config
-from .exceptions import AuthError, ConfigError
+from .console import render_error
+from .errors import ConfigError, HHEError, Remedy, UsageError
 from .exporter import run_export
 from .time_utils import is_day_complete, iter_days, parse_date_arg, today_local
 
@@ -43,8 +44,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         cfg = load_config(cfg_path)
     except ConfigError as exc:
-        print(f"\n[ERROR] {exc}\n", file=sys.stderr)
-        return 2
+        render_error(exc)
+        return exc.exit_code
 
     # ── CLI overrides ─────────────────────────────────────────────────────────
     if args.outdir:
@@ -72,14 +73,30 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         validate_config(cfg)
-        tz = ZoneInfo(cfg.home_assistant.timezone)
     except ConfigError as exc:
-        print(f"\n[ERROR] {exc}\n", file=sys.stderr)
-        return 2
+        render_error(exc)
+        return exc.exit_code
+
+    try:
+        tz = ZoneInfo(cfg.home_assistant.timezone)
     except Exception as exc:
-        print(
-            f"\n[ERROR] Invalid timezone '{cfg.home_assistant.timezone}': {exc}\n",
-            file=sys.stderr,
+        render_error(
+            ConfigError(
+                f"Invalid timezone '{cfg.home_assistant.timezone}': {exc}",
+                details=(
+                    "home_assistant.timezone must be an IANA time zone name, "
+                    "for example Europe/Berlin, UTC, or America/New_York."
+                ),
+                remedies=(
+                    Remedy(
+                        "Correct the value in the configuration file, or "
+                        "override it for a single run:",
+                        "ha-history-exporter --timezone Europe/Berlin "
+                        "--date yesterday",
+                    ),
+                ),
+                context={"config_file": str(cfg_path)},
+            )
         )
         return 2
 
@@ -93,7 +110,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         requested_start, requested_end = _resolve_date_range(args, tz)
     except ValueError as exc:
-        logger.error("%s", exc)
+        render_error(
+            UsageError(
+                str(exc),
+                details="The requested export range could not be interpreted.",
+                remedies=(
+                    Remedy(
+                        "Export a single day, or a closed range:",
+                        "ha-history-exporter --date yesterday",
+                    ),
+                ),
+            )
+        )
         return 2
 
     # ── force / resume ────────────────────────────────────────────────────────
@@ -204,21 +232,32 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dry_run=False,
             )
 
-    except AuthError as exc:
-        logger.error("Authentication failed: %s", exc)
-        print(
-            "\n[FATAL] Authentication failed.\n"
-            "  → Open Home Assistant → Profile → Long-Lived Access Tokens\n"
-            "  → Create or renew a token, then set:\n"
-            "      $env:HA_TOKEN = \"<token>\"\n",
-            file=sys.stderr,
-        )
-        return 1
+    except HHEError as exc:
+        logger.error("%s", exc.summary)
+        render_error(exc)
+        return exc.exit_code
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
         return 130
     except Exception as exc:
         logger.exception("Unexpected error: %s", exc)
+        render_error(
+            HHEError(
+                f"Unexpected error: {exc}",
+                details=(
+                    "This is either a defect in HHE or an unhandled "
+                    "environment condition. The full traceback was written to "
+                    "the log file."
+                ),
+                remedies=(
+                    Remedy(
+                        "Re-run with debug logging and keep the log file:",
+                        "ha-history-exporter --log-level DEBUG --date yesterday",
+                    ),
+                ),
+                context={"log_file": str(cfg.logs_dir)},
+            )
+        )
         return 1
 
 

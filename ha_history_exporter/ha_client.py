@@ -17,7 +17,7 @@ from typing import Any, List
 
 import requests
 
-from .exceptions import AuthError, HAAPIError, HAConnectionError
+from .errors import AuthError, HAAPIError, HAConnectionError, Remedy
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +73,22 @@ class HomeAssistantClient:
 
                 if resp.status_code in (401, 403):
                     raise AuthError(
-                        f"HTTP {resp.status_code} — token is missing, wrong, or "
-                        "lacks access.  Check HA_TOKEN (revoke and recreate if needed)."
+                        "Authentication failed: Home Assistant rejected the "
+                        f"access token (HTTP {resp.status_code}).",
+                        details=(
+                            "The token is missing, expired, was revoked, or "
+                            "belongs to a user without access. HHE never "
+                            "retries an authentication failure."
+                        ),
+                        remedies=(
+                            Remedy(
+                                "Create a fresh long-lived access token in Home "
+                                "Assistant under Profile, Security, Long-Lived "
+                                "Access Tokens, then set it:",
+                                '$env:HA_TOKEN = "<your-token>"',
+                            ),
+                        ),
+                        context={"endpoint": path, "status": str(resp.status_code)},
                     )
 
                 if resp.status_code in _RETRYABLE_STATUS:
@@ -117,7 +131,24 @@ class HomeAssistantClient:
 
         raise HAConnectionError(
             f"Failed to reach {path} after {self._max_retries + 1} attempt(s). "
-            f"Last error: {last_exc}"
+            f"Last error: {last_exc}",
+            details=(
+                "Home Assistant did not answer within the configured timeout, "
+                "or the address is not reachable from this machine."
+            ),
+            remedies=(
+                Remedy(
+                    "Check that the configured address is reachable, for "
+                    "example in a browser or with curl:",
+                    f"curl -sS {self._base}/api/",
+                ),
+                Remedy(
+                    "Raise the timeout or the retry count for one run:",
+                    "ha-history-exporter --timeout 300 --max-retries 5 "
+                    "--date yesterday",
+                ),
+            ),
+            context={"url": self._base, "endpoint": path},
         )
 
     @staticmethod

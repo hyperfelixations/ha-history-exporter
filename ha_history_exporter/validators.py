@@ -10,11 +10,11 @@ import json
 import logging
 from pathlib import Path
 
+from .errors import ValidationError
+
 logger = logging.getLogger(__name__)
 
-
-class ValidationError(Exception):
-    """Raised when a file fails validation."""
+__all__ = ["ValidationError", "validate_csv", "validate_jsonl", "validate_parquet"]
 
 
 def validate_jsonl(path: Path, expected_rows: int) -> int:

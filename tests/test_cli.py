@@ -246,7 +246,7 @@ def test_main_handles_authentication_failure(tmp_path, monkeypatch, capsys):
     )
 
     assert result == 1
-    assert "Authentication failed" in capsys.readouterr().err
+    assert "error: synthetic auth failure" in capsys.readouterr().err
 
 
 def test_main_short_circuits_existing_day_before_client(

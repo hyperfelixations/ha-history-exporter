@@ -14,7 +14,7 @@ from typing import List, Optional
 
 import yaml
 
-from .exceptions import ConfigError
+from .errors import ConfigError, CredentialsError, Remedy
 
 _DEFAULT_OUTPUT_DIR = "./data"
 
@@ -157,13 +157,34 @@ def load_config(path: str | Path) -> AppConfig:
     """
     path = Path(path)
     if not path.exists():
-        raise ConfigError(f"Config file not found: {path}")
+        raise ConfigError(
+            f"Config file not found: {path}",
+            details=(
+                "HHE was asked to read this configuration file, but no file "
+                "exists at that location."
+            ),
+            remedies=(
+                Remedy(
+                    "Copy the bundled example next to it and adjust the copy:",
+                    "cp export_config.example.yaml export_config.yaml",
+                ),
+                Remedy(
+                    "Or point at a configuration file that exists:",
+                    "ha-history-exporter --config <path> --date yesterday",
+                ),
+            ),
+            context={"config_file": str(path)},
+        )
 
     try:
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
     except yaml.YAMLError as exc:
-        raise ConfigError(f"Invalid YAML in {path}: {exc}") from exc
+        raise ConfigError(
+            f"Invalid YAML in {path}: {exc}",
+            details="The configuration file exists but could not be parsed as YAML.",
+            context={"config_file": str(path)},
+        ) from exc
 
     cfg = AppConfig()
 
@@ -269,19 +290,46 @@ def load_config(path: str | Path) -> AppConfig:
     ha_token = os.environ.get(cfg.home_assistant.token_env, "").strip()
 
     if not ha_url:
-        raise ConfigError(
-            f"Environment variable '{cfg.home_assistant.url_env}' is not set.\n"
-            "  Set it to your Home Assistant URL (local or external), e.g.:\n"
-            f"    $env:{cfg.home_assistant.url_env} = \"http://homeassistant.local:8123\"\n"
-            "  Or for a Tailscale / external address:\n"
-            f"    $env:{cfg.home_assistant.url_env} = \"http://100.x.x.x:8123\""
+        url_env = cfg.home_assistant.url_env
+        raise CredentialsError(
+            f"Environment variable '{url_env}' is not set.",
+            details=(
+                "HHE reads the Home Assistant base URL from this environment "
+                "variable. Any address this machine can reach works: a local "
+                "hostname, an IP address, a Tailscale address, or an external "
+                "HTTPS endpoint."
+            ),
+            remedies=(
+                Remedy(
+                    "Set it for the current PowerShell session:",
+                    f'$env:{url_env} = "http://homeassistant.local:8123"',
+                ),
+                Remedy(
+                    "Or for the current bash session:",
+                    f'export {url_env}="http://homeassistant.local:8123"',
+                ),
+            ),
         )
     if not ha_token:
-        raise ConfigError(
-            f"Environment variable '{cfg.home_assistant.token_env}' is not set.\n"
-            "  Create a Long-Lived Access Token in HA → Profile → "
-            "Long-Lived Access Tokens, then:\n"
-            f"    $env:{cfg.home_assistant.token_env} = \"<your-token>\""
+        token_env = cfg.home_assistant.token_env
+        raise CredentialsError(
+            f"Environment variable '{token_env}' is not set.",
+            details=(
+                "HHE authenticates with a Home Assistant long-lived access "
+                "token. Create one in Home Assistant under Profile, Security, "
+                "Long-Lived Access Tokens. The token is read from the "
+                "environment only and is never written to a file or a log."
+            ),
+            remedies=(
+                Remedy(
+                    "Set it for the current PowerShell session:",
+                    f'$env:{token_env} = "<your-token>"',
+                ),
+                Remedy(
+                    "Or for the current bash session:",
+                    f'export {token_env}="<your-token>"',
+                ),
+            ),
         )
 
     cfg.ha_url = ha_url.rstrip("/")
