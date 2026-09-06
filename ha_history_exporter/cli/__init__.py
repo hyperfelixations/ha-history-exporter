@@ -23,11 +23,14 @@ from zoneinfo import ZoneInfo  # re-exported: callers build timezones from here
 
 from ..console import render_error
 from ..errors import HHEError, Remedy
-from .commands import export
+from .commands import config_cmd, doctor, export, init
 from .parser import COMMANDS, build_parser, normalize_argv, parse_args
 
 _HANDLERS: dict[str, Callable[[object], int]] = {
+    "config": config_cmd.run,
+    "doctor": doctor.run,
     "export": export.run,
+    "init": init.run,
 }
 
 

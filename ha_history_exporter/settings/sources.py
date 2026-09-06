@@ -137,7 +137,7 @@ def file_entries(path: Path) -> dict[str, Entry]:
 
 # ── environment ───────────────────────────────────────────────────────────────
 
-def _parse_scalar(key: Key, raw: str, source: str) -> Any:
+def parse_scalar(key: Key, raw: str, source: str) -> Any:
     value = raw.strip()
     try:
         if key.type is KeyType.BOOL:
@@ -172,7 +172,7 @@ def env_entries(environ: Mapping[str, str]) -> dict[str, Entry]:
             continue
         raw = environ[name]
         entries[key.path] = Entry(
-            _parse_scalar(key, raw, name), f"env:{name}", name
+            parse_scalar(key, raw, name), f"env:{name}", name
         )
     return entries
 

@@ -13,7 +13,7 @@ from typing import List, Optional, Sequence
 
 from .. import __version__
 
-COMMANDS = ("export",)
+COMMANDS = ("export", "init", "config", "doctor")
 
 _TOP_LEVEL_FLAGS = frozenset({"-h", "--help", "--version", "-V"})
 
@@ -63,7 +63,70 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=EPILOG,
     )
     add_export_arguments(export)
+
+    init = subcommands.add_parser(
+        "init",
+        help="Guided first-time setup.",
+        description="Ask for the few values HHE needs and store them.",
+    )
+    add_init_arguments(init)
+
+    config = subcommands.add_parser(
+        "config",
+        help="Inspect and change the configuration.",
+        description="Read the effective configuration, or change the user file.",
+    )
+    add_config_arguments(config)
+
+    doctor = subcommands.add_parser(
+        "doctor",
+        help="Check the installation and report how to fix problems.",
+        description="Run every self-check and print concrete remedies.",
+    )
+    doctor.add_argument("--config", metavar="FILE",
+                        help="Check exactly this configuration file.")
+    doctor.add_argument("--offline", action="store_true",
+                        help="Skip every check that contacts Home Assistant.")
+
     return parser
+
+
+def add_init_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--force", action="store_true",
+                   help="Overwrite an existing configuration.")
+    p.add_argument("--non-interactive", action="store_true",
+                   help="Ask nothing; take every value from the options.")
+    p.add_argument("--url", metavar="URL", help="Home Assistant base URL.")
+    p.add_argument("--output-dir", metavar="DIR",
+                   help="Directory that receives exports, metadata, and logs.")
+    p.add_argument("--format", metavar="LIST",
+                   help="Comma-separated output formats: jsonl, csv, parquet, none.")
+    p.add_argument("--timezone", metavar="TZ", help="IANA time zone name.")
+
+
+def add_config_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--config", metavar="FILE",
+                   help="Read exactly this configuration file.")
+    actions = p.add_subparsers(dest="config_action", metavar="ACTION")
+    actions.required = True
+
+    get = actions.add_parser("get", help="Print one effective value.")
+    get.add_argument("key", metavar="KEY")
+
+    set_ = actions.add_parser("set", help="Store a value in the user configuration.")
+    set_.add_argument("key", metavar="KEY")
+    set_.add_argument("value", metavar="VALUE", nargs="?",
+                      help="Omit for a secret to be asked for without echo.")
+
+    unset = actions.add_parser("unset", help="Remove a value from the user configuration.")
+    unset.add_argument("key", metavar="KEY")
+
+    listing = actions.add_parser("list", help="Print every effective value.")
+    listing.add_argument("--origin", action="store_true",
+                         help="Also show where each value comes from.")
+
+    actions.add_parser("path", help="Print the files and directories in use.")
+    actions.add_parser("edit", help="Open the user configuration in an editor.")
 
 
 def add_export_arguments(p: argparse.ArgumentParser) -> None:
