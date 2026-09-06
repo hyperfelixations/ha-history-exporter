@@ -354,3 +354,96 @@ def test_main_handles_top_level_failures(
         )
         == expected_code
     )
+
+
+def test_main_runs_without_any_configuration_file(tmp_path, monkeypatch):
+    """A fresh install must work from environment variables alone."""
+    set_synthetic_env(monkeypatch)
+    monkeypatch.setenv("HHE_EXPORT_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("HHE_STORAGE_TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("HHE_REQUESTS_SLEEP_BETWEEN_REQUESTS_SECONDS", "0")
+    monkeypatch.setenv("HHE_REQUESTS_SLEEP_BETWEEN_DAYS_SECONDS", "0")
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    assert cli.main(["--date", "2026-07-28"]) == 0
+    assert (
+        tmp_path
+        / "output"
+        / "exports"
+        / "daily"
+        / "2026"
+        / "07"
+        / "2026-07-28.manifest.json"
+    ).is_file()
+
+
+def test_main_reports_the_resolved_output_directory(tmp_path, monkeypatch, caplog):
+    path = write_config(tmp_path)
+    set_synthetic_env(monkeypatch)
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    with caplog.at_level(logging.INFO):
+        assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "Output directory:" in messages
+    assert str(path) in messages
+
+
+def test_cli_overrides_are_translated_into_configuration_keys():
+    args = cli._parse_args(
+        [
+            "--date",
+            "2026-07-28",
+            "--outdir",
+            "out",
+            "--batch-size",
+            "9",
+            "--timeout",
+            "17",
+            "--no-csv",
+            "--parquet",
+        ]
+    )
+
+    assert cli.cli_overrides(args) == {
+        "export.output_dir": "out",
+        "requests.batch_size_entities": 9,
+        "requests.request_timeout_seconds": 17,
+        "formats.csv": False,
+        "formats.parquet": True,
+    }
+
+
+def test_cli_overrides_stay_empty_when_no_option_is_given():
+    args = cli._parse_args(["--date", "2026-07-28"])
+    assert cli.cli_overrides(args) == {}
+
+
+def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
+    path = write_config(tmp_path)
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + "entity_selection:\n  include_unknown: false\n",
+        encoding="utf-8",
+    )
+    set_synthetic_env(monkeypatch)
+    FakeCliClient.states = [
+        {"entity_id": "sensor.known", "state": "1", "attributes": {}},
+        {"entity_id": "sensor.mystery", "state": "unknown", "attributes": {}},
+    ]
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+
+    instance = FakeCliClient.instances[0]
+    requested = [
+        entity
+        for call in instance.history_calls
+        for entity in call["entity_ids"]
+    ]
+    assert requested == ["sensor.known"]
+
+    snapshots = list((tmp_path / "output" / "metadata").glob("entity_snapshot_*.json"))
+    snapshot = json.loads(snapshots[0].read_text(encoding="utf-8"))
+    assert snapshot["entity_count"] == 2

@@ -4,7 +4,9 @@ home_assistant:
   timezone: Europe/Berlin
 
 export:
-  output_dir: "./data"
+  # Defaults to <your home directory>/ha-history-exports.
+  # Uncomment to send exports, metadata, and logs somewhere else.
+  # output_dir: "D:\\ha-history-archive"
   mode: all_current_entities
   include_current_day: false
   resume: true

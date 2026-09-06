@@ -52,16 +52,35 @@ def build_snapshot(states: List[dict], tz: ZoneInfo) -> dict:
     }
 
 
-def extract_entity_ids(states: List[dict]) -> List[str]:
-    """Return a sorted list of all entity_ids from the /api/states response.
+def extract_entity_ids(
+    states: List[dict],
+    *,
+    include_unknown: bool = True,
+    include_unavailable: bool = True,
+) -> List[str]:
+    """Return a sorted list of entity_ids to request history for.
 
-    Entities with state `unknown` or `unavailable` are deliberately included —
-    they exist in HA and may have historical state changes worth exporting.
+    Entities whose current state is `unknown` or `unavailable` are included by
+    default: they exist in HA and may well have historical state changes worth
+    exporting. Excluding them is opt-in through entity_selection.
+
+    The snapshot itself always keeps every entity — the filter only narrows
+    which entities history is requested for.
     """
-    ids = sorted({s["entity_id"] for s in states if "entity_id" in s})
-    logger.debug(
-        "Extracted %d entity IDs from /api/states.", len(ids)
+    skipped_states = set()
+    if not include_unknown:
+        skipped_states.add("unknown")
+    if not include_unavailable:
+        skipped_states.add("unavailable")
+
+    ids = sorted(
+        {
+            s["entity_id"]
+            for s in states
+            if "entity_id" in s and s.get("state") not in skipped_states
+        }
     )
+    logger.debug("Extracted %d entity IDs from /api/states.", len(ids))
     return ids
 
 

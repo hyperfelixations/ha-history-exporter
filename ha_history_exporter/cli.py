@@ -29,53 +29,28 @@ from pathlib import Path
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from .config import load_config, validate_config
 from .console import render_error
 from .errors import ConfigError, HHEError, Remedy, UsageError
 from .exporter import run_export
+from .settings import load_settings
 from .time_utils import is_day_complete, iter_days, parse_date_arg, today_local
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
-    cfg_path = Path(args.config)
 
-    # ── load config first (needed for log dir path) ───────────────────────────
+    # ── resolve configuration from every source ───────────────────────────────
     try:
-        cfg = load_config(cfg_path)
+        settings = load_settings(
+            explicit_config=args.config,
+            cli_overrides=cli_overrides(args),
+        )
     except ConfigError as exc:
         render_error(exc)
         return exc.exit_code
 
-    # ── CLI overrides ─────────────────────────────────────────────────────────
-    if args.outdir:
-        cfg.export.output_dir = args.outdir
-    if args.timezone:
-        cfg.home_assistant.timezone = args.timezone
-    if args.batch_size is not None:
-        cfg.requests.batch_size_entities = args.batch_size
-    if args.sleep_between_requests is not None:
-        cfg.requests.sleep_between_requests_seconds = args.sleep_between_requests
-    if args.sleep_between_days is not None:
-        cfg.requests.sleep_between_days_seconds = args.sleep_between_days
-    if args.timeout is not None:
-        cfg.requests.request_timeout_seconds = args.timeout
-    if args.max_retries is not None:
-        cfg.requests.max_retries = args.max_retries
-    if args.no_csv:
-        cfg.formats.csv = False
-    if args.jsonl:
-        cfg.formats.jsonl = True
-    if args.parquet:
-        cfg.formats.parquet = True
-    if args.log_level:
-        args.log_level_str = args.log_level  # used below
-
-    try:
-        validate_config(cfg)
-    except ConfigError as exc:
-        render_error(exc)
-        return exc.exit_code
+    cfg = settings.config
+    config_files = ", ".join(str(path) for path in settings.config_files)
 
     try:
         tz = ZoneInfo(cfg.home_assistant.timezone)
@@ -95,7 +70,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "--date yesterday",
                     ),
                 ),
-                context={"config_file": str(cfg_path)},
+                context={"config_file": config_files or "none"},
             )
         )
         return 2
@@ -105,6 +80,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     _configure_logging(log_level, cfg, tz)
 
     logger = logging.getLogger(__name__)
+    logger.info("Output directory: %s", Path(cfg.export.output_dir).resolve())
+    logger.info("Configuration: %s", config_files or "built-in defaults only")
 
     # ── date range ────────────────────────────────────────────────────────────
     try:
@@ -184,7 +161,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 )
                 return 0
 
-            entity_ids = extract_entity_ids(states)
+            entity_ids = extract_entity_ids(
+                states,
+                include_unknown=cfg.entity_selection.include_unknown,
+                include_unavailable=cfg.entity_selection.include_unavailable,
+            )
             entity_count_total = len(entity_ids)
 
             entity_ids, excluded = apply_optional_excludes(
@@ -270,8 +251,8 @@ def _parse_args(argv):
         epilog=__doc__,
     )
     p.add_argument(
-        "--config", default="export_config.yaml", metavar="FILE",
-        help="YAML config file (default: export_config.yaml).",
+        "--config", metavar="FILE",
+        help="Use exactly this YAML config file instead of the discovered ones.",
     )
 
     # Date
@@ -318,6 +299,38 @@ def _parse_args(argv):
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+#: Command-line options that override a configuration key. Switches are listed
+#: separately because argparse cannot distinguish "not given" from "false".
+_VALUE_OVERRIDES = {
+    "outdir": "export.output_dir",
+    "timezone": "home_assistant.timezone",
+    "batch_size": "requests.batch_size_entities",
+    "sleep_between_requests": "requests.sleep_between_requests_seconds",
+    "sleep_between_days": "requests.sleep_between_days_seconds",
+    "timeout": "requests.request_timeout_seconds",
+    "max_retries": "requests.max_retries",
+}
+
+
+def cli_overrides(args) -> dict:
+    """Translate parsed arguments into configuration overrides."""
+    overrides: dict = {}
+    for dest, key_path in _VALUE_OVERRIDES.items():
+        value = getattr(args, dest, None)
+        if value is not None:
+            overrides[key_path] = value
+
+    # Format switches are one-directional by design: --jsonl and --parquet only
+    # enable, --no-csv only disables.
+    if getattr(args, "jsonl", False):
+        overrides["formats.jsonl"] = True
+    if getattr(args, "parquet", False):
+        overrides["formats.parquet"] = True
+    if getattr(args, "no_csv", False):
+        overrides["formats.csv"] = False
+    return overrides
+
 
 def _resolve_date_range(args, tz):
     """Return (start_date, end_date) as date objects."""

@@ -10,7 +10,7 @@ from ha_history_exporter.config import (
     AppConfig,
     ConfigError,
     FormatsConfig,
-    _DEFAULT_OUTPUT_DIR,
+    default_output_dir,
     load_config,
     validate_config,
 )
@@ -78,11 +78,11 @@ def test_load_config_rejects_invalid_yaml(tmp_path, synthetic_ha_environment):
 @pytest.mark.parametrize(
     ("missing", "message"),
     [
-        ("HA_URL", "Environment variable 'HA_URL' is not set"),
-        ("HA_TOKEN", "Environment variable 'HA_TOKEN' is not set"),
+        ("HA_URL", "No Home Assistant URL configured."),
+        ("HA_TOKEN", "No Home Assistant access token configured."),
     ],
 )
-def test_load_config_requires_environment_variables(
+def test_load_config_requires_credentials(
     tmp_path, monkeypatch: pytest.MonkeyPatch, missing, message
 ):
     path = tmp_path / "config.yaml"
@@ -109,9 +109,11 @@ def test_app_config_builds_daily_paths(tmp_path):
     assert cfg.logs_dir == tmp_path / "logs"
 
 
-def test_default_output_directory_is_portable():
-    assert _DEFAULT_OUTPUT_DIR == "./data"
-    assert AppConfig().export.output_dir == "./data"
+def test_default_output_directory_lives_in_the_user_home():
+    """An installed tool must not write next to the current directory."""
+    expected = Path.home() / "ha-history-exports"
+    assert default_output_dir() == expected
+    assert AppConfig().export.output_dir == str(expected)
 
 
 def test_example_config_is_generic_and_loadable(
@@ -124,7 +126,7 @@ def test_example_config_is_generic_and_loadable(
 
     cfg = load_config(example)
 
-    assert cfg.export.output_dir == "./data"
+    assert cfg.export.output_dir == str(default_output_dir())
     assert cfg.formats == FormatsConfig(jsonl=True, csv=False, parquet=False)
     assert cfg.ha_url.endswith(".invalid")
     assert "synthetic-test-token" not in text

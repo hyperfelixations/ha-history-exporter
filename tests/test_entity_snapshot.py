@@ -89,3 +89,40 @@ def test_save_snapshot_writes_atomic_json(tmp_path):
     assert path.name.startswith("entity_snapshot_")
     assert json.loads(path.read_text(encoding="utf-8")) == snapshot
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_extract_entity_ids_includes_unknown_and_unavailable_by_default():
+    assert extract_entity_ids(synthetic_states()) == [
+        "binary_sensor.alpha",
+        "sensor.beta",
+        "sensor.zeta",
+    ]
+
+
+def test_extract_entity_ids_can_skip_unknown_entities():
+    assert extract_entity_ids(synthetic_states(), include_unknown=False) == [
+        "binary_sensor.alpha",
+        "sensor.beta",
+    ]
+
+
+def test_extract_entity_ids_can_skip_unavailable_entities():
+    assert extract_entity_ids(synthetic_states(), include_unavailable=False) == [
+        "sensor.beta",
+        "sensor.zeta",
+    ]
+
+
+def test_extract_entity_ids_can_skip_both():
+    assert extract_entity_ids(
+        synthetic_states(), include_unknown=False, include_unavailable=False
+    ) == ["sensor.beta"]
+
+
+def test_snapshot_stays_complete_even_when_history_selection_is_narrowed():
+    """The snapshot documents every entity; only the request list narrows."""
+    states = synthetic_states()
+    snapshot = build_snapshot(states, BERLIN)
+
+    assert snapshot["entity_count"] == 3
+    assert len(extract_entity_ids(states, include_unknown=False)) == 2

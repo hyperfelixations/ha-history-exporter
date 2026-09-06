@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
   "requests>=2.31.0",
   "PyYAML>=6.0",
+  "platformdirs>=4.2",
   "tzdata>=2024.1",
 ]
 
@@ -42,7 +43,7 @@ Repository = "https://github.com/hyperfelixations/ha-history-exporter"
 Issues = "https://github.com/hyperfelixations/ha-history-exporter/issues"
 
 [tool.setuptools]
-packages = ["ha_history_exporter"]
+packages = ["ha_history_exporter", "ha_history_exporter.settings"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ha_history_exporter.__version__" }
