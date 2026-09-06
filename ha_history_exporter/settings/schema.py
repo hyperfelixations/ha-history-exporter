@@ -51,7 +51,7 @@ def _fail(field_name: str, message: str, *, details: str | None = None) -> Confi
         remedies=(
             Remedy(
                 "Show every effective setting and where it comes from:",
-                "ha-history-exporter config list --origin",
+                "hhe config list --origin",
             ),
         ),
     )

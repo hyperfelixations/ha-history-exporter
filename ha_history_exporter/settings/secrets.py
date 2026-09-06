@@ -51,7 +51,7 @@ def read_token(config_dir: Path | None = None) -> str | None:
             remedies=(
                 Remedy(
                     "Store the token again to rewrite the file:",
-                    "ha-history-exporter config set homeassistant.token",
+                    "hhe config set homeassistant.token",
                 ),
             ),
             context={"credentials_file": str(path)},

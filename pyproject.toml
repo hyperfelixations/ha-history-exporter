@@ -36,6 +36,7 @@ parquet = ["pyarrow>=15.0"]
 
 [project.scripts]
 ha-history-exporter = "ha_history_exporter.cli:main"
+hhe = "ha_history_exporter.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/hyperfelixations/ha-history-exporter"
@@ -43,7 +44,12 @@ Repository = "https://github.com/hyperfelixations/ha-history-exporter"
 Issues = "https://github.com/hyperfelixations/ha-history-exporter/issues"
 
 [tool.setuptools]
-packages = ["ha_history_exporter", "ha_history_exporter.settings"]
+packages = [
+  "ha_history_exporter",
+  "ha_history_exporter.cli",
+  "ha_history_exporter.cli.commands",
+  "ha_history_exporter.settings",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "ha_history_exporter.__version__" }

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from ha_history_exporter import cli, ha_client
+from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.exceptions import AuthError
 from tests.helpers import FakeCliClient
 
@@ -282,7 +283,7 @@ def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(cli, "run_export", fake_run_export)
+    monkeypatch.setattr(export_command, "run_export", fake_run_export)
     outdir = tmp_path / "override-output"
 
     result = cli.main(

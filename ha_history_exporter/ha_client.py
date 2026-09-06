@@ -144,7 +144,7 @@ class HomeAssistantClient:
                 ),
                 Remedy(
                     "Raise the timeout or the retry count for one run:",
-                    "ha-history-exporter --timeout 300 --max-retries 5 "
+                    "hhe export --timeout 300 --max-retries 5 "
                     "--date yesterday",
                 ),
             ),

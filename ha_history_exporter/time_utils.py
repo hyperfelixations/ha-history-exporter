@@ -56,6 +56,21 @@ def to_utc(dt: datetime) -> datetime:
     return dt.astimezone(_UTC)
 
 
+def last_n_complete_days(n: int, tz: ZoneInfo) -> tuple[date, date]:
+    """Return (start, end) covering the *n* most recent fully elapsed local days.
+
+    ``n = 1`` is yesterday; ``n = 10`` is the ten days ending yesterday. The
+    still incomplete current day is never part of the range.
+
+    Raises:
+        ValueError if *n* is smaller than 1.
+    """
+    if n < 1:
+        raise ValueError("--last-days must be 1 or greater.")
+    end = latest_complete_day(tz)
+    return end - timedelta(days=n - 1), end
+
+
 def iter_days(start: date, end: date) -> Iterator[date]:
     """Yield calendar dates from *start* to *end* inclusive."""
     current = start

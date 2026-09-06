@@ -97,11 +97,11 @@ def resolve(
             remedies=(
                 Remedy(
                     "Create the user configuration with the guided setup:",
-                    "ha-history-exporter init",
+                    "hhe init",
                 ),
                 Remedy(
                     "Or point at a configuration file that exists:",
-                    "ha-history-exporter --config <path> --date yesterday",
+                    "hhe export --config <path> --date yesterday",
                 ),
             ),
             context={"config_file": str(explicit)},
@@ -244,10 +244,10 @@ def _missing_url(url_env: str) -> CredentialsError:
             "address, a Tailscale address, or an external HTTPS endpoint."
         ),
         remedies=(
-            Remedy("Run the guided setup:", "ha-history-exporter init"),
+            Remedy("Run the guided setup:", "hhe init"),
             Remedy(
                 "Or store the URL directly:",
-                "ha-history-exporter config set homeassistant.url "
+                "hhe config set homeassistant.url "
                 "http://homeassistant.local:8123",
             ),
             Remedy(
@@ -270,10 +270,10 @@ def _missing_token(token_env: str) -> CredentialsError:
             "manifest, or an export."
         ),
         remedies=(
-            Remedy("Run the guided setup:", "ha-history-exporter init"),
+            Remedy("Run the guided setup:", "hhe init"),
             Remedy(
                 "Or store the token now (the input stays hidden):",
-                "ha-history-exporter config set homeassistant.token",
+                "hhe config set homeassistant.token",
             ),
             Remedy(
                 "Or set it for the current shell session only:",
