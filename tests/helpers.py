@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, ClassVar, Iterable
 
 import requests
 
@@ -83,6 +83,58 @@ class FakeHomeAssistantClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeCliClient:
+    """In-memory stand-in for HomeAssistantClient at the CLI boundary.
+
+    Class attributes configure the responses; ``reset()`` restores the defaults
+    and is called by an autouse fixture before every test.
+    """
+
+    instances: ClassVar[list["FakeCliClient"]] = []
+    check_error: ClassVar[Exception | None] = None
+    states: ClassVar[list[dict[str, Any]]] = []
+    history_payload: ClassVar[list[list[dict[str, Any]]]] = []
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.instances = []
+        cls.check_error = None
+        cls.states = [
+            {
+                "entity_id": "sensor.synthetic",
+                "state": "1",
+                "attributes": {"friendly_name": "Synthetic"},
+            }
+        ]
+        cls.history_payload = [[state_row("sensor.synthetic", "1")]]
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.total_requests = 0
+        self.total_retries = 0
+        self.history_calls: list[dict[str, Any]] = []
+        self.closed = False
+        type(self).instances.append(self)
+
+    def __enter__(self) -> "FakeCliClient":
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.closed = True
+
+    def check_api(self) -> None:
+        if self.check_error is not None:
+            raise self.check_error
+
+    def get_states(self) -> list[dict[str, Any]]:
+        return list(type(self).states)
+
+    def get_history(self, **kwargs: Any) -> list[list[dict[str, Any]]]:
+        self.history_calls.append(kwargs)
+        self.total_requests += 1
+        return type(self).history_payload
 
 
 @dataclass

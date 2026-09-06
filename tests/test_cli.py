@@ -9,7 +9,7 @@ import pytest
 
 from ha_history_exporter import cli, ha_client
 from ha_history_exporter.exceptions import AuthError
-from tests.helpers import state_row
+from tests.helpers import FakeCliClient
 
 
 def write_config(tmp_path: Path) -> Path:
@@ -40,65 +40,6 @@ storage:
         encoding="utf-8",
     )
     return path
-
-
-class FakeCliClient:
-    instances = []
-    check_error = None
-
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        self.total_requests = 0
-        self.total_retries = 0
-        self.history_calls = []
-        self.closed = False
-        type(self).instances.append(self)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.closed = True
-
-    def check_api(self):
-        if self.check_error is not None:
-            raise self.check_error
-
-    def get_states(self):
-        return [
-            {
-                "entity_id": "sensor.synthetic",
-                "state": "1",
-                "attributes": {"friendly_name": "Synthetic"},
-            }
-        ]
-
-    def get_history(self, **kwargs):
-        self.history_calls.append(kwargs)
-        self.total_requests += 1
-        return [[state_row("sensor.synthetic", "1")]]
-
-
-@pytest.fixture(autouse=True)
-def reset_fake_client():
-    FakeCliClient.instances = []
-    FakeCliClient.check_error = None
-
-
-@pytest.fixture(autouse=True)
-def restore_root_logger():
-    """Keep logging configured by one CLI invocation out of later tests."""
-    root_logger = logging.getLogger()
-    original_handlers = list(root_logger.handlers)
-    original_level = root_logger.level
-
-    yield
-
-    for handler in list(root_logger.handlers):
-        if handler not in original_handlers:
-            root_logger.removeHandler(handler)
-            handler.close()
-    root_logger.setLevel(original_level)
 
 
 def set_synthetic_env(monkeypatch):
