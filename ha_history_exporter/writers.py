@@ -175,16 +175,6 @@ def flatten_payload(payload: list) -> list[dict]:
     return result
 
 
-def cleanup_tmp(tmp_dir: Path) -> int:
-    """Remove leftover *.tmp files from a previous aborted run.  Returns count."""
-    removed = 0
-    if tmp_dir.exists():
-        for f in tmp_dir.glob("*.tmp"):
-            f.unlink(missing_ok=True)
-            removed += 1
-    return removed
-
-
 # ── Parquet post-processing ───────────────────────────────────────────────────
 
 def _parquet_schema():

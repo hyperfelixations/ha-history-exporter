@@ -18,13 +18,15 @@ BASE_URL = "http://home-assistant.invalid"
 TOKEN = "synthetic-test-token"
 
 
-def make_client(*, retries=0, backoff=None):
+def make_client(*, retries=0, backoff=None, sleep=None):
+    """Build a client whose retry pauses are recorded instead of slept."""
     return HomeAssistantClient(
         BASE_URL,
         TOKEN,
         timeout=3,
         max_retries=retries,
         backoff_seconds=backoff or [0.1, 0.2],
+        sleep=sleep if sleep is not None else (lambda _: None),
     )
 
 
@@ -124,10 +126,9 @@ def test_get_history_builds_expected_path_and_options(monkeypatch):
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_auth_errors_abort_without_retry(monkeypatch, status):
-    client = make_client(retries=3)
+    sleeps: list[float] = []
+    client = make_client(retries=3, sleep=sleeps.append)
     sequence = install_get(monkeypatch, client, [FakeResponse(status_code=status)])
-    sleeps = []
-    monkeypatch.setattr(ha_client.time, "sleep", sleeps.append)
 
     with pytest.raises(AuthError, match=f"HTTP {status}"):
         client.check_api()
@@ -138,7 +139,8 @@ def test_auth_errors_abort_without_retry(monkeypatch, status):
 
 
 def test_retryable_status_retries_then_succeeds(monkeypatch):
-    client = make_client(retries=2, backoff=[0.25, 0.5])
+    sleeps: list[float] = []
+    client = make_client(retries=2, backoff=[0.25, 0.5], sleep=sleeps.append)
     sequence = install_get(
         monkeypatch,
         client,
@@ -147,8 +149,6 @@ def test_retryable_status_retries_then_succeeds(monkeypatch):
             FakeResponse(payload={"message": "API running."}),
         ],
     )
-    sleeps = []
-    monkeypatch.setattr(ha_client.time, "sleep", sleeps.append)
 
     client.check_api()
 
@@ -161,7 +161,6 @@ def test_retryable_status_retries_then_succeeds(monkeypatch):
 def test_network_timeout_exhaustion_raises_connection_error(monkeypatch):
     client = make_client(retries=1, backoff=[0])
     sequence = install_get(monkeypatch, client, [timeout_error(), timeout_error()])
-    monkeypatch.setattr(ha_client.time, "sleep", lambda _: None)
 
     with pytest.raises(HAConnectionError, match="after 2 attempt"):
         client.check_api()
@@ -178,10 +177,37 @@ def test_non_retryable_http_error_is_immediate(monkeypatch):
         [FakeResponse(status_code=400, text="synthetic bad request")],
     )
 
-    with pytest.raises(HAAPIError, match="synthetic bad request"):
+    with pytest.raises(HAAPIError, match="HTTP 400"):
         client.check_api()
 
     assert len(sequence.calls) == 1
+
+
+def test_http_error_never_exposes_the_response_body(monkeypatch, caplog):
+    """A response body may hold private content and must not be reported."""
+    import logging
+
+    client = make_client(retries=0)
+    install_get(
+        monkeypatch,
+        client,
+        [FakeResponse(status_code=400, text="synthetic-private-body-marker")],
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(HAAPIError) as exc:
+            client.check_api()
+
+    rendered = " ".join(
+        [
+            exc.value.summary,
+            exc.value.details or "",
+            *exc.value.context.values(),
+            *(remedy.description for remedy in exc.value.remedies),
+            caplog.text,
+        ]
+    )
+    assert "synthetic-private-body-marker" not in rendered
 
 
 def test_context_manager_closes_session(monkeypatch):
@@ -205,7 +231,6 @@ def test_requests_connection_error_is_retried(monkeypatch):
             FakeResponse(payload={"message": "API running."}),
         ],
     )
-    monkeypatch.setattr(ha_client.time, "sleep", lambda _: None)
 
     client.check_api()
 
@@ -256,3 +281,61 @@ def test_history_rejects_non_object_state(monkeypatch):
             datetime(2026, 7, 29, tzinfo=UTC),
             ["sensor.one"],
         )
+
+
+def test_retry_backoff_follows_the_configured_schedule(monkeypatch):
+    """Retry timing is injectable, so the schedule is asserted without waiting."""
+    waits: list[float] = []
+    client = ha_client.HomeAssistantClient(
+        url="http://home-assistant.invalid",
+        token="synthetic-test-token",
+        max_retries=3,
+        backoff_seconds=[2, 5, 15],
+        sleep=waits.append,
+    )
+    install_get(
+        monkeypatch,
+        client,
+        [FakeResponse(status_code=503) for _ in range(4)],
+    )
+
+    with pytest.raises(HAConnectionError):
+        client.check_api()
+
+    assert waits == [2, 5, 15]
+    assert client.total_retries == 3
+
+
+def test_backoff_schedule_repeats_its_last_value(monkeypatch):
+    waits: list[float] = []
+    client = ha_client.HomeAssistantClient(
+        url="http://home-assistant.invalid",
+        token="synthetic-test-token",
+        max_retries=3,
+        backoff_seconds=[1],
+        sleep=waits.append,
+    )
+    install_get(
+        monkeypatch,
+        client,
+        [FakeResponse(status_code=500) for _ in range(4)],
+    )
+
+    with pytest.raises(HAConnectionError):
+        client.check_api()
+
+    assert waits == [1, 1, 1]
+
+
+def test_an_injected_session_is_used(monkeypatch):
+    import requests
+
+    session = requests.Session()
+    client = ha_client.HomeAssistantClient(
+        url="http://home-assistant.invalid",
+        token="synthetic-test-token",
+        session=session,
+    )
+
+    assert client._session is session
+    assert session.headers["Authorization"].startswith("Bearer ")

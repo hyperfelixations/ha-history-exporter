@@ -54,22 +54,6 @@ def test_flatten_payload_ignores_non_list_entries():
     assert writers.flatten_payload(payload) == [first, second]
 
 
-def test_cleanup_tmp_removes_only_top_level_tmp_files(tmp_path):
-    first = tmp_path / "first.tmp"
-    keep = tmp_path / "keep.jsonl"
-    nested = tmp_path / "nested"
-    nested.mkdir()
-    nested_tmp = nested / "nested.tmp"
-    first.write_text("temporary", encoding="utf-8")
-    keep.write_text("keep", encoding="utf-8")
-    nested_tmp.write_text("nested", encoding="utf-8")
-
-    assert writers.cleanup_tmp(tmp_path) == 1
-    assert not first.exists()
-    assert keep.exists()
-    assert nested_tmp.exists()
-
-
 def test_atomic_replace_creates_parent_and_replaces_destination(tmp_path):
     src = tmp_path / "source.tmp"
     dst = tmp_path / "nested" / "final.txt"

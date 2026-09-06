@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime
-from typing import Any, List
+from typing import Any, Callable, List
 
 import requests
 
@@ -42,12 +42,16 @@ class HomeAssistantClient:
         timeout: int = 120,
         max_retries: int = 3,
         backoff_seconds: List[float] | None = None,
+        session: requests.Session | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._base = url.rstrip("/")
         self._timeout = timeout
         self._max_retries = max_retries
         self._backoff = backoff_seconds or [2, 5, 15]
-        self._session = requests.Session()
+        # Injectable so retry timing is deterministic in tests.
+        self._sleep = sleep
+        self._session = session if session is not None else requests.Session()
         # Token only in the header, never in URLs or logs.
         self._session.headers.update(
             {
@@ -102,12 +106,19 @@ class HomeAssistantClient:
                     last_exc = HAAPIError(f"HTTP {resp.status_code}")
                     if attempt < self._max_retries:
                         self.total_retries += 1
-                        time.sleep(self._backoff[min(attempt, len(self._backoff) - 1)])
+                        self._sleep(self._backoff[min(attempt, len(self._backoff) - 1)])
                     continue
 
                 if not resp.ok:
+                    # The response body may carry private content; only the
+                    # status and the endpoint are safe to report or persist.
                     raise HAAPIError(
-                        f"HTTP {resp.status_code} from {path}: {resp.text[:300]}"
+                        f"HTTP {resp.status_code} from {path}.",
+                        details=(
+                            "Home Assistant rejected the request. The response "
+                            "body is deliberately not shown, logged, or stored."
+                        ),
+                        context={"endpoint": path, "status": str(resp.status_code)},
                     )
 
                 return resp
@@ -125,7 +136,7 @@ class HomeAssistantClient:
                 last_exc = exc
                 if attempt < self._max_retries:
                     self.total_retries += 1
-                    time.sleep(self._backoff[min(attempt, len(self._backoff) - 1)])
+                    self._sleep(self._backoff[min(attempt, len(self._backoff) - 1)])
             except HAAPIError:
                 raise
 

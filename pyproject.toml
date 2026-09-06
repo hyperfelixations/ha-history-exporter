@@ -48,6 +48,7 @@ packages = [
   "ha_history_exporter",
   "ha_history_exporter.cli",
   "ha_history_exporter.cli.commands",
+  "ha_history_exporter.runtime",
   "ha_history_exporter.settings",
 ]
 

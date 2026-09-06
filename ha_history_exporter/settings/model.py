@@ -53,7 +53,7 @@ class FormatsConfig:
 @dataclass
 class StorageConfig:
     use_temp_dir: bool = True
-    temp_dir: str = r"%LOCALAPPDATA%\ha_history_export_tmp"
+    temp_dir: str = field(default_factory=lambda: str(paths.default_temp_root()))
     cloud_storage_retry_count: int = 5
     cloud_storage_retry_sleep_seconds: float = 2.0
 

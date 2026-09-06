@@ -110,14 +110,21 @@ def apply_optional_excludes(
     return result, excluded
 
 
-def save_snapshot(snapshot: dict, metadata_dir: Path) -> Path:
-    """Write the entity snapshot to metadata_dir/entity_snapshot_<ts>.json."""
+def save_snapshot(
+    snapshot: dict, metadata_dir: Path, run_id: str | None = None
+) -> Path:
+    """Write the entity snapshot to metadata_dir/entity_snapshot_<ts>[_<run>].json.
+
+    Two runs within the same second would otherwise share a filename; the run
+    identifier keeps them apart. The glob pattern stays entity_snapshot_*.json.
+    """
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     ts = snapshot["created_at"].replace(":", "").replace("+", "").replace("-", "")[:15]
-    filename = f"entity_snapshot_{ts}.json"
+    suffix = f"_{run_id}" if run_id else ""
+    filename = f"entity_snapshot_{ts}{suffix}.json"
     path = metadata_dir / filename
-    tmp = path.with_suffix(".json.tmp")
+    tmp = path.with_name(path.name + ".tmp")
 
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(snapshot, f, indent=2, ensure_ascii=False)

@@ -22,6 +22,7 @@ from ...entity_snapshot import (
 from ...errors import ConfigError, Remedy, UsageError
 from ...exporter import run_export
 from ...planner import build_plan
+from ...runtime.workspace import new_run_id
 from ...settings import load_settings
 from ...time_utils import last_n_complete_days, parse_date_arg
 
@@ -129,7 +130,7 @@ def run(args) -> int:
         states = client.get_states()
 
         snapshot = build_snapshot(states, tz)
-        save_snapshot(snapshot, cfg.metadata_dir)
+        save_snapshot(snapshot, cfg.metadata_dir, run_id=new_run_id())
 
         if cfg.snapshot_only:
             logger.info(

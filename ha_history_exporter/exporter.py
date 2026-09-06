@@ -1,17 +1,18 @@
 """Core export orchestrator.
 
-For each day in the export plan:
-  1. Build temp file paths (outside cloud-storage to avoid sync conflicts).
-  2. Stream state objects from HA history into JSONL (and optionally CSV).
-     State objects are written line-by-line — no in-memory accumulation.
-  3. After all batches: validate temp files, then atomically replace to final.
-  4. Write / update the day manifest.
-  5. Append a line to the run log (metadata/export_runs.jsonl).
+One run owns one working directory and one lock on the output directory; see
+:mod:`ha_history_exporter.runtime.workspace`. For each day in the export plan:
+  1. Stream state objects from HA history into the working directory, line by
+     line — no in-memory accumulation.
+  2. After all batches: validate, convert to Parquet if requested, validate
+     again, then promote the enabled formats to their final paths.
+  3. Write / update the day manifest.
+  4. Append a line to the run log (metadata/export_runs.jsonl).
 
 Recovery:
-  - If the script is interrupted mid-day, temp files remain.
-  - On the next run, the manifest has status != "ok", so the day is re-exported.
-  - Temp files are cleaned up at the start of each day export.
+  - An interrupted run leaves its working directory behind; a later run removes
+    it once it is older than the staleness threshold.
+  - The manifest then has status != "ok", so the day is exported again.
 """
 
 from __future__ import annotations
@@ -21,18 +22,18 @@ import logging
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 from zoneinfo import ZoneInfo
 
-from . import entity_snapshot as esnap
 from . import manifest as mf
 from . import writers
 from .config import AppConfig
-from .exceptions import AuthError, ConfigError
+from .errors import AuthError, ConfigError, Remedy
 from .ha_client import HomeAssistantClient
 from .planner import ExportPlan
+from .runtime.workspace import Workspace, open_workspace
 from .time_utils import format_iso, local_day_bounds, local_offset_str, to_utc
-from .validators import ValidationError, validate_csv, validate_jsonl, validate_parquet
+from .validators import validate_csv, validate_jsonl, validate_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def run_export(
     client: HomeAssistantClient,
     tz: ZoneInfo,
     dry_run: bool = False,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> int:
     """Execute the export plan.
 
@@ -56,6 +58,7 @@ def run_export(
         client:            Authenticated HA REST client.
         tz:                Local timezone.
         dry_run:           If True, only print the plan — make no history calls.
+        sleep:             Pause function; injectable so tests stay instant.
 
     Returns:
         0 on full success, 1 if any day had errors.
@@ -80,18 +83,40 @@ def run_export(
                 "  Install it with:  pip install pyarrow>=15.0"
             )
 
-    any_error = False
     days = plan.days_to_export
 
     if not days:
         logger.info("Nothing to export.")
         return 0
 
-    # Clean up any leftover tmp files from previous interrupted runs.
-    tmp_dir = cfg.resolved_temp_dir
-    removed = writers.cleanup_tmp(tmp_dir)
-    if removed:
-        logger.info("Removed %d leftover temp file(s) from previous run.", removed)
+    workspace = open_workspace(cfg)
+    logger.debug("Run %s started.", workspace.run_id)
+    try:
+        return _run_days(
+            cfg=cfg,
+            days=days,
+            entity_ids=entity_ids,
+            entity_count_total=entity_count_total,
+            client=client,
+            tz=tz,
+            workspace=workspace,
+            sleep=sleep,
+        )
+    finally:
+        workspace.close()
+
+
+def _run_days(
+    cfg: AppConfig,
+    days: List[date],
+    entity_ids: List[str],
+    entity_count_total: int,
+    client: HomeAssistantClient,
+    tz: ZoneInfo,
+    workspace: Workspace,
+    sleep: Callable[[float], None],
+) -> int:
+    any_error = False
 
     for day_idx, day in enumerate(days):
         start_dt, end_dt = local_day_bounds(day, tz)
@@ -152,6 +177,8 @@ def run_export(
                 client=client,
                 manifest=m,
                 tz=tz,
+                workspace=workspace,
+                sleep=sleep,
             )
             m.mark_finished(tz, status="ok")
             logger.info(
@@ -181,7 +208,7 @@ def run_export(
                 "Sleeping %.1f s between days …",
                 cfg.requests.sleep_between_days_seconds,
             )
-            time.sleep(cfg.requests.sleep_between_days_seconds)
+            sleep(cfg.requests.sleep_between_days_seconds)
 
     return 1 if any_error else 0
 
@@ -198,20 +225,22 @@ def _export_day(
     client: HomeAssistantClient,
     manifest: mf.DayManifest,
     tz: ZoneInfo,
+    workspace: Workspace,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """Stream history for all entities on one day into JSONL (and CSV)."""
-    tmp_dir = cfg.resolved_temp_dir
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = workspace.work_dir
+    work_dir.mkdir(parents=True, exist_ok=True)
 
-    tmp_jsonl   = tmp_dir / f"{day_str}.jsonl.tmp"
-    tmp_csv     = tmp_dir / f"{day_str}.csv.tmp"
-    tmp_parquet = tmp_dir / f"{day_str}.parquet.tmp"
+    tmp_jsonl   = work_dir / f"{day_str}.jsonl"
+    tmp_csv     = work_dir / f"{day_str}.csv"
+    tmp_parquet = work_dir / f"{day_str}.parquet"
 
     final_jsonl   = cfg.day_file(day, "jsonl")
     final_csv     = cfg.day_file(day, "csv")
     final_parquet = cfg.day_file(day, "parquet")
 
-    # Remove any leftover tmp files from previous aborted attempt for this day.
+    # A retried day within the same run must not see the previous attempt.
     tmp_jsonl.unlink(missing_ok=True)
     tmp_csv.unlink(missing_ok=True)
     tmp_parquet.unlink(missing_ok=True)
@@ -266,7 +295,7 @@ def _export_day(
                 manifest.failed_request_count += 1
                 # Continue with remaining batches — day will be marked failed at end.
                 if batch_idx < total_batches:
-                    time.sleep(cfg.requests.sleep_between_requests_seconds)
+                    sleep(cfg.requests.sleep_between_requests_seconds)
                 continue
 
             # Flatten [[state,...],[state,...]] → [state, state, ...]
@@ -288,7 +317,7 @@ def _export_day(
             state_count += len(rows)
 
             if batch_idx < total_batches:
-                time.sleep(cfg.requests.sleep_between_requests_seconds)
+                sleep(cfg.requests.sleep_between_requests_seconds)
 
     # Update client retries counter in manifest.
     manifest.retried_request_count = retried_this_day
@@ -322,14 +351,14 @@ def _export_day(
     # disabled as a final artifact.
     written_files: list[str] = []
     if cfg.formats.jsonl:
-        writers.atomic_replace(
+        workspace.promote(
             tmp_jsonl, final_jsonl,
             cfg.storage.cloud_storage_retry_count,
             cfg.storage.cloud_storage_retry_sleep_seconds,
         )
         written_files.append(final_jsonl.name)
     if cfg.formats.csv:
-        writers.atomic_replace(
+        workspace.promote(
             tmp_csv, final_csv,
             cfg.storage.cloud_storage_retry_count,
             cfg.storage.cloud_storage_retry_sleep_seconds,
@@ -339,7 +368,7 @@ def _export_day(
         tmp_csv.unlink(missing_ok=True)
 
     if cfg.formats.parquet:
-        writers.atomic_replace(
+        workspace.promote(
             tmp_parquet, final_parquet,
             cfg.storage.cloud_storage_retry_count,
             cfg.storage.cloud_storage_retry_sleep_seconds,

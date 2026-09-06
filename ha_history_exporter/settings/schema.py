@@ -304,7 +304,7 @@ KEYS: tuple[Key, ...] = (
     Key(
         "storage.temp_dir",
         KeyType.PATH,
-        r"%LOCALAPPDATA%\ha_history_export_tmp",
+        None,  # resolved at load time to paths.default_temp_root()
         "Working directory for temporary export files.",
         text,
     ),
@@ -413,10 +413,18 @@ SECTIONS: tuple[str, ...] = tuple(dict.fromkeys(key.section for key in KEYS))
 KNOWN_SECTIONS = frozenset(SECTIONS)
 
 
+#: Defaults that depend on the platform and are therefore resolved at load time.
+_DEFERRED_DEFAULTS = {
+    "export.output_dir": paths.default_output_dir,
+    "storage.temp_dir": paths.default_temp_root,
+}
+
+
 def default_value(key: Key) -> Any:
-    """Return the effective default, resolving the deferred output directory."""
-    if key.path == "export.output_dir":
-        return str(paths.default_output_dir())
+    """Return the effective default, resolving platform-dependent paths."""
+    deferred = _DEFERRED_DEFAULTS.get(key.path)
+    if deferred is not None:
+        return str(deferred())
     return key.default
 
 

@@ -215,11 +215,12 @@ def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_pat
     assert "1 batch(es) failed" in day_manifest["error"]
 
 
-def test_run_export_removes_leftover_temp_files(tmp_path):
+def test_run_export_leaves_foreign_temp_files_alone(tmp_path):
+    """Cleanup is run-isolated: a parallel run's files must survive."""
     cfg = make_config(tmp_path, parquet=False)
     cfg.resolved_temp_dir.mkdir(parents=True)
-    leftover = cfg.resolved_temp_dir / "old.tmp"
-    leftover.write_text("stale", encoding="utf-8")
+    foreign = cfg.resolved_temp_dir / "old.tmp"
+    foreign.write_text("belongs to something else", encoding="utf-8")
     client = FakeHomeAssistantClient([[[state_row()]]])
 
     assert (
@@ -233,7 +234,27 @@ def test_run_export_removes_leftover_temp_files(tmp_path):
         )
         == 0
     )
-    assert not leftover.exists()
+    assert foreign.read_text(encoding="utf-8") == "belongs to something else"
+
+
+def test_run_export_removes_its_own_working_directory(tmp_path):
+    cfg = make_config(tmp_path, parquet=False)
+    client = FakeHomeAssistantClient([[[state_row()]]])
+
+    assert (
+        exporter.run_export(
+            cfg,
+            make_export_plan(DAY),
+            ["sensor.test_temperature"],
+            1,
+            client,
+            BERLIN,
+        )
+        == 0
+    )
+
+    assert list(cfg.resolved_temp_dir.glob("run-*")) == []
+    assert not (cfg.day_dir(DAY).parents[3] / ".hhe.lock").exists()
 
 
 def test_chunks_preserve_order_and_handle_empty_list():
