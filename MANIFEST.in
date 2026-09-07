@@ -8,4 +8,5 @@ include config.example.yaml
 include requirements.txt
 include requirements-dev.txt
 recursive-include tests *.py *.md
+recursive-include tests/golden *.jsonl *.csv *.json
 global-exclude __pycache__/* *.py[cod]

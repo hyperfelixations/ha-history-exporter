@@ -1,0 +1,22 @@
+[
+  {
+    "day": "2026-10-24",
+    "status": "ok",
+    "started_at": null,
+    "finished_at": null,
+    "state_object_count": 5,
+    "entity_count_requested": 5,
+    "entity_count_with_history": 4,
+    "duration_seconds": null
+  },
+  {
+    "day": "2026-10-25",
+    "status": "ok",
+    "started_at": null,
+    "finished_at": null,
+    "state_object_count": 4,
+    "entity_count_requested": 5,
+    "entity_count_with_history": 3,
+    "duration_seconds": null
+  }
+]

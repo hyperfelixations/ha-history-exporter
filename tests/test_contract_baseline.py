@@ -1,14 +1,15 @@
-"""Characterization tests for the contract that must survive refactoring.
+"""Characterization tests for the command-line surface of version 1.3.2.
 
-These tests pin the user-visible behaviour of version 1.3.2: the legacy flag
-surface, the invocation forms, the output layout, the manifest field set, the
-row shapes, and the exit codes. They assert the contract rather than the
-internals, so a module may move as long as the observable behaviour does not.
+These pin the flag surface, the invocation forms, and the exit codes exactly as
+they are today, so that no refactoring changes them by accident.
+
+The *result* of an export - directory layout, file names, row shapes, manifest
+fields, Parquet schema - is a separate and stricter contract. It lives in
+tests/test_output_contract.py, pinned byte-for-byte against golden fixtures.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 
@@ -44,54 +45,6 @@ LEGACY_VALUE_DESTS = (
     "max_retries",
     "log_level",
 )
-
-MANIFEST_FIELDS = {
-    "schema_version",
-    "status",
-    "source",
-    "date",
-    "timezone",
-    "start_local",
-    "end_local",
-    "start_utc",
-    "end_utc",
-    "export_started_at",
-    "export_finished_at",
-    "duration_seconds",
-    "entity_count_current",
-    "entity_count_requested",
-    "entity_count_with_history",
-    "entity_count_zero_history",
-    "state_object_count",
-    "batch_size_entities",
-    "request_count",
-    "failed_request_count",
-    "retried_request_count",
-    "history_request_options",
-    "output_files",
-    "zero_history_entities",
-    "failed_batches",
-    "skipped_reason",
-    "error",
-    "script_version",
-}
-
-JSONL_FIELDS = [
-    "entity_id",
-    "state",
-    "last_changed",
-    "last_updated",
-    "attributes",
-    "local_offset",
-]
-CSV_HEADER = [
-    "entity_id",
-    "state",
-    "last_changed",
-    "last_updated",
-    "attributes_json",
-    "local_offset",
-]
 
 ALL_FORMATS = "jsonl: true\n  csv: true\n  parquet: true"
 JSONL_AND_CSV = "jsonl: true\n  csv: true\n  parquet: false"
@@ -236,53 +189,6 @@ def test_output_layout_is_unchanged(tmp_path, monkeypatch):
     assert (output / "metadata" / "export_runs.jsonl").is_file()
     assert list((output / "metadata").glob("entity_snapshot_*.json"))
     assert list((output / "logs").glob("ha_history_export_*.log"))
-
-
-def test_manifest_field_set_is_unchanged(tmp_path, monkeypatch):
-    path = write_config(tmp_path)
-    set_synthetic_env(monkeypatch)
-    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
-
-    manifest = json.loads(
-        (day_dir(tmp_path) / f"{DAY}.manifest.json").read_text(encoding="utf-8")
-    )
-    assert set(manifest) == MANIFEST_FIELDS
-    assert manifest["schema_version"] == "1.3"
-    assert manifest["source"] == "home_assistant_rest_history"
-    assert manifest["date"] == DAY
-    # Read by the internal data-analysis documentation; keys must stay stable.
-    assert set(manifest["output_files"]) == {"jsonl", "csv", "parquet"}
-    assert set(manifest["history_request_options"]) == {
-        "minimal_response",
-        "no_attributes",
-        "significant_changes_only",
-    }
-
-
-def test_jsonl_and_csv_row_shape_is_unchanged(tmp_path, monkeypatch):
-    path = write_config(tmp_path)
-    set_synthetic_env(monkeypatch)
-    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
-
-    lines = (
-        (day_dir(tmp_path) / f"{DAY}.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    )
-    row = json.loads(lines[0])
-    assert list(row) == JSONL_FIELDS
-    assert row["last_changed"].endswith("+00:00")
-    assert row["local_offset"] == "+02:00"
-
-    csv_path = day_dir(tmp_path) / f"{DAY}.csv"
-    with csv_path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.reader(handle)
-        assert next(reader) == CSV_HEADER
-        assert len(next(reader)) == len(CSV_HEADER)
 
 
 def test_snapshot_only_contract_is_unchanged(tmp_path, monkeypatch):

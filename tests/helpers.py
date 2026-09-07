@@ -36,6 +36,15 @@ def make_config(
     return cfg
 
 
+def day_path(cfg: AppConfig, day: date, suffix: str) -> Path:
+    """Where one day's output file goes.
+
+    Single adaptation point for the frozen output contract: tests state the
+    expected path, this function knows which object currently builds it.
+    """
+    return cfg.day_file(day, suffix)
+
+
 def make_export_plan(day: date) -> ExportPlan:
     return ExportPlan(
         requested_start=day,

@@ -1,0 +1,5 @@
+entity_id,state,last_changed,last_updated,attributes_json,local_offset
+sensor.kitchen_temperature,19.5,2026-10-24T23:30:00+00:00,2026-10-24T23:30:00+00:00,"{""friendly_name"": ""Küche Temperatur — über dem Herd"", ""unit_of_measurement"": ""°C"", ""device_class"": ""temperature""}",+02:00
+sensor.kitchen_temperature,18.0,2026-10-25T01:30:00+00:00,2026-10-25T01:30:00+00:00,"{""friendly_name"": ""Küche Temperatur — über dem Herd"", ""unit_of_measurement"": ""°C"", ""device_class"": ""temperature""}",+01:00
+binary_sensor.front_door,off,2026-10-25T00:59:59+00:00,2026-10-25T01:00:01+00:00,"{""friendly_name"": ""Front door"", ""device_class"": ""door""}",+02:00
+sensor.unicode_payload,unavailable,2026-10-25T01:00:00+00:00,2026-10-25T01:00:00+00:00,"{""friendly_name"": ""Ünïcödé 🌡"", ""nested"": {""values"": [1, 2, null], ""note"": ""he said \""yes\""""}}",+01:00

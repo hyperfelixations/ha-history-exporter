@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.3",
+  "status": "ok",
+  "source": "home_assistant_rest_history",
+  "date": "2026-10-25",
+  "timezone": "Europe/Berlin",
+  "start_local": "2026-10-25T00:00:00+02:00",
+  "end_local": "2026-10-26T00:00:00+01:00",
+  "start_utc": "2026-10-24T22:00:00+00:00",
+  "end_utc": "2026-10-25T23:00:00+00:00",
+  "export_started_at": null,
+  "export_finished_at": null,
+  "duration_seconds": null,
+  "entity_count_current": 7,
+  "entity_count_requested": 5,
+  "entity_count_with_history": 3,
+  "entity_count_zero_history": 2,
+  "state_object_count": 4,
+  "batch_size_entities": 2,
+  "request_count": 3,
+  "failed_request_count": 0,
+  "retried_request_count": 0,
+  "history_request_options": {
+    "minimal_response": false,
+    "no_attributes": false,
+    "significant_changes_only": false
+  },
+  "output_files": {
+    "jsonl": "2026-10-25.jsonl",
+    "csv": "2026-10-25.csv",
+    "parquet": "2026-10-25.parquet"
+  },
+  "zero_history_entities": [
+    "sensor.never_recorded",
+    "sensor.status_note"
+  ],
+  "failed_batches": [],
+  "skipped_reason": null,
+  "error": null,
+  "script_version": null
+}
