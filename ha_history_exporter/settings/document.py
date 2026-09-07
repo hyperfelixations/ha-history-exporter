@@ -21,7 +21,7 @@ HEADER = """\
 # Home Assistant History Exporter configuration.
 #
 # Written by `hhe config set` and `hhe init`; safe to edit by hand.
-# The access token is NOT stored here — it lives in credentials.yaml.
+# The access token is NOT stored here - it lives in credentials.yaml.
 # Every key can also be set through an environment variable, for example
 # HHE_EXPORT_OUTPUT_DIR, which takes precedence over this file.
 """
@@ -75,16 +75,6 @@ def render(values: Mapping[str, Any]) -> str:
             lines.append(f"  {key.name}: {_scalar(values[key.path])}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
-
-
-def example_document() -> str:
-    """A fully commented example listing every supported key at its default."""
-    defaults = {
-        key.path: schema.default_value(key)
-        for key in schema.supported_keys()
-        if key.status is not KeyStatus.SECRET
-    }
-    return render(defaults)
 
 
 def _scalar(value: Any) -> str:

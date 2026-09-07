@@ -66,7 +66,7 @@ class ExportPlan:
         print(f"\n{'=' * 60}")
         print("  Home Assistant REST History Exporter")
         print(f"{'=' * 60}")
-        print(f"  Requested range : {self.requested_start} → {self.requested_end}")
+        print(f"  Requested range : {self.requested_start} -> {self.requested_end}")
         print(f"  Current local   : {self.today}")
         print(f"  Latest complete : {self.latest_complete}")
         print()
@@ -83,11 +83,11 @@ class ExportPlan:
         else:
             print("  Nothing to export.")
         if self.days_skipped_existing:
-            print(f"\n  Will skip — already exported ({len(self.days_skipped_existing)}):")
+            print(f"\n  Will skip - already exported ({len(self.days_skipped_existing)}):")
             for d in self.days_skipped_existing:
                 print(f"    {d}")
         if self.days_skipped_incomplete:
-            print(f"\n  Will skip — not yet complete ({len(self.days_skipped_incomplete)}):")
+            print(f"\n  Will skip - not yet complete ({len(self.days_skipped_incomplete)}):")
             for d in self.days_skipped_incomplete:
                 print(f"    {d}")
         print(f"{'=' * 60}\n")
@@ -138,7 +138,7 @@ def build_plan(
                 plan.decisions.append(
                     DayDecision(day=day, action="skip_existing", reason=existing)
                 )
-                logger.info("Day %s: skipping — %s", day, existing)
+                logger.info("Day %s: skipping - %s", day, existing)
                 continue
 
         plan.decisions.append(DayDecision(day=day, action="export"))

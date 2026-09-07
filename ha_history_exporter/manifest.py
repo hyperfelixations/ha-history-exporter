@@ -144,7 +144,7 @@ def load_or_create(
             return m
         except Exception as exc:
             logger.warning(
-                "Could not parse manifest for %s: %s — creating fresh.", day, exc
+                "Could not parse manifest for %s: %s - creating fresh.", day, exc
             )
 
     return DayManifest(

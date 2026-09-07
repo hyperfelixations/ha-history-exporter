@@ -1,0 +1,96 @@
+# Home Assistant History Exporter — example configuration.
+#
+# Copy this file to one of the places HHE reads, and delete what you do not
+# need: every key below is optional and shown at its default.
+#
+#   the user configuration    hhe config path   tells you where it lives
+#   the working directory     ha-history-exporter.yaml
+#   an explicit file          hhe export --config <path> ...
+#
+# Every key can also be set through an environment variable — for example
+# HHE_EXPORT_OUTPUT_DIR or HHE_FORMATS_PARQUET — which takes precedence over
+# any file. The access token is never stored here: keep it in HA_TOKEN, or run
+#   hhe config set homeassistant.token
+
+homeassistant:
+  # Base URL of your Home Assistant instance. Any address this machine can
+  # reach works: a local hostname, an IP address, a Tailscale address, or an
+  # external HTTPS endpoint.
+  # url: "http://homeassistant.local:8123"
+
+home_assistant:
+  # Environment variables HHE reads the URL and the token from.
+  url_env: HA_URL
+  token_env: HA_TOKEN
+  # IANA time zone that defines local calendar days, including DST handling.
+  timezone: Europe/Berlin
+
+export:
+  # Directory that receives exports, metadata, and logs.
+  # Defaults to <your home directory>/ha-history-exports.
+  # output_dir: "D:\\ha-history-archive"
+
+  # Skip days that already have a successful manifest.
+  resume: true
+  # Re-export days that already have a successful manifest (or use --force).
+  force: false
+
+requests:
+  # Entities per history request. Larger batches finish sooner but put more
+  # load on Home Assistant; 15 with a 0.7 s pause is a good compromise.
+  batch_size_entities: 5
+  # Pause between history requests, in seconds.
+  sleep_between_requests_seconds: 1.0
+  # Pause between exported days, in seconds.
+  sleep_between_days_seconds: 5.0
+  # HTTP timeout per request, in seconds.
+  request_timeout_seconds: 120
+  # Retries on timeouts and 5xx responses.
+  max_retries: 3
+  # Wait times between retries, in seconds.
+  backoff_seconds: [2, 5, 15]
+
+formats:
+  # Set all three to false for snapshot-only runs: HHE then records the current
+  # entity list and states, makes no History API request, and writes no daily
+  # manifest.
+  jsonl: true
+  csv: false
+  # Parquet needs pyarrow:  pipx inject ha-history-exporter pyarrow
+  parquet: false
+
+storage:
+  # Working directory for temporary export files. Defaults to a directory in
+  # the platform temporary folder; %VARIABLES% are expanded.
+  # temp_dir: "%LOCALAPPDATA%\\ha_history_export_tmp"
+
+  # Retries when a synchronisation client holds a file lock.
+  cloud_storage_retry_count: 5
+  # Pause between file-lock retries, in seconds.
+  cloud_storage_retry_sleep_seconds: 2.0
+
+history_request:
+  # Full-fidelity export. Do not enable these for an analytical archive: they
+  # reduce what Home Assistant returns. Long-term statistics are never part of
+  # the History API response either way.
+  minimal_response: false
+  no_attributes: false
+  significant_changes_only: false
+
+recorder:
+  # Recorder retention in days, matching purge_keep_days in your Home Assistant
+  # configuration. Days older than this get a warning because the Recorder may
+  # already have deleted them. Leave unset to disable the warning.
+  # expected_purge_keep_days: 14
+
+entity_selection:
+  # Entities whose current state is unknown or unavailable may still have
+  # history worth exporting, so both are included by default.
+  include_unknown: true
+  include_unavailable: true
+
+  # Optional excludes. Leave empty to export everything the Recorder stores;
+  # entities outside the Recorder simply return no history, which is not an
+  # error. Add patterns only to suppress noisy or privacy-sensitive entities.
+  optional_exclude_patterns: []
+  optional_exclude_domains: []

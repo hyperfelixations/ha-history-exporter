@@ -140,7 +140,7 @@ def _run_days(
         day_str = str(day)
 
         logger.info(
-            "══ Day %d/%d: %s  [%s → %s] ══",
+            "== Day %d/%d: %s  [%s -> %s] ==",
             day_idx + 1,
             len(days),
             day_str,
@@ -154,7 +154,7 @@ def _run_days(
             days_ago = (today - day).days
             if days_ago > cfg.recorder.expected_purge_keep_days:
                 logger.warning(
-                    "Day %s is %d days ago — likely outside Recorder retention "
+                    "Day %s is %d days ago - likely outside Recorder retention "
                     "(%d days). Only raw REST history is queried; no Long-Term-Statistics.",
                     day_str,
                     days_ago,
@@ -198,7 +198,7 @@ def _run_days(
             )
             m.mark_finished(tz, status="ok")
             logger.info(
-                "Day %s done — %d state objects, %d/%d entities had history.",
+                "Day %s done - %d state objects, %d/%d entities had history.",
                 day_str,
                 m.state_object_count,
                 m.entity_count_with_history,
@@ -226,7 +226,7 @@ def _run_days(
 
         if day_idx < len(days) - 1:
             logger.debug(
-                "Sleeping %.1f s between days …",
+                "Sleeping %.1f s between days ...",
                 cfg.requests.sleep_between_days_seconds,
             )
             sleep(cfg.requests.sleep_between_days_seconds)
@@ -276,7 +276,7 @@ def _export_day(
     retried_this_day = 0
 
     logger.info(
-        "  %d entities → %d batches of up to %d",
+        "  %d entities -> %d batches of up to %d",
         len(entity_ids),
         total_batches,
         cfg.requests.batch_size_entities,
@@ -288,7 +288,7 @@ def _export_day(
 
         for batch_idx, batch in enumerate(batch_list, start=1):
             logger.debug(
-                "  Batch %d/%d (%d entities) …", batch_idx, total_batches, len(batch)
+                "  Batch %d/%d (%d entities) ...", batch_idx, total_batches, len(batch)
             )
 
             payload = None
@@ -346,7 +346,7 @@ def _export_day(
     if failed_batches:
         manifest.failed_batches = failed_batches
         raise RuntimeError(
-            f"{len(failed_batches)} batch(es) failed — see manifest for details."
+            f"{len(failed_batches)} batch(es) failed - see manifest for details."
         )
 
     # Validate JSONL and CSV before any finalisation.
@@ -358,7 +358,7 @@ def _export_day(
     # to Parquet.  Done AFTER JSONL validation so Parquet is derived from
     # confirmed-good data.  Runs locally (temp dir) before touching cloud-storage.
     if cfg.formats.parquet:
-        logger.info("  Converting JSONL → Parquet …")
+        logger.info("  Converting JSONL -> Parquet ...")
         writers.convert_jsonl_to_parquet(
             src=tmp_jsonl,
             dst=tmp_parquet,

@@ -109,7 +109,7 @@ def run(args: argparse.Namespace) -> int:
 
     if not plan.days_to_export and not args.dry_run and not cfg.snapshot_only:
         logger.info(
-            "Nothing to export — %d day(s) skipped (existing) and %d day(s) "
+            "Nothing to export - %d day(s) skipped (existing) and %d day(s) "
             "skipped (not yet complete).",
             len(plan.days_skipped_existing),
             len(plan.days_skipped_incomplete),
@@ -125,10 +125,10 @@ def run(args: argparse.Namespace) -> int:
         backoff_seconds=cfg.requests.backoff_seconds,
     ) as client:
 
-        logger.info("Checking HA API at %s …", cfg.ha_url)
+        logger.info("Checking HA API at %s ...", cfg.ha_url)
         client.check_api()
 
-        logger.info("Fetching entity list from /api/states …")
+        logger.info("Fetching entity list from /api/states ...")
         states = client.get_states()
 
         snapshot = build_snapshot(states, tz)
@@ -136,7 +136,7 @@ def run(args: argparse.Namespace) -> int:
 
         if cfg.snapshot_only:
             logger.info(
-                "Snapshot-only mode complete — saved %d current entity states; "
+                "Snapshot-only mode complete - saved %d current entity states; "
                 "no history was requested and no daily manifest was written.",
                 snapshot["entity_count"],
             )
@@ -169,11 +169,11 @@ def run(args: argparse.Namespace) -> int:
         )
 
         if args.dry_run:
-            logger.info("Dry run complete — no history data was fetched.")
+            logger.info("Dry run complete - no history data was fetched.")
             return 0
 
         if not plan.days_to_export:
-            logger.info("Nothing to export — all requested days are already done.")
+            logger.info("Nothing to export - all requested days are already done.")
             return 0
 
         logger.info(

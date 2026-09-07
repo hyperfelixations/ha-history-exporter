@@ -1,5 +1,7 @@
 # Local configuration and credentials
 /export_config.yaml
+/ha-history-exporter.yaml
+/config.yaml
 .env
 .env.*
 !.env.example
@@ -34,6 +36,9 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
+
+# Local helper scripts that are not part of the product
+/ha_history_export_last_10_days.bat
 
 # Local agent routing
 /AGENTS.md

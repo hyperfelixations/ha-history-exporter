@@ -118,7 +118,7 @@ def test_default_output_directory_lives_in_the_user_home():
 def test_example_config_is_generic_and_loadable(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    example = Path(__file__).parents[1] / "export_config.example.yaml"
+    example = Path(__file__).parents[1] / "config.example.yaml"
     text = example.read_text(encoding="utf-8")
     monkeypatch.setenv("HA_URL", "http://home-assistant.invalid")
     monkeypatch.setenv("HA_TOKEN", "synthetic-test-token")

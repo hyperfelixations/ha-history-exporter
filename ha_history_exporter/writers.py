@@ -156,8 +156,8 @@ def atomic_replace(
             if attempt > cloud_storage_retry_count:
                 raise
             logger.warning(
-                "PermissionError replacing %s (cloud-storage lock?) — "
-                "attempt %d/%d, sleeping %.1f s …",
+                "PermissionError replacing %s (cloud-storage lock?) - "
+                "attempt %d/%d, sleeping %.1f s ...",
                 dst.name,
                 attempt,
                 cloud_storage_retry_count,

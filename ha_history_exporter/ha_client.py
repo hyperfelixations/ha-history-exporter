@@ -97,7 +97,7 @@ class HomeAssistantClient:
 
                 if resp.status_code in _RETRYABLE_STATUS:
                     logger.warning(
-                        "HTTP %s from %s (attempt %d/%d) — will retry.",
+                        "HTTP %s from %s (attempt %d/%d) - will retry.",
                         resp.status_code,
                         path,
                         attempt + 1,
@@ -141,11 +141,12 @@ class HomeAssistantClient:
                 raise
 
         raise HAConnectionError(
-            f"Failed to reach {path} after {self._max_retries + 1} attempt(s). "
-            f"Last error: {last_exc}",
+            f"Cannot reach Home Assistant at {self._base}.",
             details=(
-                "Home Assistant did not answer within the configured timeout, "
-                "or the address is not reachable from this machine."
+                f"{path} did not answer after "
+                f"{self._max_retries + 1} attempt(s): "
+                f"{type(last_exc).__name__}. Home Assistant may be down, the "
+                "address may be wrong, or this machine may have no route to it."
             ),
             remedies=(
                 Remedy(
@@ -174,7 +175,7 @@ class HomeAssistantClient:
 
     def check_api(self) -> None:
         """Verify the HA API is reachable and the token is valid."""
-        logger.debug("GET /api/ — checking connectivity and token …")
+        logger.debug("GET /api/ - checking connectivity and token ...")
         resp = self._get("/api/")
         data = self._decode_json(resp, "/api/")
         if not isinstance(data, dict):
@@ -187,7 +188,7 @@ class HomeAssistantClient:
 
     def get_states(self) -> List[dict]:
         """Return all current entity states from /api/states."""
-        logger.debug("GET /api/states …")
+        logger.debug("GET /api/states ...")
         resp = self._get("/api/states")
         data = self._decode_json(resp, "/api/states")
         if not isinstance(data, list):

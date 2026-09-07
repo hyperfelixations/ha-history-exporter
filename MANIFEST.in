@@ -1,0 +1,11 @@
+# Files the source distribution needs beyond the package itself: the example
+# the README points at, the pinned dependency lists, and the complete test
+# suite, so an sdist can be verified on its own.
+include LICENSE
+include README.md
+include MANIFEST.in
+include config.example.yaml
+include requirements.txt
+include requirements-dev.txt
+recursive-include tests *.py *.md
+global-exclude __pycache__/* *.py[cod]

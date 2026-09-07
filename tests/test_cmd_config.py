@@ -293,15 +293,3 @@ def test_rendered_document_never_contains_the_token_key():
 
     assert "token" in text  # only as the explanatory header comment
     assert "  token:" not in text
-
-
-def test_example_document_lists_every_supported_key():
-    from ha_history_exporter.settings import schema
-    from ha_history_exporter.settings.schema import KeyStatus
-
-    text = document.example_document()
-    for key in schema.KEYS:
-        if key.status is KeyStatus.SUPPORTED:
-            assert f"  {key.name}:" in text
-        elif key.status is KeyStatus.DEFAULT_ONLY:
-            assert f"  {key.name}:" not in text

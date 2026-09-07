@@ -161,9 +161,12 @@ def test_network_timeout_exhaustion_raises_connection_error(monkeypatch):
     client = make_client(retries=1, backoff=[0])
     sequence = install_get(monkeypatch, client, [timeout_error(), timeout_error()])
 
-    with pytest.raises(HAConnectionError, match="after 2 attempt"):
+    with pytest.raises(HAConnectionError) as exc:
         client.check_api()
 
+    assert exc.value.summary == f"Cannot reach Home Assistant at {BASE_URL}."
+    assert "after 2 attempt(s)" in (exc.value.details or "")
+    assert "Timeout" in (exc.value.details or "")
     assert len(sequence.calls) == 2
     assert client.total_retries == 1
 
