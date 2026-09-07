@@ -1,12 +1,13 @@
-# This workflow prepares a release candidate. It never publishes anything.
-# Only the repository owner may start it, and the resulting GitHub Release
-# is created as a draft for manual review and publication.
+# This workflow prepares a release candidate and, only when explicitly asked,
+# uploads it. Only the repository owner may start it, and the resulting GitHub
+# Release is created as a draft for manual review and publication.
 #
-# PyPI is intentionally not wired up yet: that requires the repository to be
-# public and a Trusted Publisher link configured on PyPI first. Once that is
-# in place, publishing becomes a separate job consuming the same build
-# artifact — see the internal developer documentation, decision register
-# point 20.
+# Uploading to TestPyPI or PyPI happens through Trusted Publishing (OIDC), so
+# no API token is stored anywhere. It requires, on the index side, a Trusted
+# Publisher entry for this repository, this workflow file, and the matching
+# GitHub environment; and on the GitHub side, environments named "testpypi"
+# and "pypi" with required reviewers. Until both exist, leave publish_target
+# at its default "none" — everything else in this workflow still runs.
 
 name: Release Candidate
 
@@ -18,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact package version, for example 1.4.0 or 1.4.0-beta.1"
+        description: "Exact package version, for example 1.4.0 or 1.4.0b1"
         required: true
         type: string
       expected_sha:
@@ -33,6 +34,15 @@ on:
         options:
           - stable
           - beta
+      publish_target:
+        description: "Where to upload the tested distributions"
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - testpypi
+          - pypi
 
 permissions:
   contents: read
@@ -104,8 +114,11 @@ jobs:
               title="ha-history-exporter $version"
               ;;
             beta)
-              if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-                echo "A beta version must look like 1.4.0-beta.1." >&2
+              # PEP 440 normalised form: setuptools would rewrite 1.4.0-beta.1
+              # to 1.4.0b1, so the distribution filename and the approved
+              # version would no longer match.
+              if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+$ ]]; then
+                echo "A beta version must be PEP 440 normalised, for example 1.4.0b1." >&2
                 exit 1
               fi
               title="ha-history-exporter $version (Beta)"
@@ -122,7 +135,13 @@ jobs:
             exit 1
           fi
 
-          package_version="$(python3 -c 'import ha_history_exporter as m; print(m.__version__)')"
+          # Read the single version source without importing the package,
+          # so this job needs no installed dependencies.
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          if [[ -z "$package_version" ]]; then
+            echo "ha_history_exporter/__init__.py defines no __version__." >&2
+            exit 1
+          fi
           if [[ "$package_version" != "$version" ]]; then
             echo "ha_history_exporter.__version__ is '$package_version', expected '$version'." >&2
             echo "Bump the version in ha_history_exporter/__init__.py first (a separate, explicit step)." >&2
@@ -225,6 +244,68 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish:
+    name: Publish to ${{ inputs.publish_target }}
+    needs:
+      - validate
+      - build
+    if: inputs.publish_target != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The environment carries the required-reviewer gate and is half of the
+    # Trusted Publisher identity registered on the index.
+    environment: ${{ inputs.publish_target }}
+    permissions:
+      # Mandatory for Trusted Publishing, and deliberately granted to this job
+      # only. No API token exists anywhere in this repository.
+      id-token: write
+
+    steps:
+      # Nothing is built here: only the artifacts the test matrix already
+      # validated are uploaded, as the Python Packaging Authority recommends.
+      - name: Download the tested distributions
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-candidate-${{ needs.validate.outputs.tag }}
+          path: dist
+
+      - name: Verify the downloaded checksums one final time
+        shell: bash
+        env:
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+        run: |
+          set -euo pipefail
+          cd dist
+          if [[ "$(sha256sum -- *.whl | cut -d ' ' -f 1)" != "$WHEEL_SHA256" ]]; then
+            echo "Downloaded wheel checksum does not match the tested build." >&2
+            exit 1
+          fi
+          if [[ "$(sha256sum -- *.tar.gz | cut -d ' ' -f 1)" != "$SDIST_SHA256" ]]; then
+            echo "Downloaded sdist checksum does not match the tested build." >&2
+            exit 1
+          fi
+          # twine only accepts distributions.
+          rm -f checksums.txt
+
+      - name: Upload through Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: ${{ inputs.publish_target == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
+          print-hash: true
+
+      - name: Summarize the upload
+        shell: bash
+        run: |
+          {
+            echo "## Uploaded to ${{ inputs.publish_target }}"
+            echo
+            echo "- Version: \`${{ inputs.version }}\`"
+            echo "- Commit: \`${{ inputs.expected_sha }}\`"
+            echo
+            echo "A published version can never be replaced. Any correction needs a new version."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   create-draft-release:
     name: Create unpublished GitHub draft
     needs:
@@ -237,6 +318,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       GH_TOKEN: ${{ github.token }}
+      PUBLISH_TARGET: ${{ inputs.publish_target }}
       RELEASE_KIND: ${{ inputs.release_kind }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_TITLE: ${{ needs.validate.outputs.title }}
@@ -290,19 +372,21 @@ jobs:
           set -euo pipefail
           wheel_name="$(basename release-asset/*.whl)"
           sdist_name="$(basename release-asset/*.tar.gz)"
+          if [[ "$PUBLISH_TARGET" == "pypi" ]]; then
+            install_hint="pipx install ha-history-exporter==$RELEASE_VERSION"
+          else
+            install_hint="pipx install \"git+https://github.com/$GITHUB_REPOSITORY.git@$RELEASE_TAG\""
+          fi
           notes_file="$RUNNER_TEMP/release-notes.md"
           cat > "$notes_file" <<EOF
           > Automatically built and tested release draft. Review and replace these notes before publishing.
 
           Target commit: \`$EXPECTED_SHA\`
 
-          PyPI publishing is not yet configured for this project. Install from
-          the attached wheel, or directly from this tag:
+          Install:
 
           \`\`\`
-          pip install $wheel_name
-          # or
-          pipx install "git+https://github.com/$GITHUB_REPOSITORY.git@$RELEASE_TAG"
+          $install_hint
           \`\`\`
 
           | Asset | SHA-256 |
@@ -340,7 +424,11 @@ jobs:
           {
             echo "## Unpublished release draft created"
             echo
-            echo "Nothing has been published to PyPI or anywhere else."
+            if [[ "$PUBLISH_TARGET" == "none" ]]; then
+              echo "Nothing has been published to PyPI or anywhere else."
+            else
+              echo "The distributions were uploaded to $PUBLISH_TARGET; the GitHub release is still a draft."
+            fi
             echo
             echo "- Draft: ${{ steps.draft.outputs.url }}"
             echo "- Tag to be created on publish: \`$RELEASE_TAG\`"
