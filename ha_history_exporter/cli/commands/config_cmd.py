@@ -70,7 +70,7 @@ def _path(args: argparse.Namespace) -> int:
     entries.extend(
         [
             ("output directory", Path(settings.config.export.output_dir)),
-            ("log directory", settings.config.logs_dir),
+            ("log directory", settings.config.layout.logs_dir),
             ("temporary directory", settings.config.resolved_temp_dir),
         ]
     )

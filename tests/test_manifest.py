@@ -45,7 +45,7 @@ def test_save_and_load_round_trip_ignores_private_timer(tmp_path):
     item._started_ts = 123.4
 
     manifest.save(item, cfg, 0, 0)
-    raw = json.loads(cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
+    raw = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     loaded = load_fresh(cfg)
 
     assert "_started_ts" not in raw
@@ -55,7 +55,7 @@ def test_save_and_load_round_trip_ignores_private_timer(tmp_path):
 
 def test_load_ignores_unknown_future_fields(tmp_path):
     cfg = make_config(tmp_path)
-    path = cfg.day_file(DAY, "manifest.json")
+    path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"date": str(DAY), "status": "ok", "future_field": 42}),
@@ -70,7 +70,7 @@ def test_load_ignores_unknown_future_fields(tmp_path):
 
 def test_corrupt_manifest_falls_back_to_fresh_manifest(tmp_path, caplog):
     cfg = make_config(tmp_path)
-    path = cfg.day_file(DAY, "manifest.json")
+    path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{broken", encoding="utf-8")
 

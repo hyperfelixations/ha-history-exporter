@@ -131,7 +131,7 @@ def load_or_create(
     cfg,  # AppConfig
 ) -> DayManifest:
     """Load existing manifest for *day* or return a fresh one."""
-    path = cfg.day_file(day, "manifest.json")
+    path = cfg.layout.day_file(day, "manifest.json")
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as f:
@@ -167,7 +167,7 @@ def save(
     from .writers import atomic_replace
 
     day = manifest.date if isinstance(manifest.date, str) else str(manifest.date)
-    path = cfg.day_file(day, "manifest.json")
+    path = cfg.layout.day_file(day, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
 

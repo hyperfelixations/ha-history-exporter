@@ -48,10 +48,10 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
     assert client.calls[0]["entity_ids"] == ["sensor.one", "sensor.two"]
     assert client.calls[1]["entity_ids"] == ["sensor.no_history"]
 
-    jsonl_path = cfg.day_file(DAY, "jsonl")
-    csv_path = cfg.day_file(DAY, "csv")
-    parquet_path = cfg.day_file(DAY, "parquet")
-    manifest_path = cfg.day_file(DAY, "manifest.json")
+    jsonl_path = cfg.layout.day_file(DAY, "jsonl")
+    csv_path = cfg.layout.day_file(DAY, "csv")
+    parquet_path = cfg.layout.day_file(DAY, "parquet")
+    manifest_path = cfg.layout.day_file(DAY, "manifest.json")
     assert jsonl_path.exists()
     assert csv_path.exists()
     assert parquet_path.exists()
@@ -97,7 +97,7 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
         "parquet": f"{DAY}.parquet",
     }
 
-    run_log = cfg.metadata_dir / "export_runs.jsonl"
+    run_log = cfg.layout.metadata_dir / "export_runs.jsonl"
     entries = [
         json.loads(line)
         for line in run_log.read_text(encoding="utf-8").splitlines()
@@ -120,12 +120,12 @@ def test_run_export_handles_empty_history(tmp_path):
     )
 
     assert result == 0
-    assert cfg.day_file(DAY, "jsonl").read_text(encoding="utf-8") == ""
-    with cfg.day_file(DAY, "csv").open("r", encoding="utf-8", newline="") as handle:
+    assert cfg.layout.day_file(DAY, "jsonl").read_text(encoding="utf-8") == ""
+    with cfg.layout.day_file(DAY, "csv").open("r", encoding="utf-8", newline="") as handle:
         assert len(list(csv.reader(handle))) == 1
-    assert pq.read_metadata(cfg.day_file(DAY, "parquet")).num_rows == 0
+    assert pq.read_metadata(cfg.layout.day_file(DAY, "parquet")).num_rows == 0
     day_manifest = json.loads(
-        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert day_manifest["state_object_count"] == 0
     assert day_manifest["zero_history_entities"] == [
@@ -150,7 +150,7 @@ def test_run_export_dry_run_never_calls_client_or_writes_files(tmp_path):
 
     assert result == 0
     assert client.calls == []
-    assert not cfg.daily_export_root.exists()
+    assert not cfg.layout.daily_root.exists()
 
 
 def test_run_export_with_empty_plan_is_noop(tmp_path):
@@ -184,7 +184,7 @@ def test_run_export_snapshot_only_never_calls_history_or_writes_manifest(tmp_pat
         == 0
     )
     assert client.calls == []
-    assert not cfg.day_file(DAY, "manifest.json").exists()
+    assert not cfg.layout.day_file(DAY, "manifest.json").exists()
 
 
 def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_path):
@@ -204,9 +204,9 @@ def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_pat
 
     assert result == 1
     assert len(client.calls) == 2
-    assert not cfg.day_file(DAY, "jsonl").exists()
+    assert not cfg.layout.day_file(DAY, "jsonl").exists()
     day_manifest = json.loads(
-        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert day_manifest["status"] == "failed"
     assert day_manifest["failed_request_count"] == 1
@@ -253,7 +253,7 @@ def test_run_export_removes_its_own_working_directory(tmp_path):
     )
 
     assert list(cfg.resolved_temp_dir.glob("run-*")) == []
-    assert not (cfg.day_dir(DAY).parents[3] / ".hhe.lock").exists()
+    assert not (cfg.layout.day_dir(DAY).parents[3] / ".hhe.lock").exists()
 
 
 def test_chunks_preserve_order_and_handle_empty_list():
@@ -283,7 +283,7 @@ def test_auth_error_aborts_day_and_propagates_immediately(tmp_path):
 
     assert len(client.calls) == 1
     day_manifest = json.loads(
-        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert day_manifest["status"] == "failed"
     assert day_manifest["failed_request_count"] == 1
@@ -317,14 +317,14 @@ def test_non_jsonl_exports_do_not_leave_final_jsonl(
 
     assert result == 0
     if csv_enabled:
-        assert cfg.day_file(DAY, "csv").exists()
+        assert cfg.layout.day_file(DAY, "csv").exists()
     if parquet_enabled:
-        assert cfg.day_file(DAY, "parquet").exists()
-    assert not cfg.day_file(DAY, "jsonl").exists()
+        assert cfg.layout.day_file(DAY, "parquet").exists()
+    assert not cfg.layout.day_file(DAY, "jsonl").exists()
     assert not (cfg.resolved_temp_dir / f"{DAY}.jsonl.tmp").exists()
 
     day_manifest = json.loads(
-        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert day_manifest["status"] == "ok"
     assert day_manifest["output_files"]["jsonl"] is None
@@ -374,10 +374,10 @@ def test_export_respects_every_valid_format_combination(
         "parquet": parquet_enabled,
     }
     for suffix, is_enabled in enabled.items():
-        assert cfg.day_file(DAY, suffix).exists() is is_enabled
+        assert cfg.layout.day_file(DAY, suffix).exists() is is_enabled
 
     day_manifest = json.loads(
-        cfg.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert day_manifest["output_files"] == {
         suffix: f"{DAY}.{suffix}" if is_enabled else None

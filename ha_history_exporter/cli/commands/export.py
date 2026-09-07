@@ -132,7 +132,7 @@ def run(args: argparse.Namespace) -> int:
         states = client.get_states()
 
         snapshot = build_snapshot(states, tz)
-        save_snapshot(snapshot, cfg.metadata_dir, run_id=new_run_id())
+        save_snapshot(snapshot, cfg.layout.metadata_dir, run_id=new_run_id())
 
         if cfg.snapshot_only:
             logger.info(
@@ -326,7 +326,7 @@ def configure_logging(level: int, cfg: AppConfig, tz: ZoneInfo) -> None:
     root.addHandler(stream_handler)
 
     ts = _dt.now(tz).strftime("%Y-%m-%d_%H%M%S")
-    log_dir = cfg.logs_dir
+    log_dir = cfg.layout.logs_dir
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"ha_history_export_{ts}.log"

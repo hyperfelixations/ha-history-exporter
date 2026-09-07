@@ -154,7 +154,7 @@ def test_promote_moves_the_file_to_its_final_path(tmp_path):
     try:
         source = workspace.work_dir / "2026-07-28.jsonl"
         source.write_text("payload", encoding="utf-8")
-        target = cfg.day_file("2026-07-28", "jsonl")
+        target = cfg.layout.day_file("2026-07-28", "jsonl")
 
         workspace.promote(source, target, 0, 0)
 
@@ -174,7 +174,7 @@ def test_promote_stages_on_the_target_filesystem_when_devices_differ(
         monkeypatch.setattr(ws, "same_filesystem", lambda a, b: False)
         source = workspace.work_dir / "2026-07-28.jsonl"
         source.write_text("payload", encoding="utf-8")
-        target = cfg.day_file("2026-07-28", "jsonl")
+        target = cfg.layout.day_file("2026-07-28", "jsonl")
 
         workspace.promote(source, target, 0, 0)
 
@@ -192,9 +192,9 @@ def test_staging_directory_lives_outside_the_daily_export_tree(tmp_path):
     cfg = config(tmp_path)
     workspace = ws.open_workspace(cfg)
     try:
-        assert ws.STAGING_DIRNAME not in str(cfg.daily_export_root)
+        assert ws.STAGING_DIRNAME not in str(cfg.layout.daily_root)
         assert workspace.staging_dir.is_relative_to(Path(cfg.export.output_dir))
-        assert not workspace.staging_dir.is_relative_to(cfg.daily_export_root)
+        assert not workspace.staging_dir.is_relative_to(cfg.layout.daily_root)
     finally:
         workspace.close()
 

@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import List
 
 from ..errors import ConfigError
+from ..layout import ExportLayout
 from . import paths, schema
 
 
@@ -103,45 +103,18 @@ class AppConfig:
         return Path(os.path.expandvars(self.storage.temp_dir))
 
     @property
-    def daily_export_root(self) -> Path:
-        """Root directory for daily export files: <output_dir>/exports/daily/"""
-        return Path(self.export.output_dir) / "exports" / "daily"
+    def layout(self) -> ExportLayout:
+        """Every output path below the configured output directory.
 
-    @property
-    def metadata_dir(self) -> Path:
-        return Path(self.export.output_dir) / "metadata"
-
-    @property
-    def logs_dir(self) -> Path:
-        return Path(self.export.output_dir) / "logs"
+        The layout is a contract of its own; see
+        :mod:`ha_history_exporter.layout`.
+        """
+        return ExportLayout(Path(self.export.output_dir))
 
     @property
     def snapshot_only(self) -> bool:
         """True when no history output format is enabled."""
         return not any((self.formats.jsonl, self.formats.csv, self.formats.parquet))
-
-    def day_dir(self, day: date | str) -> Path:
-        """Return the directory for a given date: .../YYYY/MM/
-
-        Accepts both a datetime.date object and an ISO string ("2026-06-15").
-        """
-        d, _ = self._normalize_day(day)
-        return self.daily_export_root / str(d.year) / f"{d.month:02d}"
-
-    def day_file(self, day: date | str, suffix: str) -> Path:
-        """Return the path for a day file, e.g. .../2026/06/2026-06-15.jsonl
-
-        Accepts both a datetime.date object and an ISO string ("2026-06-15").
-        """
-        d, s = self._normalize_day(day)
-        return self.day_dir(d) / f"{s}.{suffix}"
-
-    @staticmethod
-    def _normalize_day(day: date | str) -> tuple[date, str]:
-        """Return (date_obj, date_str) for any day input (date or ISO str)."""
-        if isinstance(day, str):
-            return date.fromisoformat(day), day
-        return day, str(day)
 
 
 def validate_config(cfg: AppConfig) -> None:

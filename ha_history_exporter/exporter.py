@@ -257,9 +257,9 @@ def _export_day(
     tmp_csv     = work_dir / f"{day_str}.csv"
     tmp_parquet = work_dir / f"{day_str}.parquet"
 
-    final_jsonl   = cfg.day_file(day, "jsonl")
-    final_csv     = cfg.day_file(day, "csv")
-    final_parquet = cfg.day_file(day, "parquet")
+    final_jsonl   = cfg.layout.day_file(day, "jsonl")
+    final_csv     = cfg.layout.day_file(day, "csv")
+    final_parquet = cfg.layout.day_file(day, "parquet")
 
     # A retried day within the same run must not see the previous attempt.
     tmp_jsonl.unlink(missing_ok=True)
@@ -440,8 +440,8 @@ class _NullWriter:
 def _append_run_log(cfg: AppConfig, day_str: str, m: mf.DayManifest) -> None:
     """Append one line to metadata/export_runs.jsonl."""
     try:
-        cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
-        log_path = cfg.metadata_dir / "export_runs.jsonl"
+        cfg.layout.metadata_dir.mkdir(parents=True, exist_ok=True)
+        log_path = cfg.layout.metadata_dir / "export_runs.jsonl"
         entry = {
             "day": day_str,
             "status": m.status,

@@ -100,12 +100,12 @@ def test_app_config_builds_daily_paths(tmp_path):
 
     day = date(2026, 7, 28)
     expected_dir = tmp_path / "exports" / "daily" / "2026" / "07"
-    assert cfg.daily_export_root == tmp_path / "exports" / "daily"
-    assert cfg.day_dir(day) == expected_dir
-    assert cfg.day_dir("2026-07-28") == expected_dir
-    assert cfg.day_file(day, "jsonl") == expected_dir / "2026-07-28.jsonl"
-    assert cfg.metadata_dir == tmp_path / "metadata"
-    assert cfg.logs_dir == tmp_path / "logs"
+    assert cfg.layout.daily_root == tmp_path / "exports" / "daily"
+    assert cfg.layout.day_dir(day) == expected_dir
+    assert cfg.layout.day_dir("2026-07-28") == expected_dir
+    assert cfg.layout.day_file(day, "jsonl") == expected_dir / "2026-07-28.jsonl"
+    assert cfg.layout.metadata_dir == tmp_path / "metadata"
+    assert cfg.layout.logs_dir == tmp_path / "logs"
 
 
 def test_default_output_directory_lives_in_the_user_home():

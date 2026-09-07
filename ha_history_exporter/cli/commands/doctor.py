@@ -245,7 +245,7 @@ def _check_formats(cfg: AppConfig) -> list[Result]:
 
 
 def _check_exports(cfg: AppConfig) -> list[Result]:
-    root = cfg.daily_export_root
+    root = cfg.layout.daily_root
     if not root.exists():
         return [Result(OK, "existing exports", "none yet")]
 

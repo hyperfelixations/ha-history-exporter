@@ -158,7 +158,7 @@ def _check_existing(day: date, cfg) -> str | None:
     The manifest is the durable source of truth for resume decisions. Export
     artifacts may have been archived or moved after a successful run.
     """
-    manifest_path = cfg.day_file(day, "manifest.json")
+    manifest_path = cfg.layout.day_file(day, "manifest.json")
 
     if not manifest_path.exists():
         return None

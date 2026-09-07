@@ -14,7 +14,7 @@ DAY = date(2026, 7, 28)
 
 
 def write_manifest(cfg, *, status="ok", output_files=None):
-    path = cfg.day_file(DAY, "manifest.json")
+    path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -78,7 +78,7 @@ def test_force_reexports_existing_day(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     patch_calendar(monkeypatch)
     write_manifest(cfg)
-    cfg.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
+    cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
     plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=True, resume=False)
 
@@ -89,17 +89,17 @@ def test_force_reexports_existing_day(tmp_path, monkeypatch):
 def test_non_ok_manifest_does_not_skip(tmp_path, status):
     cfg = make_config(tmp_path)
     write_manifest(cfg, status=status)
-    cfg.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
+    cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
     assert planner._check_existing(DAY, cfg) is None
 
 
 def test_invalid_manifest_does_not_skip(tmp_path):
     cfg = make_config(tmp_path)
-    path = cfg.day_file(DAY, "manifest.json")
+    path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{broken", encoding="utf-8")
-    cfg.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
+    cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
     assert planner._check_existing(DAY, cfg) is None
 
@@ -172,8 +172,8 @@ def test_newly_requested_format_plans_local_derivation(tmp_path, monkeypatch):
             "parquet": f"{DAY}.parquet",
         },
     )
-    cfg.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
-    cfg.day_file(DAY, "parquet").write_bytes(b"synthetic")
+    cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
+    cfg.layout.day_file(DAY, "parquet").write_bytes(b"synthetic")
 
     plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False, resume=True)
 
