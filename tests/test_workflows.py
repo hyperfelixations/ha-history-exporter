@@ -69,16 +69,31 @@ def test_release_runs_only_on_manual_dispatch():
     assert set(triggers) == {"workflow_dispatch"}
 
 
-def test_release_asks_for_the_publish_target_and_defaults_to_none():
-    target = load(RELEASE)[True]["workflow_dispatch"]["inputs"]["publish_target"]
-    assert target["default"] == "none"
-    assert target["options"] == ["none", "testpypi", "pypi"]
+def test_release_offers_the_four_publication_targets_and_defaults_to_github():
+    target = load(RELEASE)[True]["workflow_dispatch"]["inputs"]["publish_to"]
+    assert target["default"] == "github"
+    assert target["options"] == ["github", "pypi", "github-and-pypi", "testpypi"]
     assert target["required"] is True
 
 
-def test_publish_job_is_skipped_unless_a_target_was_chosen():
+def test_publish_job_is_skipped_for_a_github_only_release():
     job = load(RELEASE)["jobs"]["publish"]
-    assert job["if"] == "inputs.publish_target != 'none'"
+    assert job["if"] == "inputs.publish_to != 'github'"
+
+
+def test_the_github_draft_is_created_only_when_github_was_chosen():
+    job = load(RELEASE)["jobs"]["create-draft-release"]
+    assert job["if"] == "contains(inputs.publish_to, 'github')"
+
+
+def test_testpypi_uploads_to_the_test_index_and_its_own_environment():
+    """The rehearsal must not touch the real index or the real environment."""
+    job = load(RELEASE)["jobs"]["publish"]
+    assert "testpypi" in job["environment"]
+    upload = next(
+        step for step in job["steps"] if "pypi-publish" in str(step.get("uses", ""))
+    )
+    assert "test.pypi.org/legacy" in upload["with"]["repository-url"]
 
 
 def test_publish_job_depends_on_validation_and_the_tested_build():
@@ -96,7 +111,8 @@ def test_only_the_publish_job_may_request_an_oidc_token():
 
 def test_publish_job_runs_behind_a_github_environment():
     job = load(RELEASE)["jobs"]["publish"]
-    assert job["environment"] == "${{ inputs.publish_target }}"
+    assert "inputs.publish_to" in job["environment"]
+    assert "pypi" in job["environment"]
 
 
 def test_publish_job_never_builds_its_own_distributions():

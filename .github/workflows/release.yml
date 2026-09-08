@@ -1,19 +1,24 @@
-# This workflow prepares a release candidate and, only when explicitly asked,
-# uploads it. Only the repository owner may start it, and the resulting GitHub
-# Release is created as a draft for manual review and publication.
+# This workflow builds and tests a release candidate, then publishes it where
+# publish_to says. Only the repository owner may start it, and a GitHub
+# Release is always created as a draft for manual review and publication.
 #
-# Uploading to TestPyPI or PyPI happens through Trusted Publishing (OIDC), so
-# no API token is stored anywhere. It requires, on the index side, a Trusted
-# Publisher entry for this repository, this workflow file, and the matching
-# GitHub environment; and on the GitHub side, environments named "testpypi"
-# and "pypi" with required reviewers. Until both exist, leave publish_target
-# at its default "none" — everything else in this workflow still runs.
+# publish_to:
+#   github           a GitHub release draft, nothing uploaded to an index
+#   pypi             uploaded to PyPI, no GitHub draft
+#   github-and-pypi  both
+#   testpypi         uploaded to TestPyPI as a rehearsal, no GitHub draft
+#
+# Index uploads use Trusted Publishing (OIDC), so no API token is stored
+# anywhere. They require, on the index side, a Trusted Publisher entry for
+# this repository, this workflow file, and the matching GitHub environment;
+# and on the GitHub side, environments named "pypi" and "testpypi" with
+# required reviewers. Until those exist, publish_to: github runs unchanged.
 
 name: Release Candidate
 
 run-name: >-
-  Release candidate v${{ inputs.version }} from ${{ inputs.expected_sha }}
-  (${{ inputs.release_kind }})
+  Release v${{ inputs.version }} to ${{ inputs.publish_to }}
+  from ${{ inputs.expected_sha }} (${{ inputs.release_kind }})
 
 on:
   workflow_dispatch:
@@ -34,15 +39,16 @@ on:
         options:
           - stable
           - beta
-      publish_target:
-        description: "Where to upload the tested distributions"
+      publish_to:
+        description: "Where to publish the tested release"
         required: true
-        default: none
+        default: github
         type: choice
         options:
-          - none
-          - testpypi
+          - github
           - pypi
+          - github-and-pypi
+          - testpypi
 
 permissions:
   contents: read
@@ -245,16 +251,16 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish to ${{ inputs.publish_target }}
+    name: Upload to ${{ inputs.publish_to == 'testpypi' && 'TestPyPI' || 'PyPI' }}
     needs:
       - validate
       - build
-    if: inputs.publish_target != 'none'
+    if: inputs.publish_to != 'github'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The environment carries the required-reviewer gate and is half of the
     # Trusted Publisher identity registered on the index.
-    environment: ${{ inputs.publish_target }}
+    environment: ${{ inputs.publish_to == 'testpypi' && 'testpypi' || 'pypi' }}
     permissions:
       # Mandatory for Trusted Publishing, and deliberately granted to this job
       # only. No API token exists anywhere in this repository.
@@ -291,14 +297,14 @@ jobs:
       - name: Upload through Trusted Publishing
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
-          repository-url: ${{ inputs.publish_target == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
+          repository-url: ${{ inputs.publish_to == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
           print-hash: true
 
       - name: Summarize the upload
         shell: bash
         run: |
           {
-            echo "## Uploaded to ${{ inputs.publish_target }}"
+            echo "## Uploaded to ${{ inputs.publish_to == 'testpypi' && 'TestPyPI' || 'PyPI' }}"
             echo
             echo "- Version: \`${{ inputs.version }}\`"
             echo "- Commit: \`${{ inputs.expected_sha }}\`"
@@ -311,6 +317,7 @@ jobs:
     needs:
       - validate
       - build
+    if: contains(inputs.publish_to, 'github')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -318,7 +325,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       GH_TOKEN: ${{ github.token }}
-      PUBLISH_TARGET: ${{ inputs.publish_target }}
+      PUBLISH_TO: ${{ inputs.publish_to }}
       RELEASE_KIND: ${{ inputs.release_kind }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_TITLE: ${{ needs.validate.outputs.title }}
@@ -372,7 +379,7 @@ jobs:
           set -euo pipefail
           wheel_name="$(basename release-asset/*.whl)"
           sdist_name="$(basename release-asset/*.tar.gz)"
-          if [[ "$PUBLISH_TARGET" == "pypi" ]]; then
+          if [[ "$PUBLISH_TO" == *pypi* && "$PUBLISH_TO" != "testpypi" ]]; then
             install_hint="pipx install ha-history-exporter==$RELEASE_VERSION"
           else
             install_hint="pipx install \"git+https://github.com/$GITHUB_REPOSITORY.git@$RELEASE_TAG\""
@@ -424,10 +431,10 @@ jobs:
           {
             echo "## Unpublished release draft created"
             echo
-            if [[ "$PUBLISH_TARGET" == "none" ]]; then
-              echo "Nothing has been published to PyPI or anywhere else."
+            if [[ "$PUBLISH_TO" == "github" ]]; then
+              echo "Nothing was uploaded to an index; only this draft exists."
             else
-              echo "The distributions were uploaded to $PUBLISH_TARGET; the GitHub release is still a draft."
+              echo "The distributions were uploaded to an index; the GitHub release is still a draft."
             fi
             echo
             echo "- Draft: ${{ steps.draft.outputs.url }}"
