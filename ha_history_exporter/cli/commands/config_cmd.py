@@ -116,7 +116,7 @@ def _set(args: argparse.Namespace) -> int:
     values = document.read_user_values()
     values[key.path] = document.parse_value(key.path, args.value)
     path = document.write_user_values(values)
-    print(f"{key.path} = {values[key.path]!r}  ({path})")
+    print(f"{key.path} = {render_value(values[key.path])}  ({path})")
     return 0
 
 
@@ -187,16 +187,26 @@ def _known_key(key_path: str) -> Key:
     return key
 
 
+def render_value(value: object) -> str:
+    """Render one configured value the way a user would type it.
+
+    Internal shapes - a format set, a tuple of numbers - must never reach the
+    terminal as their Python repr.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, frozenset):
+        return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in value) or "none"
+    if isinstance(value, (tuple, list)):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
 def _display_value(settings: ResolvedSettings, key: Key) -> str:
     """Never echo a secret; report only whether one is stored."""
     if key.status is KeyStatus.SECRET:
         return str(settings.values.get(key.path, "<not set>"))
-    value = settings.values.get(key.path, "")
-    if isinstance(value, frozenset):
-        return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in value) or "none"
-    if isinstance(value, tuple):
-        return ",".join(str(item) for item in value)
-    return str(value)
+    return render_value(settings.values.get(key.path, ""))
 
 
 def _refuse_explicit_config(args: argparse.Namespace) -> None:

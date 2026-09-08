@@ -94,6 +94,28 @@ def test_set_writes_the_user_file_and_get_reads_it_back(key, raw, expected, caps
     assert key.split(".", 1)[1] in read_user_config()
 
 
+def test_set_echoes_the_value_the_way_a_user_would_type_it(capsys):
+    """No internal repr may reach the terminal."""
+    assert cli.main(["config", "set", "export.formats", "jsonl,parquet"]) == 0
+    out = capsys.readouterr().out
+    assert "export.formats = jsonl,parquet" in out
+    assert "frozenset" not in out
+    assert "Format." not in out
+
+    assert cli.main(["config", "set", "requests.backoff", "1,2,3"]) == 0
+    out = capsys.readouterr().out
+    assert "requests.backoff = 1.0,2.0,3.0" in out
+
+
+def test_booleans_read_back_the_way_they_are_written(capsys):
+    """`config get` output is what `config set` accepts, so it round-trips."""
+    assert cli.main(["config", "set", "history_request.no_attributes", "true"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["config", "get", "history_request.no_attributes"]) == 0
+    assert capsys.readouterr().out == "true\n"
+
+
 def test_set_rejects_an_unknown_output_format(capsys):
     assert cli.main(["config", "set", "export.formats", "jsonl,arrow"]) == 2
     assert "arrow" in capsys.readouterr().err

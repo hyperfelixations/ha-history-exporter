@@ -18,6 +18,7 @@ $ hhe export
 - [Why](#why)
 - [Install](#install)
 - [Quick start](#quick-start)
+- [Join the community](#join-the-community)
 - [Configuration](#configuration)
 - [Credentials and security](#credentials-and-security)
 - [Command reference](#command-reference)
@@ -25,19 +26,25 @@ $ hhe export
 - [Troubleshooting](#troubleshooting)
 - [Automating daily exports](#automating-daily-exports)
 - [Development](#development)
-- [Roadmap](#roadmap)
 - [License](#license)
 
 ## Why
 
 The Home Assistant Recorder keeps a limited window of history — often two or
 three weeks — and then purges it. Long-term statistics survive, but they are
-hourly aggregates, not the raw state changes.
+hourly aggregates: they tell you the average temperature of an hour, not that a
+door opened at 18:42:07 and closed nineteen seconds later.
 
-HHE exports the raw changes before they are purged, into an archive that
-outlives your Home Assistant database and can be analysed with DuckDB, Pandas,
-or Polars. It needs no add-on, no database access, and no change to your Home
-Assistant configuration.
+HHE exports those raw state changes before they are purged, into an archive
+that outlives your Home Assistant database and can be analysed with DuckDB,
+Pandas, or Polars.
+
+**It runs entirely on your machine.** HHE talks to one address: the Home
+Assistant instance you name. A local hostname, a LAN IP, a Tailscale address —
+anything this computer can reach. It needs no internet connection, no cloud
+account, and no service in between; nothing is uploaded anywhere, and your
+history never leaves your own disk. It also needs no add-on, no database
+access, and no change to your Home Assistant configuration.
 
 **What is exported**
 
@@ -51,7 +58,8 @@ Assistant configuration.
 
 - long-term statistics — the History API does not serve them
 - entities that no longer exist in Home Assistant
-- today, because the day is not over yet
+- today, unless you ask for it by name (see
+  [Exporting today](#exporting-today))
 
 ## Install
 
@@ -86,11 +94,11 @@ tested.
 git clone https://github.com/hyperfelixations/ha-history-exporter.git
 cd ha-history-exporter
 pip install .
-hhe export --last-days 7
+hhe export
 ```
 
-`python -m ha_history_exporter export --last-days 7` works from a checkout
-without installing anything, as long as the dependencies are present.
+`python -m ha_history_exporter export` works from a checkout without installing
+anything, as long as the dependencies are present.
 
 ## Quick start
 
@@ -117,7 +125,7 @@ Access Tokens**. Then export:
 hhe export                        # the most recent complete day
 hhe export --last-days 7          # the seven most recent complete days
 hhe export --date 2026-06-15 --force
-hhe export --start-date 2026-06-01 --end-date 2026-06-15
+hhe export --start-date 2026-06-01 --end-date yesterday
 ```
 
 Days that already have a successful manifest are skipped, so running the same
@@ -127,10 +135,24 @@ missing.
 `hhe doctor` checks everything at once and prints the command that fixes each
 problem it finds.
 
+## Join the community
+
+The Home Assistant forum thread is where setups, questions and ideas for this
+tool are discussed. The remaining links are for following along as new things
+are built.
+
+[![Questions](https://img.shields.io/badge/Questions%3F-Ask%20here-41BDF5?logo=homeassistant&logoColor=white)](https://community.home-assistant.io/)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/hyperfelixations)
+[![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@hyperfelixations)
+[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/hyperfelixations/)
+
+Ideas and bug reports are welcome as
+[issues](https://github.com/hyperfelixations/ha-history-exporter/issues) too.
+
 ## Configuration
 
-Nothing has to be configured: with `HA_URL` and `HA_TOKEN` in the environment,
-`hhe export --last-days 7` already works and writes to
+Nothing has to be configured: with `HHE_URL` and `HHE_TOKEN` in the
+environment, `hhe export` already works and writes to
 `<your home directory>/ha-history-exports`.
 
 ### Where settings come from
@@ -140,13 +162,15 @@ Sources are merged, highest precedence first:
 | # | Source | Example |
 |---|---|---|
 | 1 | command-line options | `--batch-size 15` |
-| 2 | environment variables | `HHE_REQUESTS_BATCH_SIZE_ENTITIES=15` |
-| 3 | the file named by `--config` | `hhe export --config ./my.yaml …` |
-| 4 | a file in the working directory | `ha-history-exporter.yaml`, or `export_config.yaml` |
-| 5 | your user configuration | see `hhe config path` |
-| 6 | built-in defaults | |
+| 2 | environment variables | `HHE_REQUESTS_BATCH_SIZE=15` |
+| 3 | your configuration file | see `hhe config path` |
+| 4 | built-in defaults | |
 
-`--config` replaces discovery entirely: 4 and 5 are then not read at all.
+There is **one** configuration file. HHE never picks one up from the directory
+you happen to be standing in — a tool whose behaviour depends on that is a tool
+nobody can reason about. To use a different file for one run, name it:
+`hhe export --config ./other.yaml`. That file then replaces the usual one
+entirely.
 
 `hhe config list --origin` shows every effective value together with the source
 it came from, which is the fastest way to answer "why is it doing that?".
@@ -164,24 +188,28 @@ it came from, which is the fastest way to answer "why is it doing that?".
 ### Changing settings
 
 ```bash
-hhe config set formats.parquet true
+hhe config set export.formats jsonl,parquet
 hhe config set export.output_dir /mnt/archive/ha-history
-hhe config set requests.batch_size_entities 15
-hhe config get formats.parquet
-hhe config unset formats.parquet      # back to the default
-hhe config edit                       # open the file in $EDITOR
+hhe config set requests.batch_size 15
+hhe config get export.formats
+hhe config unset export.formats      # back to the default
+hhe config edit                      # open the file in $EDITOR
 ```
 
-Writes always go to your user configuration, never to a project file or a file
-you passed with `--config`. The file lists every key with its documentation;
-keys you have not set appear commented out, showing the built-in default.
+Writes always go to your configuration file, never to a file you passed with
+`--config`. The file lists every key with its documentation; keys you have not
+set appear commented out, showing the built-in default for your machine, so it
+is also the reference you can read offline.
 
 ### Environment variables
 
 Every key has one: `HHE_` followed by the key path in upper case with dots
 replaced by underscores, for example `HHE_EXPORT_OUTPUT_DIR`,
-`HHE_FORMATS_PARQUET`, `HHE_REQUESTS_BATCH_SIZE_ENTITIES`. `HA_URL` and
-`HA_TOKEN` keep their historical names.
+`HHE_EXPORT_FORMATS`, `HHE_REQUESTS_BATCH_SIZE`.
+
+The two credential keys have short names of their own: `HHE_URL` and
+`HHE_TOKEN`. `HA_URL` and `HA_TOKEN` keep working and take precedence, so an
+existing setup does not have to change.
 
 ### Key reference
 
@@ -189,48 +217,51 @@ replaced by underscores, for example `HHE_EXPORT_OUTPUT_DIR`,
 |---|---|---|
 | `homeassistant.url` | – | Base URL of your Home Assistant instance |
 | `homeassistant.token` | – | Access token; stored in `credentials.yaml` only |
-| `home_assistant.url_env` | `HA_URL` | Environment variable holding the URL |
-| `home_assistant.token_env` | `HA_TOKEN` | Environment variable holding the token |
-| `home_assistant.timezone` | `Europe/Berlin` | IANA time zone defining local days |
 | `export.output_dir` | `~/ha-history-exports` | Receives exports, metadata, and logs |
-| `export.resume` | `true` | Skip days with a successful manifest |
-| `export.force` | `false` | Re-export such days anyway |
-| `requests.batch_size_entities` | `5` | Entities per history request |
-| `requests.sleep_between_requests_seconds` | `1.0` | Pause between requests |
-| `requests.sleep_between_days_seconds` | `5.0` | Pause between days |
-| `requests.request_timeout_seconds` | `120` | HTTP timeout per request |
+| `export.timezone` | `Europe/Berlin` | IANA time zone defining local days |
+| `export.formats` | `[jsonl]` | Any of `jsonl`, `csv`, `parquet`; empty for snapshot only |
+| `requests.batch_size` | `5` | Entities per history request |
+| `requests.sleep_between_requests` | `1.0` | Seconds between requests |
+| `requests.sleep_between_days` | `5.0` | Seconds between days |
+| `requests.timeout` | `120` | HTTP timeout per request, in seconds |
 | `requests.max_retries` | `3` | Retries on timeouts and 5xx |
-| `requests.backoff_seconds` | `[2, 5, 15]` | Wait times between retries |
-| `formats.jsonl` | `true` | Write JSONL |
-| `formats.csv` | `false` | Write CSV |
-| `formats.parquet` | `false` | Write Parquet (needs pyarrow) |
-| `storage.temp_dir` | platform temp | Working directory during a run |
-| `storage.cloud_storage_retry_count` | `5` | Retries when a sync client locks a file |
-| `storage.cloud_storage_retry_sleep_seconds` | `2.0` | Pause between those retries |
+| `requests.backoff` | `[2, 5, 15]` | Seconds to wait between retries |
 | `history_request.minimal_response` | `false` | Ask HA for a reduced payload |
 | `history_request.no_attributes` | `false` | Ask HA to omit attributes |
 | `history_request.significant_changes_only` | `false` | Ask HA for significant changes only |
-| `recorder.expected_purge_keep_days` | unset | Warn about days older than this |
-| `entity_selection.include_unknown` | `true` | Request history for `unknown` entities |
-| `entity_selection.include_unavailable` | `true` | Request history for `unavailable` entities |
-| `entity_selection.optional_exclude_patterns` | `[]` | Glob patterns of entity IDs to skip |
-| `entity_selection.optional_exclude_domains` | `[]` | Entity domains to skip |
+| `entities.include_unknown` | `true` | Request history for `unknown` entities |
+| `entities.include_unavailable` | `true` | Request history for `unavailable` entities |
+| `entities.exclude_domains` | `[]` | Entity domains to skip |
+| `entities.exclude_patterns` | `[]` | Glob patterns of entity IDs to skip |
+| `recorder.purge_keep_days` | unset | Warn about days older than this |
+| `storage.temp_dir` | platform temp | Working directory during a run |
+| `storage.locked_file_retries` | `5` | Retries when another program locks an output file |
+| `storage.locked_file_retry_sleep` | `2.0` | Seconds between those retries |
+
+Every key name matches the command-line option that overrides it:
+`--batch-size` sets `requests.batch_size`, `--timeout` sets `requests.timeout`.
 
 Larger batches finish sooner but put more load on Home Assistant. On a
-Raspberry Pi, `batch_size_entities: 15` with
-`sleep_between_requests_seconds: 0.7` is a good compromise.
+Raspberry Pi, `requests.batch_size: 15` with
+`requests.sleep_between_requests: 0.7` is a good compromise.
+
+The three `history_request` options ask Home Assistant to send *less*. They are
+off by default, so an export is complete unless you deliberately choose
+otherwise; turn one on only if you know you want the smaller result.
 
 ## Credentials and security
 
 - Every request is a read-only `GET`. HHE never writes to Home Assistant.
 - The token is sent in the `Authorization` header only — never in a URL, a log
-  line, a manifest, an error message, or an export file.
+  line, a manifest, an error message, or an export file. It is not part of the
+  configuration object at all, so it cannot reach a log through one.
 - `hhe config get`/`list` report a stored token as `<set>`, never its value.
 - The token lives in `credentials.yaml`, separate from `config.yaml`, created
   with owner-only permissions (`0600` on Linux and macOS; on Windows it
-  inherits the user-profile ACL). `hhe doctor` checks and reports this.
-- `HA_TOKEN` in the environment takes precedence over the stored token, which
-  keeps CI and one-off shells free of any file.
+  inherits the user-profile ACL). `hhe doctor` checks and reports this. A token
+  written into `config.yaml` by hand is refused with an explanation.
+- `HHE_TOKEN` (or `HA_TOKEN`) in the environment takes precedence over the
+  stored token, which keeps CI and one-off shells free of any file.
 - Failed API responses are reported by status code and endpoint only; response
   bodies are never logged or stored, because they can contain private data.
 
@@ -249,7 +280,7 @@ Every invocation names its command; there is no implicit one.
 ### `hhe export`
 
 At most one day selection. Without one, the most recent complete day is
-exported - which is what a daily run wants:
+exported — which is what a daily run wants:
 
 | Option | Meaning |
 |---|---|
@@ -273,6 +304,21 @@ exported - which is what a daily run wants:
 
 `--format none` runs in snapshot-only mode: HHE records the current entity list
 and states, makes no History API request, and writes no daily manifest.
+
+### Exporting today
+
+Today is skipped by default, because it is not over. To capture it anyway —
+useful while debugging, or to look at what happened this morning — name it:
+
+```bash
+hhe export --date today
+```
+
+The day is fetched from local midnight up to the moment of the run and its
+manifest is recorded as `status: partial`. Because only `status: ok` counts as
+exported, the next run that includes that day fetches it again in full and
+replaces the files. Nothing else reaches into an unfinished day: a range or
+`--last-days` that happens to span today still skips it.
 
 ### Exit codes
 
@@ -306,14 +352,14 @@ added field:
 {"entity_id": "sensor.kitchen_temperature", "state": "21.5",
  "last_changed": "2026-06-15T08:30:00+00:00",
  "last_updated": "2026-06-15T08:30:00+00:00",
- "attributes": {"unit_of_measurement": "\u00b0C"},
+ "attributes": {"unit_of_measurement": "°C"},
  "local_offset": "+02:00"}
 ```
 
 Timestamps are UTC, exactly as the API returns them. `local_offset` is computed
-per row, so on a daylight-saving transition day the rows before and after the
-change carry different offsets and local time can be reconstructed without
-consulting anything else.
+per row from `last_changed`, so on a daylight-saving transition day the rows
+before and after the change carry different offsets and local time can be
+reconstructed without consulting anything else.
 
 Parquet stores the same records with real `timestamp[us, UTC]` columns and
 attributes as a JSON string, which is what DuckDB and Pandas want:
@@ -328,10 +374,20 @@ ORDER BY last_changed;
 ### Manifests and resuming
 
 Every exported day gets a manifest recording status, timing, entity counts,
-row counts, request counts, and any failed batches. A manifest with
-`status: ok` is the single durable record that the day was captured: you may
-move, archive, or delete the exported files afterwards, and HHE will still skip
-that day instead of asking Home Assistant again. Only `--force` overrides that.
+row counts, request counts, and any failed batches. `status` is one of:
+
+| Status | Meaning |
+|---|---|
+| `ok` | The day was captured completely |
+| `partial` | The day was captured while it was still running |
+| `failed` | The run reached the day but could not finish it |
+| `pending` | Written when the day starts; replaced when it ends |
+
+A manifest with `status: ok` is the single durable record that the day was
+captured: you may move, archive, or delete the exported files afterwards, and
+HHE will still skip that day instead of asking Home Assistant again. Only
+`--force` overrides that. Every other status means the day is not done, so a
+later run exports it again.
 
 ### One run at a time
 
@@ -359,11 +415,11 @@ answer in time. Check the URL with `hhe config get homeassistant.url`, try it in
 a browser, and raise `--timeout` if the instance is simply slow.
 
 **`Parquet output is enabled but pyarrow is not installed.`**
-Run `pipx inject ha-history-exporter pyarrow`, or turn Parquet off with
-`hhe config set formats.parquet false`.
+Run `pipx inject ha-history-exporter pyarrow`, or drop Parquet from the format
+list with `hhe config set export.formats jsonl`.
 
 **`Unknown configuration key '…'`**
-A typo in a configuration file. The message names the file, the line, and the
+A typo in the configuration file. The message names the file, the line, and the
 closest valid key; `hhe config list` shows all of them.
 
 **`Another export is already running for this output directory.`**
@@ -371,8 +427,8 @@ Wait for the other run. If none is running, the message names the lock file to
 remove.
 
 **A day exports as empty**
-The Recorder has already purged it. Set `recorder.expected_purge_keep_days` to
-your Home Assistant `purge_keep_days` value and HHE will warn before fetching.
+The Recorder has already purged it. Set `recorder.purge_keep_days` to your Home
+Assistant `purge_keep_days` value and HHE will warn before fetching.
 
 ## Automating daily exports
 
@@ -393,7 +449,8 @@ Arguments: export --last-days 2
 ```
 
 The stored `credentials.yaml` means the scheduled task needs no environment
-variables and no token in a script file.
+variables and no token in a script file. An export run never asks a question,
+so it cannot block waiting for an answer nobody is there to give.
 
 ## Development
 
@@ -413,12 +470,9 @@ cannot reach a real instance. The same suite runs on Linux and Windows against
 Python 3.10 and 3.13 in GitHub Actions, together with lint, type check, and a
 package build.
 
-## Roadmap
-
-- deriving a missing format from files already on disk, without asking Home
-  Assistant again
-- an extended manifest schema recording each artifact separately
-- a separate viewer for browsing exported history
+What an export produces is pinned byte-for-byte against golden fixtures in
+`tests/golden/`. If a change alters them, that is the change asking to be
+looked at: review the diff, then regenerate with `python tools/refresh_golden.py`.
 
 ## License
 

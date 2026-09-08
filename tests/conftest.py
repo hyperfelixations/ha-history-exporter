@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 import pytest
 
@@ -26,31 +27,49 @@ def isolated_user_environment(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
     config_dir = tmp_path / "hhe-config"
     working_dir = tmp_path / "cwd"
-    config_dir.mkdir()
-    working_dir.mkdir()
+    home_dir = tmp_path / "home"
+    for directory in (config_dir, working_dir, home_dir):
+        directory.mkdir()
     monkeypatch.setenv(paths.ENV_CONFIG_DIR, str(config_dir))
     monkeypatch.chdir(working_dir)
+
+    # The default output directory is derived from the home directory.
+    # Without this, a test that exports without an explicit output_dir
+    # would write into the real profile.
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home_dir))
+
     yield config_dir
 
 
 @pytest.fixture(scope="session", autouse=True)
-def real_user_config_dir_is_never_touched():
-    """Fail the session if any test wrote into the real configuration directory."""
+def real_user_directories_are_never_touched():
+    """Fail the session if a test wrote into the real user profile.
+
+    Covers both places a run would otherwise land: the configuration
+    directory and the default output directory below the home directory.
+    """
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.delenv(paths.ENV_CONFIG_DIR, raising=False)
-    real_dir = paths.user_config_dir()
+    watched = [paths.user_config_dir(), paths.default_output_dir()]
     monkeypatch.undo()
 
-    existed = real_dir.exists()
-    before = sorted(p.name for p in real_dir.iterdir()) if existed else []
+    def snapshot() -> list[tuple[bool, list[str]]]:
+        return [
+            (
+                directory.exists(),
+                sorted(p.name for p in directory.iterdir())
+                if directory.exists()
+                else [],
+            )
+            for directory in watched
+        ]
 
+    before = snapshot()
     yield
+    after = snapshot()
 
-    now_exists = real_dir.exists()
-    after = sorted(p.name for p in real_dir.iterdir()) if now_exists else []
-    assert (existed, before) == (now_exists, after), (
-        f"tests modified the real user configuration directory {real_dir}"
-    )
+    for directory, was, now in zip(watched, before, after, strict=True):
+        assert was == now, f"tests modified the real directory {directory}"
 
 
 @pytest.fixture(autouse=True)
