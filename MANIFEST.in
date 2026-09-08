@@ -1,11 +1,15 @@
-# Files the source distribution needs beyond the package itself: the example
-# the README points at, the pinned dependency lists, and the complete test
-# suite, so an sdist can be verified on its own.
+# Files the source distribution needs beyond the package itself: the pinned
+# dependency lists, the repository files the test suite reads, and the
+# complete test suite, so an sdist can be verified on its own.
 include LICENSE
 include README.md
 include MANIFEST.in
 include requirements.txt
 include requirements-dev.txt
+include .gitattributes
+include .gitignore
+recursive-include .github/workflows *.yml
+recursive-include tools *.py
 recursive-include tests *.py *.md
 recursive-include tests/golden *.jsonl *.csv *.json
 global-exclude __pycache__/* *.py[cod]
