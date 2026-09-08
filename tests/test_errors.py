@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from ha_history_exporter import console
+from ha_history_exporter.cli import output as console
 from ha_history_exporter.errors import (
     AuthError,
     ConfigError,

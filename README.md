@@ -10,7 +10,7 @@ Assistant is read-only.
 ```console
 $ pipx install ha-history-exporter
 $ hhe init
-$ hhe export --last-days 7
+$ hhe export
 ```
 
 ## Contents
@@ -85,12 +85,12 @@ tested.
 ```bash
 git clone https://github.com/hyperfelixations/ha-history-exporter.git
 cd ha-history-exporter
-pip install -r requirements.txt
-python ha_history_batch_export.py --last-days 7
+pip install .
+hhe export --last-days 7
 ```
 
-`ha_history_batch_export.py` is the historical entry point and takes exactly
-the same arguments as `hhe export`.
+`python -m ha_history_exporter export --last-days 7` works from a checkout
+without installing anything, as long as the dependencies are present.
 
 ## Quick start
 
@@ -107,15 +107,15 @@ Timezone [Europe/Berlin]:
 Wrote /home/you/.config/ha-history-exporter/config.yaml
 Wrote /home/you/.config/ha-history-exporter/credentials.yaml (access token, not readable by other users)
 
-Next:  hhe export --last-days 7
+Next:  hhe export
 ```
 
 Create the token in Home Assistant under **Profile → Security → Long-Lived
 Access Tokens**. Then export:
 
 ```bash
+hhe export                        # the most recent complete day
 hhe export --last-days 7          # the seven most recent complete days
-hhe export --date yesterday       # a single day
 hhe export --date 2026-06-15 --force
 hhe export --start-date 2026-06-01 --end-date 2026-06-15
 ```
@@ -244,31 +244,32 @@ hhe config  get KEY | set KEY [VALUE] | unset KEY | list [--origin] | path | edi
 hhe doctor  [--offline] [--config FILE]
 ```
 
-The command may be omitted for `export`, so every historical invocation such as
-`ha-history-exporter --date yesterday` keeps working unchanged.
+Every invocation names its command; there is no implicit one.
 
 ### `hhe export`
 
-Exactly one day selection is required:
+At most one day selection. Without one, the most recent complete day is
+exported - which is what a daily run wants:
 
 | Option | Meaning |
 |---|---|
+| *(none)* | The most recent complete day |
 | `--last-days N` | The N most recent complete days, ending yesterday |
 | `--date DATE` | `YYYY-MM-DD`, `yesterday`, or `today` |
 | `--start-date DATE --end-date DATE` | An inclusive range |
 
+`yesterday` and `today` work in all three date options, so
+`--start-date 2026-08-01 --end-date yesterday` is a valid range.
+
 | Option | Meaning |
 |---|---|
 | `--format LIST` | `jsonl`, `csv`, `parquet`, `none`, comma-separated; states the complete set |
-| `--outdir DIR` | Output directory for this run |
+| `--output-dir DIR` | Output directory for this run |
 | `--dry-run` | Show the plan and the entity count; fetch no history |
 | `--force` | Re-export days that already have a successful manifest |
 | `--config FILE` | Use exactly this configuration file |
 | `--timezone TZ`, `--batch-size N`, `--sleep-between-requests S`, `--sleep-between-days S`, `--timeout S`, `--max-retries N` | Override the matching setting |
 | `--log-level LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-
-`--jsonl`, `--parquet`, and `--no-csv` still work and are kept for
-compatibility; `--format` supersedes them and cannot be combined with them.
 
 `--format none` runs in snapshot-only mode: HHE records the current entity list
 and states, makes no History API request, and writes no daily manifest.

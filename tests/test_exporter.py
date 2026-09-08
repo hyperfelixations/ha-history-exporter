@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from ha_history_exporter import exporter
-from ha_history_exporter.exceptions import AuthError
+from ha_history_exporter.errors import AuthError
 from ha_history_exporter.planner import ExportPlan
 from tests.helpers import (
     FakeHomeAssistantClient,

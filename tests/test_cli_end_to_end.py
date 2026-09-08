@@ -1,46 +1,22 @@
-"""Characterization tests for the command-line surface of version 1.3.2.
+"""End-to-end behaviour of the command line, driven through cli.main().
 
-These pin the flag surface, the invocation forms, and the exit codes exactly as
-they are today, so that no refactoring changes them by accident.
-
-The *result* of an export - directory layout, file names, row shapes, manifest
-fields, Parquet schema - is a separate and stricter contract. It lives in
-tests/test_output_contract.py, pinned byte-for-byte against golden fixtures.
+What an export *produces* is a stricter contract and lives in
+tests/test_output_contract.py, pinned against golden fixtures. This module
+covers the parts only reachable through the command line: the entity snapshot,
+the log directory, the resume short-circuit, and the exit codes.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from ha_history_exporter import cli, ha_client
-from ha_history_exporter.exceptions import AuthError
+from ha_history_exporter.errors import AuthError
 from tests.helpers import FakeCliClient
 
 DAY = "2026-07-28"
-
-# The complete flag surface published by version 1.3.2. Every entry must keep
-# working; new options may be added, but none of these may disappear.
-LEGACY_SWITCH_DESTS = (
-    "dry_run",
-    "force",
-)
-LEGACY_VALUE_DESTS = (
-    "config",
-    "date",
-    "start_date",
-    "end_date",
-    "outdir",
-    "timezone",
-    "batch_size",
-    "sleep_between_requests",
-    "sleep_between_days",
-    "timeout",
-    "max_retries",
-    "log_level",
-)
 
 ALL_FORMATS = "[jsonl, csv, parquet]"
 JSONL_AND_CSV = "[jsonl, csv]"
@@ -81,74 +57,6 @@ def day_dir(root: Path) -> Path:
     return root / "output" / "exports" / "daily" / "2026" / "07"
 
 
-# ── flag surface ──────────────────────────────────────────────────────────────
-
-def test_legacy_flag_surface_is_unchanged():
-    parsed = vars(cli._parse_args(["--date", DAY]))
-
-    for dest in LEGACY_SWITCH_DESTS:
-        assert dest in parsed, f"switch for {dest} disappeared"
-        assert parsed[dest] is False
-    for dest in LEGACY_VALUE_DESTS:
-        assert dest in parsed, f"option for {dest} disappeared"
-    assert parsed["date"] == DAY
-    assert parsed["start_date"] is None
-    assert parsed["end_date"] is None
-
-
-def test_legacy_flags_all_still_parse_together():
-    args = cli._parse_args(
-        [
-            "--config", "somewhere.yaml",
-            "--start-date", "2026-07-20",
-            "--end-date", DAY,
-            "--dry-run",
-            "--force",
-            "--outdir", "out",
-            "--timezone", "Europe/Berlin",
-            "--batch-size", "9",
-            "--sleep-between-requests", "0.5",
-            "--sleep-between-days", "1.5",
-            "--timeout", "30",
-            "--max-retries", "2",
-            "--log-level", "DEBUG",
-        ]
-    )
-
-    assert args.config == "somewhere.yaml"
-    assert (args.start_date, args.end_date) == ("2026-07-20", DAY)
-    assert args.dry_run and args.force
-    assert args.outdir == "out"
-    assert args.timezone == "Europe/Berlin"
-    assert args.batch_size == 9
-    assert args.sleep_between_requests == 0.5
-    assert args.sleep_between_days == 1.5
-    assert args.timeout == 30
-    assert args.max_retries == 2
-    assert args.log_level == "DEBUG"
-
-
-def test_date_and_range_selectors_remain_mutually_exclusive():
-    with pytest.raises(SystemExit) as exc:
-        cli._parse_args(["--date", DAY, "--start-date", "2026-07-20"])
-    assert exc.value.code == 2
-
-
-# ── invocation forms ──────────────────────────────────────────────────────────
-
-def test_legacy_invocation_without_subcommand_exports(tmp_path, monkeypatch):
-    path = write_config(tmp_path)
-    set_synthetic_env(monkeypatch)
-    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
-
-    manifest = json.loads(
-        (day_dir(tmp_path) / f"{DAY}.manifest.json").read_text(encoding="utf-8")
-    )
-    assert manifest["status"] == "ok"
-
-
 # ── output layout and formats ─────────────────────────────────────────────────
 
 def test_output_layout_is_unchanged(tmp_path, monkeypatch):
@@ -156,7 +64,7 @@ def test_output_layout_is_unchanged(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", DAY]) == 0
 
     output = tmp_path / "output"
     for suffix in ("jsonl", "csv", "parquet", "manifest.json"):
@@ -171,7 +79,7 @@ def test_snapshot_only_contract_is_unchanged(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", DAY]) == 0
 
     assert FakeCliClient.instances[0].history_calls == []
     assert not (tmp_path / "output" / "exports").exists()
@@ -185,17 +93,17 @@ def test_successful_manifest_prevents_a_second_home_assistant_call(
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", DAY]) == 0
     assert len(FakeCliClient.instances[0].history_calls) == 1
 
-    assert cli.main(["--config", str(path), "--date", DAY]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", DAY]) == 0
     assert len(FakeCliClient.instances) == 1  # no second client was constructed
 
 
 # ── exit codes ────────────────────────────────────────────────────────────────
 
 def _run_missing_config(tmp_path, monkeypatch) -> int:
-    return cli.main(["--config", str(tmp_path / "absent.yaml"), "--date", DAY])
+    return cli.main(["export", "--config", str(tmp_path / "absent.yaml"), "--date", DAY])
 
 
 def _run_invalid_timezone(tmp_path, monkeypatch) -> int:
@@ -207,18 +115,18 @@ def _run_invalid_timezone(tmp_path, monkeypatch) -> int:
         encoding="utf-8",
     )
     set_synthetic_env(monkeypatch)
-    return cli.main(["--config", str(path), "--date", DAY])
+    return cli.main(["export", "--config", str(path), "--date", DAY])
 
 
 def _run_invalid_override(tmp_path, monkeypatch) -> int:
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
-    return cli.main(["--config", str(path), "--date", DAY, "--batch-size", "0"])
+    return cli.main(["export", "--config", str(path), "--date", DAY, "--batch-size", "0"])
 
 
 def _run_missing_credentials(tmp_path, monkeypatch) -> int:
     path = write_config(tmp_path)
-    return cli.main(["--config", str(path), "--date", DAY])
+    return cli.main(["export", "--config", str(path), "--date", DAY])
 
 
 def _run_auth_failure(tmp_path, monkeypatch) -> int:
@@ -226,7 +134,7 @@ def _run_auth_failure(tmp_path, monkeypatch) -> int:
     set_synthetic_env(monkeypatch)
     FakeCliClient.check_error = AuthError("synthetic auth failure")
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-    return cli.main(["--config", str(path), "--date", DAY])
+    return cli.main(["export", "--config", str(path), "--date", DAY])
 
 
 def _run_interrupt(tmp_path, monkeypatch) -> int:
@@ -234,14 +142,14 @@ def _run_interrupt(tmp_path, monkeypatch) -> int:
     set_synthetic_env(monkeypatch)
     FakeCliClient.check_error = KeyboardInterrupt()
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-    return cli.main(["--config", str(path), "--date", DAY])
+    return cli.main(["export", "--config", str(path), "--date", DAY])
 
 
 def _run_success(tmp_path, monkeypatch) -> int:
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-    return cli.main(["--config", str(path), "--date", DAY])
+    return cli.main(["export", "--config", str(path), "--date", DAY])
 
 
 @pytest.mark.parametrize(

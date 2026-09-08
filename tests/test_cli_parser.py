@@ -17,26 +17,7 @@ from ha_history_exporter.time_utils import last_n_complete_days, today_local
 BERLIN = ZoneInfo("Europe/Berlin")
 
 
-# ── legacy shim ───────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize(
-    ("argv", "expected"),
-    [
-        ([], []),
-        (["--help"], ["--help"]),
-        (["-h"], ["-h"]),
-        (["--version"], ["--version"]),
-        (["-V"], ["-V"]),
-        (["export"], ["export"]),
-        (["export", "--date", "2026-07-28"], ["export", "--date", "2026-07-28"]),
-        (["--date", "2026-07-28"], ["export", "--date", "2026-07-28"]),
-        (["--last-days", "7"], ["export", "--last-days", "7"]),
-        (["--dry-run"], ["export", "--dry-run"]),
-    ],
-)
-def test_normalize_argv_inserts_the_implicit_export_command(argv, expected):
-    assert parser.normalize_argv(argv) == expected
-
+# ── the command is part of every invocation ───────────────────────────────────
 
 def test_top_level_help_names_the_invoked_program(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["ha-history-exporter", "--help"])
@@ -53,19 +34,96 @@ def test_version_flag_reports_the_package_version(capsys):
     assert __version__ in capsys.readouterr().out
 
 
-def test_missing_command_and_missing_date_both_exit_two():
+def test_an_invocation_without_a_command_exits_two_and_lists_the_commands(capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([])
     assert exc.value.code == 2
+    assert "COMMAND" in capsys.readouterr().err
 
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--date", "2026-07-28"],
+        ["--last-days", "7"],
+        ["--dry-run"],
+    ],
+)
+def test_export_flags_without_the_command_are_rejected(argv, capsys):
+    """The implicit command is gone: one spelling, stated in every invocation."""
     with pytest.raises(SystemExit) as exc:
-        cli.main(["export"])
+        cli.main(argv)
+    assert exc.value.code == 2
+    assert "COMMAND" in capsys.readouterr().err
+
+
+def test_an_unknown_command_lists_the_known_ones(capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["exprot", "--date", "2026-07-28"])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice" in err
+    assert "export" in err
+
+
+@pytest.mark.parametrize("command", ["export", "init", "config", "doctor"])
+def test_every_command_is_reachable(command):
+    assert command in parser.COMMANDS
+
+
+def test_export_without_a_day_selection_takes_the_latest_complete_day():
+    """The daily case needs no argument to say what it obviously means."""
+    tz = ZoneInfo("Europe/Berlin")
+    args = cli.parse_args(["export"])
+    assert args.command == "export"
+
+    start, end = export_command.resolve_date_range(args, tz)
+    expected = today_local(tz) - timedelta(days=1)
+    assert (start, end) == (expected, expected)
+
+
+def test_end_date_without_start_date_is_a_usage_error():
+    tz = ZoneInfo("Europe/Berlin")
+    args = cli.parse_args(["export", "--end-date", "2026-07-28"])
+    with pytest.raises(ValueError, match="--start-date is required"):
+        export_command.resolve_date_range(args, tz)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["export", "--date", "2026-07-28", "--last-days", "3"],
+        ["export", "--start-date", "2026-07-01", "--last-days", "3"],
+        ["export", "--date", "2026-07-28", "--start-date", "2026-07-01"],
+    ],
+)
+def test_day_selections_stay_mutually_exclusive(argv):
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(argv)
     assert exc.value.code == 2
 
 
-def test_parsed_command_is_export_for_both_forms():
-    assert cli.parse_args(["--date", "2026-07-28"]).command == "export"
-    assert cli.parse_args(["export", "--date", "2026-07-28"]).command == "export"
+@pytest.mark.parametrize("word", ["yesterday", "today"])
+def test_date_words_work_in_every_date_option(word):
+    """One translation of 'yesterday' and 'today', used by all three options."""
+    tz = ZoneInfo("Europe/Berlin")
+    single = export_command.resolve_date_range(
+        cli.parse_args(["export", "--date", word]), tz
+    )
+    ranged = export_command.resolve_date_range(
+        cli.parse_args(["export", "--start-date", word, "--end-date", word]), tz
+    )
+    assert single == ranged
+
+
+def test_a_range_may_end_at_yesterday():
+    tz = ZoneInfo("Europe/Berlin")
+    args = cli.parse_args(
+        ["export", "--start-date", "2026-07-01", "--end-date", "yesterday"]
+    )
+    start, end = export_command.resolve_date_range(args, tz)
+    assert start == date(2026, 7, 1)
+    assert end == today_local(tz) - timedelta(days=1)
 
 
 # ── --last-days ───────────────────────────────────────────────────────────────
@@ -102,20 +160,20 @@ def test_last_days_matches_the_legacy_batch_file_window():
 
 
 def test_resolve_date_range_uses_last_days():
-    args = cli.parse_args(["--last-days", "3"])
+    args = cli.parse_args(["export", "--last-days", "3"])
     start, end = export_command.resolve_date_range(args, BERLIN)
     assert (start, end) == last_n_complete_days(3, BERLIN)
 
 
 def test_resolve_date_range_still_supports_single_days_and_ranges():
-    single = cli.parse_args(["--date", "2026-07-28"])
+    single = cli.parse_args(["export", "--date", "2026-07-28"])
     assert export_command.resolve_date_range(single, BERLIN) == (
         date(2026, 7, 28),
         date(2026, 7, 28),
     )
 
     ranged = cli.parse_args(
-        ["--start-date", "2026-07-20", "--end-date", "2026-07-28"]
+        ["export", "--start-date", "2026-07-20", "--end-date", "2026-07-28"]
     )
     assert export_command.resolve_date_range(ranged, BERLIN) == (
         date(2026, 7, 20),
@@ -181,12 +239,20 @@ def test_none_cannot_be_combined_with_another_format():
         export_command.parse_format_list("none,jsonl")
 
 
-@pytest.mark.parametrize("legacy", ["--no-csv", "--jsonl", "--parquet"])
-def test_the_legacy_format_switches_are_gone(legacy):
-    """--format states the whole set; a switch that nudges one is a second way."""
+@pytest.mark.parametrize(
+    ("option", "reason"),
+    [
+        ("--jsonl", "--format states the whole set, not a nudge to one member"),
+        ("--parquet", "--format states the whole set, not a nudge to one member"),
+        ("--no-csv", "--format states the whole set, not a nudge to one member"),
+        ("--resume", "skipping finished days is the behaviour; --force overrides it"),
+        ("--outdir", "the option is spelled --output-dir, like the key it sets"),
+    ],
+)
+def test_options_with_a_second_spelling_are_gone(option, reason):
     with pytest.raises(SystemExit) as exc:
-        cli.parse_args(["--date", "2026-07-28", legacy])
-    assert exc.value.code == 2
+        cli.parse_args(["export", "--date", "2026-07-28", option])
+    assert exc.value.code == 2, reason
 
 
 def test_format_none_selects_snapshot_only(tmp_path, monkeypatch):

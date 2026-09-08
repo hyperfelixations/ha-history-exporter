@@ -60,11 +60,10 @@ def test_publishable_sources_contain_no_private_workspace_paths():
         ROOT / "README.md",
         ROOT / "LICENSE",
         ROOT / "pyproject.toml",
-        ROOT / "ha_history_batch_export.py",
         ROOT / ".gitattributes",
         ROOT / ".github" / "workflows" / "release.yml",
         ROOT / "tools" / "refresh_golden.py",
-        *(ROOT / "ha_history_exporter").glob("*.py"),
+        *(ROOT / "ha_history_exporter").rglob("*.py"),
         *(ROOT / "tests" / "golden").iterdir(),
     ]
     forbidden_patterns = [

@@ -8,7 +8,7 @@ import pytest
 import requests
 
 from ha_history_exporter import ha_client
-from ha_history_exporter.exceptions import AuthError, HAAPIError, HAConnectionError
+from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError
 from ha_history_exporter.ha_client import HomeAssistantClient
 from tests.helpers import FakeResponse, SequenceGet, state_row, timeout_error
 

@@ -14,7 +14,7 @@ import sys
 import textwrap
 from typing import TextIO
 
-from .errors import CONTEXT_LABELS, HHEError
+from ..errors import CONTEXT_LABELS, HHEError
 
 WIDTH = 78
 INDENT = "  "

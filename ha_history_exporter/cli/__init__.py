@@ -22,10 +22,10 @@ import logging
 from typing import Callable, List, Optional  # noqa: F401 - Optional is part of main()'s signature
 from zoneinfo import ZoneInfo  # re-exported: callers build timezones from here
 
-from ..console import render_error
 from ..errors import HHEError, Remedy
 from .commands import config_cmd, doctor, export, init
-from .parser import COMMANDS, build_parser, normalize_argv, parse_args
+from .output import render_error
+from .parser import COMMANDS, build_parser, parse_args
 
 _HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "config": config_cmd.run,
@@ -95,6 +95,5 @@ __all__ = [
     "build_parser",
     "cli_overrides",
     "main",
-    "normalize_argv",
     "parse_args",
 ]

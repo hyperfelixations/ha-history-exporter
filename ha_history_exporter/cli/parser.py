@@ -1,46 +1,34 @@
 """Command-line grammar.
 
-HHE grew from a single flag-only command into a tool with several commands.
-Both forms stay valid: ``hhe export --date yesterday`` and the historical
-``ha-history-exporter --date yesterday`` parse identically, because
-:func:`normalize_argv` inserts the implicit ``export`` command.
+Every invocation names its command: ``hhe export``, ``hhe init``,
+``hhe config``, ``hhe doctor``. There is no implicit command and no second
+spelling for anything - one way per thing, so a command reads the same to
+the person writing it and the person reading it later.
 """
 
 from __future__ import annotations
 
 import argparse
-from typing import List, Sequence
+from typing import Sequence
 
 from .. import __version__
 
 COMMANDS = ("export", "init", "config", "doctor")
 
-_TOP_LEVEL_FLAGS = frozenset({"-h", "--help", "--version", "-V"})
-
 FORMAT_CHOICES = ("jsonl", "csv", "parquet", "none")
 
 EPILOG = """\
 Examples:
+  hhe export                          the most recent complete day
   hhe export --last-days 7            the seven most recent complete days
-  hhe export --date yesterday         a single day
   hhe export --date 2026-06-15 --force
-  hhe export --start-date 2026-06-01 --end-date 2026-06-15
+  hhe export --start-date 2026-06-01 --end-date yesterday
   hhe export --last-days 30 --format parquet
 
 The Home Assistant URL and access token are read from the configuration, or
-from the HA_URL and HA_TOKEN environment variables.
+from the HHE_URL and HHE_TOKEN environment variables (HA_URL and HA_TOKEN
+work as well).
 """
-
-
-def normalize_argv(argv: Sequence[str]) -> List[str]:
-    """Insert the implicit 'export' command for the legacy flag-only form."""
-    args = list(argv)
-    if not args:
-        return args
-    head = args[0]
-    if head in COMMANDS or head in _TOP_LEVEL_FLAGS:
-        return args
-    return ["export", *args]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,7 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     export = subcommands.add_parser(
         "export",
         help="Export history for one day or a range of days.",
-        description="Export Home Assistant history for complete local days.",
+        description=(
+            "Export Home Assistant history for complete local days. "
+            "Without a day selection, the most recent complete day is exported."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EPILOG,
     )
@@ -132,10 +123,10 @@ def add_config_arguments(p: argparse.ArgumentParser) -> None:
 def add_export_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--config", metavar="FILE",
-        help="Use exactly this YAML config file instead of the discovered ones.",
+        help="Read exactly this file instead of the user configuration.",
     )
 
-    dates = p.add_mutually_exclusive_group(required=True)
+    dates = p.add_mutually_exclusive_group()
     dates.add_argument("--date", metavar="DATE",
                        help="Single day: YYYY-MM-DD, 'yesterday', or 'today'.")
     dates.add_argument("--start-date", metavar="DATE",
@@ -148,11 +139,10 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--dry-run", action="store_true",
                    help="Show plan without fetching history.")
     p.add_argument("--force", action="store_true",
-                   help="Re-export even if already status=ok.")
-    p.add_argument("--resume", action="store_true",
-                   help="Skip days already status=ok (default from config).")
+                   help="Re-export days that already have a successful manifest.")
 
-    p.add_argument("--outdir", metavar="DIR", help="Override output directory.")
+    p.add_argument("--output-dir", metavar="DIR",
+                   help="Directory that receives this run's output.")
     p.add_argument(
         "--format", metavar="LIST",
         help="Complete set of output formats: jsonl, csv, parquet, or none.",
@@ -175,8 +165,8 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse *argv*, accepting both the command form and the legacy flag form."""
+    """Parse *argv* into a namespace, or exit with the usage message."""
     import sys
 
-    raw = sys.argv[1:] if argv is None else argv
-    return build_parser().parse_args(normalize_argv(raw))
+    raw = list(sys.argv[1:] if argv is None else argv)
+    return build_parser().parse_args(raw)

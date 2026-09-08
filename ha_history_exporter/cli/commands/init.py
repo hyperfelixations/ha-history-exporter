@@ -63,7 +63,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"Wrote {config_path}")
     print(f"Wrote {credentials_path} (access token, not readable by other users)")
     print()
-    print("Next:  hhe export --last-days 7")
+    print("Next:  hhe export")
     return 0
 
 

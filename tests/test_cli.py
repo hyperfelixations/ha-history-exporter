@@ -9,7 +9,7 @@ import pytest
 
 from ha_history_exporter import cli, ha_client
 from ha_history_exporter.cli.commands import export as export_command
-from ha_history_exporter.exceptions import AuthError
+from ha_history_exporter.errors import AuthError
 from ha_history_exporter.settings import Format
 from tests.helpers import FakeCliClient
 
@@ -53,6 +53,7 @@ def test_parse_args_requires_date_selector():
 def test_parse_args_accepts_tuning_options():
     args = cli._parse_args(
         [
+            "export",
             "--date",
             "2026-07-28",
             "--batch-size",
@@ -73,23 +74,22 @@ def test_parse_args_accepts_tuning_options():
 
 
 def test_parse_args_prog_follows_invocation_name(monkeypatch, capsys):
-    """`prog` must not be hardcoded to the legacy launcher filename.
+    """--help must name the command the user actually typed.
 
-    Before packaging, argparse always advertised `ha_history_batch_export.py`
-    in --help usage, even when invoked as the `ha-history-exporter` console
-    script. argparse derives the default prog from sys.argv[0] at parser
-    construction time, independent of the argv list passed to parse_args().
+    argparse derives prog from sys.argv[0] at parser construction time,
+    independent of the argv list passed to parse_args(), so every entry point
+    - both console commands and `python -m` - shows its own name.
     """
     monkeypatch.setattr(sys, "argv", ["ha-history-exporter", "--help"])
     with pytest.raises(SystemExit) as exc:
-        cli._parse_args(["--help"])
+        cli._parse_args(["export", "--help"])
     assert exc.value.code == 0
     usage_line = capsys.readouterr().out.splitlines()[0]
     assert usage_line.startswith("usage: ha-history-exporter ")
 
 
 def test_resolve_date_range_requires_end_date():
-    args = cli._parse_args(["--start-date", "2026-07-27"])
+    args = cli._parse_args(["export", "--start-date", "2026-07-27"])
     with pytest.raises(ValueError, match="--end-date is required"):
         cli._resolve_date_range(args, cli.ZoneInfo("Europe/Berlin"))
 
@@ -97,6 +97,7 @@ def test_resolve_date_range_requires_end_date():
 def test_resolve_date_range_rejects_reversed_range():
     args = cli._parse_args(
         [
+            "export",
             "--start-date",
             "2026-07-29",
             "--end-date",
@@ -109,7 +110,7 @@ def test_resolve_date_range_rejects_reversed_range():
 
 def test_main_returns_two_for_missing_config(capsys):
     result = cli.main(
-        ["--config", "does-not-exist.yaml", "--date", "2026-07-28"]
+        ["export", "--config", "does-not-exist.yaml", "--date", "2026-07-28"]
     )
     assert result == 2
     assert "Config file not found" in capsys.readouterr().err
@@ -123,7 +124,7 @@ def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch):
     path.write_text(text, encoding="utf-8")
     set_synthetic_env(monkeypatch)
 
-    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 2
+    assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 2
     assert not (tmp_path / "output" / "logs").exists()
 
 
@@ -142,6 +143,7 @@ def test_main_rejects_invalid_numeric_override_before_client(
     assert (
         cli.main(
             [
+                "export",
                 "--config",
                 str(path),
                 "--date",
@@ -166,7 +168,7 @@ def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0
 
     instance = FakeCliClient.instances[0]
     assert instance.history_calls == []
@@ -188,6 +190,7 @@ def test_main_dry_run_uses_only_synthetic_client(
 
     result = cli.main(
         [
+            "export",
             "--config",
             str(path),
             "--date",
@@ -212,7 +215,7 @@ def test_main_full_export_with_fake_client(tmp_path, monkeypatch):
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     result = cli.main(
-        ["--config", str(path), "--date", "2026-07-28"]
+        ["export", "--config", str(path), "--date", "2026-07-28"]
     )
 
     assert result == 0
@@ -237,7 +240,7 @@ def test_main_handles_authentication_failure(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     result = cli.main(
-        ["--config", str(path), "--date", "2026-07-28", "--dry-run"]
+        ["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"]
     )
 
     assert result == 1
@@ -264,7 +267,7 @@ def test_main_short_circuits_existing_day_before_client(
 
     monkeypatch.setattr(ha_client, "HomeAssistantClient", ForbiddenClient)
 
-    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0
 
 
 def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
@@ -282,11 +285,12 @@ def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
 
     result = cli.main(
         [
+            "export",
             "--config",
             str(path),
             "--date",
             "2026-07-28",
-            "--outdir",
+            "--output-dir",
             str(outdir),
             "--timezone",
             "Europe/Berlin",
@@ -337,6 +341,7 @@ def test_main_handles_top_level_failures(
     assert (
         cli.main(
             [
+                "export",
                 "--config",
                 str(path),
                 "--date",
@@ -357,7 +362,7 @@ def test_main_runs_without_any_configuration_file(tmp_path, monkeypatch):
     monkeypatch.setenv("HHE_REQUESTS_SLEEP_BETWEEN_DAYS_SECONDS", "0")
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--date", "2026-07-28"]) == 0
+    assert cli.main(["export", "--date", "2026-07-28"]) == 0
     assert (
         tmp_path
         / "output"
@@ -375,7 +380,7 @@ def test_main_reports_the_resolved_output_directory(tmp_path, monkeypatch, caplo
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     with caplog.at_level(logging.INFO):
-        assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+        assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "Output directory:" in messages
@@ -385,9 +390,10 @@ def test_main_reports_the_resolved_output_directory(tmp_path, monkeypatch, caplo
 def test_cli_overrides_are_translated_into_configuration_keys():
     args = cli._parse_args(
         [
+            "export",
             "--date",
             "2026-07-28",
-            "--outdir",
+            "--output-dir",
             "out",
             "--batch-size",
             "9",
@@ -407,7 +413,7 @@ def test_cli_overrides_are_translated_into_configuration_keys():
 
 
 def test_cli_overrides_stay_empty_when_no_option_is_given():
-    args = cli._parse_args(["--date", "2026-07-28"])
+    args = cli._parse_args(["export", "--date", "2026-07-28"])
     assert cli.cli_overrides(args) == {}
 
 
@@ -425,7 +431,7 @@ def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert cli.main(["--config", str(path), "--date", "2026-07-28"]) == 0
+    assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0
 
     instance = FakeCliClient.instances[0]
     requested = [

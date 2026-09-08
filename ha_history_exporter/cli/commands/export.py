@@ -26,14 +26,18 @@ from ...exporter import run_export
 from ...planner import build_plan
 from ...runtime.workspace import new_run_id
 from ...settings import Config, Format, load_settings, schema
-from ...time_utils import last_n_complete_days, parse_date_arg
+from ...time_utils import (
+    last_n_complete_days,
+    latest_complete_day,
+    parse_date_arg,
+)
 
 logger = logging.getLogger(__name__)
 
 #: Command-line options that override a configuration key. Each option carries
 #: the name of the key it overrides, so the two can never drift apart.
 _VALUE_OVERRIDES = {
-    "outdir": "export.output_dir",
+    "output_dir": "export.output_dir",
     "timezone": "export.timezone",
     "format": "export.formats",
     "batch_size": "requests.batch_size",
@@ -232,29 +236,34 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, object]:
 
 
 def resolve_date_range(args: argparse.Namespace, tz: ZoneInfo) -> tuple[date, date]:
-    """Return (start_date, end_date) as date objects."""
+    """Return the requested (start_date, end_date), inclusive.
+
+    Without a selection the answer is the most recent complete day: that is what
+    a daily run wants, and it needs no argument to say so.
+    """
     if getattr(args, "last_days", None) is not None:
         return last_n_complete_days(args.last_days, tz)
 
     if args.date:
         day = parse_date_arg(args.date, tz)
-        if args.date.lower() == "today":
-            print(
-                f"[WARNING] --date today ({day}) is not yet complete "
-                "and will be skipped.",
-                file=sys.stderr,
-            )
         return day, day
 
-    if not args.end_date:
-        raise ValueError("--end-date is required when --start-date is used.")
-    start = parse_date_arg(args.start_date, tz)
-    end = parse_date_arg(args.end_date, tz)
-    if start > end:
-        raise ValueError(
-            f"--start-date ({start}) must not be after --end-date ({end})."
-        )
-    return start, end
+    if args.start_date:
+        if not args.end_date:
+            raise ValueError("--end-date is required when --start-date is used.")
+        start = parse_date_arg(args.start_date, tz)
+        end = parse_date_arg(args.end_date, tz)
+        if start > end:
+            raise ValueError(
+                f"--start-date ({start}) must not be after --end-date ({end})."
+            )
+        return start, end
+
+    if args.end_date:
+        raise ValueError("--start-date is required when --end-date is used.")
+
+    latest = latest_complete_day(tz)
+    return latest, latest
 
 
 # ── logging ───────────────────────────────────────────────────────────────────
