@@ -19,7 +19,6 @@ from typing import Mapping, Sequence
 #: context mapping.
 CONTEXT_LABELS: dict[str, str] = {
     "config_file": "Configuration file",
-    "config_files": "Configuration files",
     "credentials_file": "Credentials file",
     "output_dir": "Output directory",
     "temp_dir": "Temporary directory",

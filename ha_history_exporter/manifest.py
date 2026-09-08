@@ -128,7 +128,7 @@ def load_or_create(
     end_local: str,
     start_utc: str,
     end_utc: str,
-    cfg,  # AppConfig
+    cfg,  # Config
 ) -> DayManifest:
     """Load existing manifest for *day* or return a fresh one."""
     path = cfg.layout.day_file(day, "manifest.json")
@@ -160,8 +160,8 @@ def load_or_create(
 def save(
     manifest: DayManifest,
     cfg,
-    cloud_storage_retry_count: int = 5,
-    cloud_storage_retry_sleep: float = 2.0,
+    locked_file_retries: int = 5,
+    locked_file_retry_sleep: float = 2.0,
 ) -> None:
     """Write manifest atomically to its final path."""
     from .writers import atomic_replace
@@ -176,7 +176,7 @@ def save(
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    atomic_replace(tmp, path, cloud_storage_retry_count, cloud_storage_retry_sleep)
+    atomic_replace(tmp, path, locked_file_retries, locked_file_retry_sleep)
     logger.debug("Manifest saved for %s (status=%s).", manifest.date, manifest.status)
 
 

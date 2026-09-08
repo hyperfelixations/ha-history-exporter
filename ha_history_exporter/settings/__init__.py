@@ -2,49 +2,39 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from .model import (
-    AppConfig,
-    EntitySelectionConfig,
-    ExportConfig,
-    FormatsConfig,
-    HAConfig,
-    HistoryRequestConfig,
-    RecorderConfig,
-    RequestsConfig,
-    StorageConfig,
-    validate_config,
+    FORMAT_ORDER,
+    Config,
+    EntitySettings,
+    ExportSettings,
+    Format,
+    HistoryRequestSettings,
+    HomeAssistantSettings,
+    RecorderSettings,
+    RequestSettings,
+    StorageSettings,
+    format_list,
 )
-from .resolver import ResolvedSettings, discover_config_files, resolve
+from .resolver import ResolvedSettings, discover_config_file, resolve
 
 __all__ = [
-    "AppConfig",
-    "EntitySelectionConfig",
-    "ExportConfig",
-    "FormatsConfig",
-    "HAConfig",
-    "HistoryRequestConfig",
-    "RecorderConfig",
-    "RequestsConfig",
+    "FORMAT_ORDER",
+    "Config",
+    "EntitySettings",
+    "ExportSettings",
+    "Format",
+    "HistoryRequestSettings",
+    "HomeAssistantSettings",
+    "RecorderSettings",
+    "RequestSettings",
     "ResolvedSettings",
-    "StorageConfig",
-    "discover_config_files",
-    "load_config",
+    "StorageSettings",
+    "discover_config_file",
+    "format_list",
     "load_settings",
     "resolve",
-    "validate_config",
 ]
 
 
 #: Resolve every configuration source; see :func:`resolver.resolve`.
 load_settings = resolve
-
-
-def load_config(path: str | Path) -> AppConfig:
-    """Load one explicit configuration file.
-
-    Backwards-compatible entry point: the file must exist and credentials must
-    be available, exactly as before the layered resolver was introduced.
-    """
-    return resolve(explicit_config=Path(path)).config

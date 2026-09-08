@@ -24,17 +24,21 @@ def test_production_environment_is_removed():
     assert "HA_TOKEN" not in os.environ
 
 
-def test_local_config_is_ignored_and_example_is_publishable():
+def test_local_configuration_files_are_ignored():
+    """A configuration file in the checkout must never be committed."""
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-    example = (ROOT / "config.example.yaml").read_text(encoding="utf-8")
 
     assert "/export_config.yaml" in gitignore
     assert "/config.yaml" in gitignore
     assert "/ha-history-exporter.yaml" in gitignore
-    assert "config.example.yaml" not in gitignore
-    assert not re.search(r"[A-Za-z]:\\\\Users\\\\", example)
-    assert "HA_TOKEN:" not in example
-    assert "synthetic-test-token" not in example
+
+
+def test_no_example_configuration_is_shipped():
+    """`hhe config edit` generates a documented file with real defaults.
+
+    A checked-in example would duplicate the key registry and drift.
+    """
+    assert not (ROOT / "config.example.yaml").exists()
 
 
 def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
@@ -56,7 +60,6 @@ def test_publishable_sources_contain_no_private_workspace_paths():
         ROOT / "README.md",
         ROOT / "LICENSE",
         ROOT / "pyproject.toml",
-        ROOT / "config.example.yaml",
         ROOT / "ha_history_batch_export.py",
         ROOT / ".gitattributes",
         ROOT / ".github" / "workflows" / "release.yml",
@@ -74,25 +77,6 @@ def test_publishable_sources_contain_no_private_workspace_paths():
         text = path.read_text(encoding="utf-8")
         for pattern in forbidden_patterns:
             assert not pattern.search(text), f"{path} contains {pattern.pattern}"
-
-
-def test_example_configuration_covers_exactly_the_supported_keys():
-    """The published example must track the key registry, in both directions."""
-    from ha_history_exporter.settings import schema
-    from ha_history_exporter.settings.schema import KeyStatus
-
-    text = (ROOT / "config.example.yaml").read_text(encoding="utf-8")
-
-    for key in schema.KEYS:
-        mentioned = re.search(
-            rf"^\s*#?\s*{re.escape(key.name)}:", text, re.MULTILINE
-        )
-        if key.status is KeyStatus.SUPPORTED:
-            assert mentioned, f"{key.path} is missing from config.example.yaml"
-        elif key.status is KeyStatus.DEFAULT_ONLY:
-            assert not mentioned, (
-                f"{key.path} is not implemented and must not be advertised"
-            )
 
 
 def test_local_helper_script_is_not_published():

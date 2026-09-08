@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from ..errors import ExportError, Remedy
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..settings import AppConfig
+    from ..settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ class Workspace:
         self,
         src: Path,
         dst: Path,
-        cloud_storage_retry_count: int = 5,
-        cloud_storage_retry_sleep: float = 2.0,
+        locked_file_retries: int = 5,
+        locked_file_retry_sleep: float = 2.0,
     ) -> None:
         """Make a validated file visible at *dst*.
 
@@ -77,13 +77,13 @@ class Workspace:
 
         dst.parent.mkdir(parents=True, exist_ok=True)
         if same_filesystem(src.parent, dst.parent):
-            atomic_replace(src, dst, cloud_storage_retry_count, cloud_storage_retry_sleep)
+            atomic_replace(src, dst, locked_file_retries, locked_file_retry_sleep)
             return
 
         self.staging_dir.mkdir(parents=True, exist_ok=True)
         staged = self.staging_dir / src.name
         shutil.copy2(src, staged)
-        atomic_replace(staged, dst, cloud_storage_retry_count, cloud_storage_retry_sleep)
+        atomic_replace(staged, dst, locked_file_retries, locked_file_retry_sleep)
         src.unlink(missing_ok=True)
 
     def close(self) -> None:
@@ -104,7 +104,7 @@ def same_filesystem(first: Path, second: Path) -> bool:
         return False
 
 
-def open_workspace(cfg: AppConfig) -> Workspace:
+def open_workspace(cfg: Config) -> Workspace:
     """Create the working directory for one run and take the output lock."""
     temp_root = cfg.resolved_temp_dir
     output_dir = Path(cfg.export.output_dir)

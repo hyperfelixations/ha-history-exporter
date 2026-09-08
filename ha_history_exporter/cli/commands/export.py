@@ -25,26 +25,23 @@ from ...errors import ConfigError, Remedy, UsageError
 from ...exporter import run_export
 from ...planner import build_plan
 from ...runtime.workspace import new_run_id
-from ...settings import AppConfig, load_settings
+from ...settings import Config, Format, load_settings, schema
 from ...time_utils import last_n_complete_days, parse_date_arg
 
 logger = logging.getLogger(__name__)
 
-#: Command-line options that override a configuration key. Switches are listed
-#: separately because argparse cannot distinguish "not given" from "false".
+#: Command-line options that override a configuration key. Each option carries
+#: the name of the key it overrides, so the two can never drift apart.
 _VALUE_OVERRIDES = {
     "outdir": "export.output_dir",
-    "timezone": "home_assistant.timezone",
-    "batch_size": "requests.batch_size_entities",
-    "sleep_between_requests": "requests.sleep_between_requests_seconds",
-    "sleep_between_days": "requests.sleep_between_days_seconds",
-    "timeout": "requests.request_timeout_seconds",
+    "timezone": "export.timezone",
+    "format": "export.formats",
+    "batch_size": "requests.batch_size",
+    "sleep_between_requests": "requests.sleep_between_requests",
+    "sleep_between_days": "requests.sleep_between_days",
+    "timeout": "requests.timeout",
     "max_retries": "requests.max_retries",
 }
-
-_LEGACY_FORMAT_SWITCHES = ("jsonl", "parquet", "no_csv")
-
-_VALID_FORMATS = ("jsonl", "csv", "parquet", "none")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -54,15 +51,19 @@ def run(args: argparse.Namespace) -> int:
         cli_overrides=cli_overrides(args),
     )
     cfg = settings.config
-    config_files = ", ".join(str(path) for path in settings.config_files)
+    config_source = (
+        str(settings.config_file)
+        if settings.config_file is not None
+        else "built-in defaults only"
+    )
 
     try:
-        tz = ZoneInfo(cfg.home_assistant.timezone)
+        tz = ZoneInfo(cfg.export.timezone)
     except Exception as exc:
         raise ConfigError(
-            f"Invalid timezone '{cfg.home_assistant.timezone}': {exc}",
+            f"Invalid timezone '{cfg.export.timezone}': {exc}",
             details=(
-                "home_assistant.timezone must be an IANA time zone name, "
+                "export.timezone must be an IANA time zone name, "
                 "for example Europe/Berlin, UTC, or America/New_York."
             ),
             remedies=(
@@ -72,14 +73,14 @@ def run(args: argparse.Namespace) -> int:
                     "hhe export --timezone Europe/Berlin --date yesterday",
                 ),
             ),
-            context={"config_file": config_files or "none"},
+            context={"config_file": config_source},
         ) from exc
 
     log_level = getattr(logging, (args.log_level or "INFO").upper(), logging.INFO)
     configure_logging(log_level, cfg, tz)
 
     logger.info("Output directory: %s", Path(cfg.export.output_dir).resolve())
-    logger.info("Configuration: %s", config_files or "built-in defaults only")
+    logger.info("Configuration: %s", config_source)
 
     try:
         requested_start, requested_end = resolve_date_range(args, tz)
@@ -95,16 +96,12 @@ def run(args: argparse.Namespace) -> int:
             ),
         ) from exc
 
-    force = args.force or cfg.export.force
-    resume = not force and (args.resume or cfg.export.resume)
-
     plan = build_plan(
         requested_start=requested_start,
         requested_end=requested_end,
         tz=tz,
         cfg=cfg,
-        force=force,
-        resume=resume,
+        force=args.force,
     )
 
     if not plan.days_to_export and not args.dry_run and not cfg.snapshot_only:
@@ -118,14 +115,14 @@ def run(args: argparse.Namespace) -> int:
 
     # Resolved through the module so the transport stays a testable seam.
     with ha_client.HomeAssistantClient(
-        url=cfg.ha_url,
-        token=cfg.ha_token,
-        timeout=cfg.requests.request_timeout_seconds,
+        url=cfg.homeassistant.url,
+        token=settings.token,
+        timeout=cfg.requests.timeout,
         max_retries=cfg.requests.max_retries,
-        backoff_seconds=cfg.requests.backoff_seconds,
+        backoff_seconds=cfg.requests.backoff,
     ) as client:
 
-        logger.info("Checking HA API at %s ...", cfg.ha_url)
+        logger.info("Checking HA API at %s ...", cfg.homeassistant.url)
         client.check_api()
 
         logger.info("Fetching entity list from /api/states ...")
@@ -144,15 +141,15 @@ def run(args: argparse.Namespace) -> int:
 
         entity_ids = extract_entity_ids(
             states,
-            include_unknown=cfg.entity_selection.include_unknown,
-            include_unavailable=cfg.entity_selection.include_unavailable,
+            include_unknown=cfg.entities.include_unknown,
+            include_unavailable=cfg.entities.include_unavailable,
         )
         entity_count_total = len(entity_ids)
 
         entity_ids, excluded = apply_optional_excludes(
             entity_ids,
-            cfg.entity_selection.optional_exclude_domains,
-            cfg.entity_selection.optional_exclude_patterns,
+            cfg.entities.exclude_domains,
+            cfg.entities.exclude_patterns,
         )
         if excluded:
             logger.info(
@@ -165,7 +162,7 @@ def run(args: argparse.Namespace) -> int:
             entity_count=len(entity_ids),
             unknown_count=snapshot["entity_count_unknown"],
             unavailable_count=snapshot["entity_count_unavailable"],
-            batch_size=cfg.requests.batch_size_entities,
+            batch_size=cfg.requests.batch_size,
         )
 
         if args.dry_run:
@@ -180,7 +177,7 @@ def run(args: argparse.Namespace) -> int:
             "Starting export: %d day(s), %d entities, batch size %d.",
             len(plan.days_to_export),
             len(entity_ids),
-            cfg.requests.batch_size_entities,
+            cfg.requests.batch_size,
         )
 
         return run_export(
@@ -196,41 +193,29 @@ def run(args: argparse.Namespace) -> int:
 
 # ── argument translation ──────────────────────────────────────────────────────
 
-def parse_format_list(raw: str) -> dict[str, bool]:
-    """Turn ``--format jsonl,parquet`` into an absolute format selection."""
-    requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
-    if not requested:
-        raise UsageError(
-            "--format needs at least one value.",
-            details=f"Valid values: {', '.join(_VALID_FORMATS)}.",
-        )
+def parse_format_list(raw: str) -> frozenset[Format]:
+    """Turn ``--format jsonl,parquet`` into the complete format set.
 
-    unknown = [item for item in requested if item not in _VALID_FORMATS]
-    if unknown:
+    ``--format`` always states the whole set, never a change to it, so what a
+    command asks for is readable from the command alone.
+    """
+    try:
+        return schema.format_set(raw, "--format")
+    except ConfigError as exc:
         raise UsageError(
-            f"Unknown output format(s): {', '.join(unknown)}.",
-            details=f"Valid values: {', '.join(_VALID_FORMATS)}.",
+            exc.summary,
+            details=exc.details,
             remedies=(
-                Remedy("Select one or more formats:", "hhe export --format jsonl,parquet"),
-                Remedy("Or capture the entity snapshot only:", "hhe export --format none"),
+                Remedy(
+                    "Select one or more formats:",
+                    "hhe export --format jsonl,parquet",
+                ),
+                Remedy(
+                    "Or capture the entity snapshot only:",
+                    "hhe export --format none",
+                ),
             ),
-        )
-
-    if "none" in requested and len(requested) > 1:
-        raise UsageError(
-            "--format none cannot be combined with another format.",
-            details=(
-                "'none' means snapshot-only: no History API request and no "
-                "daily manifest."
-            ),
-        )
-
-    selected = set(requested)
-    return {
-        "formats.jsonl": "jsonl" in selected,
-        "formats.csv": "csv" in selected,
-        "formats.parquet": "parquet" in selected,
-    }
+        ) from exc
 
 
 def cli_overrides(args: argparse.Namespace) -> dict[str, object]:
@@ -238,35 +223,11 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, object]:
     overrides: dict[str, object] = {}
     for dest, key_path in _VALUE_OVERRIDES.items():
         value = getattr(args, dest, None)
-        if value is not None:
-            overrides[key_path] = value
-
-    legacy_used = [
-        name for name in _LEGACY_FORMAT_SWITCHES if getattr(args, name, False)
-    ]
-    if getattr(args, "format", None) is not None:
-        if legacy_used:
-            raise UsageError(
-                "--format cannot be combined with --jsonl, --parquet, or --no-csv.",
-                details=(
-                    "--format states the complete set of output formats, while "
-                    "the older switches only add or remove one."
-                ),
-                remedies=(
-                    Remedy("Use --format alone:", "hhe export --format jsonl,parquet"),
-                ),
-            )
-        overrides.update(parse_format_list(args.format))
-        return overrides
-
-    # Legacy switches are one-directional by design: --jsonl and --parquet only
-    # enable, --no-csv only disables.
-    if getattr(args, "jsonl", False):
-        overrides["formats.jsonl"] = True
-    if getattr(args, "parquet", False):
-        overrides["formats.parquet"] = True
-    if getattr(args, "no_csv", False):
-        overrides["formats.csv"] = False
+        if value is None:
+            continue
+        overrides[key_path] = (
+            parse_format_list(value) if dest == "format" else value
+        )
     return overrides
 
 
@@ -301,7 +262,7 @@ def resolve_date_range(args: argparse.Namespace, tz: ZoneInfo) -> tuple[date, da
 _HHE_HANDLER = "_hhe_handler"
 
 
-def configure_logging(level: int, cfg: AppConfig, tz: ZoneInfo) -> None:
+def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> None:
     """Set up stderr and file logging, idempotently.
 
     Repeated calls in one process replace HHE's own handlers instead of

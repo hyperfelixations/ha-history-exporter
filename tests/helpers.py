@@ -7,8 +7,21 @@ from typing import Any, Callable, ClassVar, Iterable
 
 import requests
 
-from ha_history_exporter.config import AppConfig
 from ha_history_exporter.planner import DayDecision, ExportPlan
+from ha_history_exporter.settings import (
+    Config,
+    EntitySettings,
+    ExportSettings,
+    Format,
+    HistoryRequestSettings,
+    HomeAssistantSettings,
+    RecorderSettings,
+    RequestSettings,
+    StorageSettings,
+)
+
+SYNTHETIC_URL = "http://home-assistant.invalid"
+SYNTHETIC_TOKEN = "synthetic-test-token"
 
 
 def make_config(
@@ -18,25 +31,48 @@ def make_config(
     csv: bool = False,
     parquet: bool = False,
     batch_size: int = 2,
-) -> AppConfig:
-    cfg = AppConfig()
-    cfg.ha_url = "http://home-assistant.invalid"
-    cfg.ha_token = "synthetic-test-token"
-    cfg.export.output_dir = str(root / "output")
-    cfg.storage.temp_dir = str(root / "temp")
-    cfg.storage.cloud_storage_retry_count = 0
-    cfg.storage.cloud_storage_retry_sleep_seconds = 0
-    cfg.requests.batch_size_entities = batch_size
-    cfg.requests.sleep_between_requests_seconds = 0
-    cfg.requests.sleep_between_days_seconds = 0
-    cfg.requests.max_retries = 0
-    cfg.formats.jsonl = jsonl
-    cfg.formats.csv = csv
-    cfg.formats.parquet = parquet
-    return cfg
+) -> Config:
+    """Build a configuration for a test export into *root*.
+
+    Single adaptation point: tests state what they need, this function knows the
+    current shape of the configuration object.
+    """
+    formats = {
+        fmt
+        for fmt, wanted in (
+            (Format.JSONL, jsonl),
+            (Format.CSV, csv),
+            (Format.PARQUET, parquet),
+        )
+        if wanted
+    }
+    return Config(
+        homeassistant=HomeAssistantSettings(url=SYNTHETIC_URL),
+        export=ExportSettings(
+            output_dir=str(root / "output"),
+            timezone="Europe/Berlin",
+            formats=frozenset(formats),
+        ),
+        requests=RequestSettings(
+            batch_size=batch_size,
+            sleep_between_requests=0,
+            sleep_between_days=0,
+            timeout=120,
+            max_retries=0,
+            backoff=(),
+        ),
+        history_request=HistoryRequestSettings(),
+        entities=EntitySettings(),
+        recorder=RecorderSettings(),
+        storage=StorageSettings(
+            temp_dir=str(root / "temp"),
+            locked_file_retries=0,
+            locked_file_retry_sleep=0,
+        ),
+    )
 
 
-def day_path(cfg: AppConfig, day: date, suffix: str) -> Path:
+def day_path(cfg: Config, day: date, suffix: str) -> Path:
     """Where one day's output file goes.
 
     Single adaptation point for the frozen output contract: tests state the

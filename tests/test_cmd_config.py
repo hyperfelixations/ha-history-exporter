@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from ha_history_exporter import cli
-from ha_history_exporter.settings import document, paths, secrets
+from ha_history_exporter.settings import Format, document, paths, schema, secrets
+from ha_history_exporter.settings.schema import KeyStatus
 
 SYNTHETIC_TOKEN = "synthetic-stored-token"
 
@@ -17,21 +18,21 @@ def read_user_config() -> str:
 # ── get and list ──────────────────────────────────────────────────────────────
 
 def test_get_prints_only_the_value(capsys):
-    assert cli.main(["config", "get", "formats.jsonl"]) == 0
-    assert capsys.readouterr().out == "True\n"
+    assert cli.main(["config", "get", "export.formats"]) == 0
+    assert capsys.readouterr().out == "jsonl\n"
 
 
 def test_get_reflects_the_environment(monkeypatch, capsys):
-    monkeypatch.setenv("HHE_REQUESTS_BATCH_SIZE_ENTITIES", "17")
-    assert cli.main(["config", "get", "requests.batch_size_entities"]) == 0
+    monkeypatch.setenv("HHE_REQUESTS_BATCH_SIZE", "17")
+    assert cli.main(["config", "get", "requests.batch_size"]) == 0
     assert capsys.readouterr().out == "17\n"
 
 
 def test_get_rejects_an_unknown_key_with_a_suggestion(capsys):
-    assert cli.main(["config", "get", "formats.jsnol"]) == 2
+    assert cli.main(["config", "get", "export.formts"]) == 2
     err = capsys.readouterr().err
-    assert "Unknown configuration key 'formats.jsnol'" in err
-    assert "formats.jsonl" in err
+    assert "Unknown configuration key 'export.formts'" in err
+    assert "export.formats" in err
 
 
 def test_list_shows_every_key(capsys):
@@ -44,10 +45,10 @@ def test_list_shows_every_key(capsys):
 
 
 def test_list_with_origin_names_the_source(monkeypatch, capsys):
-    monkeypatch.setenv("HHE_FORMATS_PARQUET", "true")
+    monkeypatch.setenv("HHE_EXPORT_FORMATS", "jsonl,parquet")
     assert cli.main(["config", "list", "--origin"]) == 0
     out = capsys.readouterr().out
-    assert "[env:HHE_FORMATS_PARQUET]" in out
+    assert "[env:HHE_EXPORT_FORMATS]" in out
     assert "[default]" in out
 
 
@@ -77,11 +78,11 @@ def test_path_reports_every_location(capsys):
 @pytest.mark.parametrize(
     ("key", "raw", "expected"),
     [
-        ("formats.parquet", "true", "True"),
-        ("requests.batch_size_entities", "12", "12"),
-        ("requests.sleep_between_days_seconds", "2.5", "2.5"),
-        ("home_assistant.timezone", "UTC", "UTC"),
-        ("entity_selection.optional_exclude_domains", "update,button", "update"),
+        ("export.formats", "jsonl,parquet", "jsonl,parquet"),
+        ("requests.batch_size", "12", "12"),
+        ("requests.sleep_between_days", "2.5", "2.5"),
+        ("export.timezone", "UTC", "UTC"),
+        ("entities.exclude_domains", "update,button", "update"),
     ],
 )
 def test_set_writes_the_user_file_and_get_reads_it_back(key, raw, expected, capsys):
@@ -93,20 +94,26 @@ def test_set_writes_the_user_file_and_get_reads_it_back(key, raw, expected, caps
     assert key.split(".", 1)[1] in read_user_config()
 
 
+def test_set_rejects_an_unknown_output_format(capsys):
+    assert cli.main(["config", "set", "export.formats", "jsonl,arrow"]) == 2
+    assert "arrow" in capsys.readouterr().err
+
+
 def test_set_rejects_a_value_of_the_wrong_type(capsys):
-    assert cli.main(["config", "set", "requests.batch_size_entities", "many"]) == 2
+    assert cli.main(["config", "set", "requests.batch_size", "many"]) == 2
     err = capsys.readouterr().err
-    assert "requests.batch_size_entities" in err
+    assert "requests.batch_size" in err
     assert not paths.user_config_file().exists()
 
 
-def test_set_rejects_an_unsupported_option(capsys):
+def test_set_rejects_a_key_that_no_longer_exists(capsys):
+    """Options that never had an effect were removed, not deprecated."""
     assert cli.main(["config", "set", "export.include_current_day", "true"]) == 2
-    assert "does not support the value" in capsys.readouterr().err
+    assert "Unknown configuration key" in capsys.readouterr().err
 
 
 def test_set_requires_a_value_for_normal_keys(capsys):
-    assert cli.main(["config", "set", "formats.csv"]) == 2
+    assert cli.main(["config", "set", "requests.batch_size"]) == 2
     assert "A value is required" in capsys.readouterr().err
 
 
@@ -116,12 +123,12 @@ def test_set_does_not_bake_environment_values_into_the_user_file(
     """Only the key being set may land in the user file."""
     monkeypatch.setenv("HHE_REQUESTS_MAX_RETRIES", "9")
 
-    assert cli.main(["config", "set", "formats.csv", "true"]) == 0
+    assert cli.main(["config", "set", "export.formats", "csv"]) == 0
     capsys.readouterr()
 
     text = read_user_config()
-    assert "csv: true" in text
-    assert "max_retries" not in text
+    assert "formats: [csv]" in text
+    assert "  max_retries: 9" not in text
 
 
 def test_set_stores_the_token_in_the_credentials_file_only(capsys):
@@ -184,17 +191,17 @@ def test_set_rejects_an_empty_token(monkeypatch, capsys):
 
 
 def test_unset_removes_a_value_and_reports_the_fallback(capsys):
-    cli.main(["config", "set", "formats.csv", "true"])
+    cli.main(["config", "set", "export.formats", "csv,parquet"])
     capsys.readouterr()
 
-    assert cli.main(["config", "unset", "formats.csv"]) == 0
+    assert cli.main(["config", "unset", "export.formats"]) == 0
     out = capsys.readouterr().out
-    assert "False" in out
+    assert "jsonl" in out
     assert "[default]" in out
 
 
 def test_unset_on_an_unset_key_is_harmless(capsys):
-    assert cli.main(["config", "unset", "formats.csv"]) == 0
+    assert cli.main(["config", "unset", "export.formats"]) == 0
     assert "not set in the user configuration" in capsys.readouterr().out
 
 
@@ -210,7 +217,7 @@ def test_writes_refuse_an_explicit_config_file(tmp_path, capsys):
     other = tmp_path / "other.yaml"
     other.write_text("formats:\n  csv: true\n", encoding="utf-8")
 
-    assert cli.main(["config", "--config", str(other), "set", "formats.csv", "false"]) == 2
+    assert cli.main(["config", "--config", str(other), "set", "export.formats", "false"]) == 2
     assert "always write the user configuration" in capsys.readouterr().err
     assert "csv: true" in other.read_text(encoding="utf-8")
 
@@ -243,7 +250,7 @@ def test_edit_reports_an_invalid_document_and_keeps_it(monkeypatch, tmp_path, ca
     monkeypatch.setenv("EDITOR", f"{__import__('sys').executable} {script}")
 
     assert cli.main(["config", "edit"]) == 2
-    assert "formats.jsonl" in capsys.readouterr().err
+    assert "export.formats" in capsys.readouterr().err
     assert "not-a-boolean" in read_user_config()
 
 
@@ -278,13 +285,33 @@ def test_edit_falls_back_to_the_windows_default_editor(monkeypatch, capsys):
 
 def test_rendered_document_round_trips():
     values = {
-        "formats.parquet": True,
+        "export.formats": ["jsonl", "parquet"],
         "export.output_dir": r"D:\ha-archive",
-        "requests.backoff_seconds": [1.0, 2.0],
+        "requests.backoff": [1.0, 2.0],
     }
     document.write_user_values(values)
 
     assert document.read_user_values() == values
+
+
+def test_a_rendered_format_set_round_trips_as_a_list():
+    """`config set` stores a coerced set; reading it back must give YAML again."""
+    document.write_user_values({"export.formats": frozenset({Format.CSV})})
+    assert document.read_user_values() == {"export.formats": ["csv"]}
+
+
+def test_the_rendered_document_lists_every_supported_key():
+    """The file is self-documenting: unset keys appear commented, with defaults."""
+    document.write_user_values({"requests.batch_size": 15})
+    text = read_user_config()
+
+    for key in schema.KEYS:
+        if key.status is KeyStatus.SECRET:
+            continue
+        assert f"{key.name}:" in text, f"{key.path} is missing from the document"
+        assert f"# {key.doc}" in text
+    assert "  batch_size: 15" in text
+    assert "  # timeout: 120" in text
 
 
 def test_rendered_document_never_contains_the_token_key():

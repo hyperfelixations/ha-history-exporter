@@ -1,5 +1,10 @@
 """Platform-specific locations for configuration, credentials, and output.
 
+There is exactly one configuration file, in the user configuration directory.
+HHE never picks one up from the working directory: a tool whose behaviour
+depends on where it happens to be started is a tool nobody can reason about.
+To use a different file, name it with ``--config``.
+
 Windows uses the roaming application-data directory for configuration so a
 roaming profile carries it along; large export archives deliberately do not
 live there but in a plainly visible directory below the user's home.
@@ -21,8 +26,6 @@ ENV_CONFIG_DIR = "HHE_CONFIG_DIR"
 
 CONFIG_FILENAME = "config.yaml"
 CREDENTIALS_FILENAME = "credentials.yaml"
-PROJECT_CONFIG_FILENAME = "ha-history-exporter.yaml"
-LEGACY_PROJECT_CONFIG_FILENAME = "export_config.yaml"
 
 
 def user_config_dir() -> Path:
@@ -49,15 +52,3 @@ def default_output_dir() -> Path:
 def default_temp_root() -> Path:
     """Platform-neutral working directory for temporary export files."""
     return Path(tempfile.gettempdir()) / APP_NAME
-
-
-def project_config_candidates(cwd: Path | None = None) -> list[Path]:
-    """Configuration files discovered in the working directory, most specific first.
-
-    The legacy name keeps a cloned checkout working without any change.
-    """
-    base = Path.cwd() if cwd is None else Path(cwd)
-    return [
-        base / PROJECT_CONFIG_FILENAME,
-        base / LEGACY_PROJECT_CONFIG_FILENAME,
-    ]

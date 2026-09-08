@@ -135,35 +135,35 @@ class CsvWriter:
 def atomic_replace(
     src: Path,
     dst: Path,
-    cloud_storage_retry_count: int = 5,
-    cloud_storage_retry_sleep: float = 2.0,
+    locked_file_retries: int = 5,
+    locked_file_retry_sleep: float = 2.0,
 ) -> None:
     """Move *src* to *dst* atomically, retrying on PermissionError.
 
     cloud-storage occasionally holds a file lock during synchronisation.
-    We retry up to *cloud_storage_retry_count* times with *cloud_storage_retry_sleep*
+    We retry up to *locked_file_retries* times with *locked_file_retry_sleep*
     second intervals before giving up.
 
     os.replace() is atomic on NTFS when source and destination are on the
     same volume (which is always the case here: both are on C:\\).
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(1, cloud_storage_retry_count + 2):
+    for attempt in range(1, locked_file_retries + 2):
         try:
             src.replace(dst)
             return
         except PermissionError:
-            if attempt > cloud_storage_retry_count:
+            if attempt > locked_file_retries:
                 raise
             logger.warning(
                 "PermissionError replacing %s (cloud-storage lock?) - "
                 "attempt %d/%d, sleeping %.1f s ...",
                 dst.name,
                 attempt,
-                cloud_storage_retry_count,
-                cloud_storage_retry_sleep,
+                locked_file_retries,
+                locked_file_retry_sleep,
             )
-            time.sleep(cloud_storage_retry_sleep)
+            time.sleep(locked_file_retry_sleep)
 
 
 # ── History payload flattening ────────────────────────────────────────────────

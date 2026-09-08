@@ -10,6 +10,7 @@ import pytest
 from ha_history_exporter import cli, ha_client
 from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.exceptions import AuthError
+from ha_history_exporter.settings import Format
 from tests.helpers import FakeCliClient
 
 
@@ -19,24 +20,19 @@ def write_config(tmp_path: Path) -> Path:
     temp = (tmp_path / "temp").as_posix()
     path.write_text(
         f"""
-home_assistant:
-  timezone: Europe/Berlin
 export:
   output_dir: "{output}"
-  resume: true
+  timezone: Europe/Berlin
+  formats: [jsonl]
 requests:
-  batch_size_entities: 2
-  sleep_between_requests_seconds: 0
-  sleep_between_days_seconds: 0
+  batch_size: 2
+  sleep_between_requests: 0
+  sleep_between_days: 0
   max_retries: 0
-formats:
-  jsonl: true
-  csv: false
-  parquet: false
 storage:
   temp_dir: "{temp}"
-  cloud_storage_retry_count: 0
-  cloud_storage_retry_sleep_seconds: 0
+  locked_file_retries: 0
+  locked_file_retry_sleep: 0
 """,
         encoding="utf-8",
     )
@@ -65,16 +61,15 @@ def test_parse_args_accepts_tuning_options():
             "10",
             "--max-retries",
             "0",
-            "--parquet",
-            "--no-csv",
+            "--format",
+            "jsonl,parquet",
         ]
     )
     assert args.date == "2026-07-28"
     assert args.batch_size == 12
     assert args.timeout == 10
     assert args.max_retries == 0
-    assert args.parquet
-    assert args.no_csv
+    assert args.format == "jsonl,parquet"
 
 
 def test_parse_args_prog_follows_invocation_name(monkeypatch, capsys):
@@ -157,7 +152,7 @@ def test_main_rejects_invalid_numeric_override_before_client(
         )
         == 2
     )
-    assert "batch_size_entities" in capsys.readouterr().err
+    assert "requests.batch_size" in capsys.readouterr().err
 
 
 def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
@@ -165,8 +160,7 @@ def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
 ):
     path = write_config(tmp_path)
     text = path.read_text(encoding="utf-8").replace(
-        "jsonl: true\n  csv: false\n  parquet: false",
-        "jsonl: false\n  csv: false\n  parquet: false",
+        "formats: [jsonl]", "formats: []"
     )
     path.write_text(text, encoding="utf-8")
     set_synthetic_env(monkeypatch)
@@ -306,9 +300,8 @@ def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
             "17",
             "--max-retries",
             "4",
-            "--no-csv",
-            "--jsonl",
-            "--parquet",
+            "--format",
+            "jsonl,parquet",
             "--log-level",
             "DEBUG",
         ]
@@ -317,15 +310,13 @@ def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
     assert result == 0
     cfg = captured["cfg"]
     assert cfg.export.output_dir == str(outdir)
-    assert cfg.home_assistant.timezone == "Europe/Berlin"
-    assert cfg.requests.batch_size_entities == 9
-    assert cfg.requests.sleep_between_requests_seconds == 0.2
-    assert cfg.requests.sleep_between_days_seconds == 0.3
-    assert cfg.requests.request_timeout_seconds == 17
+    assert cfg.export.timezone == "Europe/Berlin"
+    assert cfg.requests.batch_size == 9
+    assert cfg.requests.sleep_between_requests == 0.2
+    assert cfg.requests.sleep_between_days == 0.3
+    assert cfg.requests.timeout == 17
     assert cfg.requests.max_retries == 4
-    assert cfg.formats.jsonl
-    assert not cfg.formats.csv
-    assert cfg.formats.parquet
+    assert cfg.export.formats == frozenset({Format.JSONL, Format.PARQUET})
 
 
 @pytest.mark.parametrize(
@@ -402,17 +393,16 @@ def test_cli_overrides_are_translated_into_configuration_keys():
             "9",
             "--timeout",
             "17",
-            "--no-csv",
-            "--parquet",
+            "--format",
+            "parquet",
         ]
     )
 
     assert cli.cli_overrides(args) == {
         "export.output_dir": "out",
-        "requests.batch_size_entities": 9,
-        "requests.request_timeout_seconds": 17,
-        "formats.csv": False,
-        "formats.parquet": True,
+        "requests.batch_size": 9,
+        "requests.timeout": 17,
+        "export.formats": frozenset({Format.PARQUET}),
     }
 
 
@@ -425,7 +415,7 @@ def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
     path = write_config(tmp_path)
     path.write_text(
         path.read_text(encoding="utf-8")
-        + "entity_selection:\n  include_unknown: false\n",
+        + "entities:\n  include_unknown: false\n",
         encoding="utf-8",
     )
     set_synthetic_env(monkeypatch)

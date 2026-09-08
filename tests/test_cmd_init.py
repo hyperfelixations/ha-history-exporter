@@ -57,10 +57,8 @@ def test_init_writes_both_files(monkeypatch, tmp_path, capsys, fake_client):
     values = document.read_user_values()
     assert values["homeassistant.url"] == "http://home-assistant.invalid:8123"
     assert values["export.output_dir"] == str(output)
-    assert values["home_assistant.timezone"] == "UTC"
-    assert values["formats.jsonl"] is True
-    assert values["formats.csv"] is True
-    assert values["formats.parquet"] is False
+    assert values["export.timezone"] == "UTC"
+    assert values["export.formats"] == ["jsonl", "csv"]
 
     assert secrets.read_token() == SYNTHETIC_TOKEN
     assert SYNTHETIC_TOKEN not in paths.user_config_file().read_text(encoding="utf-8")
@@ -75,8 +73,8 @@ def test_init_accepts_the_offered_defaults(monkeypatch, capsys, fake_client):
 
     values = document.read_user_values()
     assert values["homeassistant.url"] == "http://homeassistant.local:8123"
-    assert values["home_assistant.timezone"] == "Europe/Berlin"
-    assert values["formats.jsonl"] is True
+    assert values["export.timezone"] == "Europe/Berlin"
+    assert values["export.formats"] == ["jsonl"]
 
 
 def test_init_reports_a_failed_connection_and_can_abort(
@@ -112,21 +110,21 @@ def test_init_can_save_despite_a_failed_connection(monkeypatch, capsys, fake_cli
 def test_init_refuses_to_overwrite_without_confirmation(
     monkeypatch, capsys, fake_client
 ):
-    document.write_user_values({"formats.csv": True})
+    document.write_user_values({"export.formats": ["csv"]})
     answers(monkeypatch, "n")
 
     assert cli.main(["init"]) == 0
     assert "Nothing was changed" in capsys.readouterr().out
-    assert document.read_user_values() == {"formats.csv": True}
+    assert document.read_user_values() == {"export.formats": ["csv"]}
 
 
 def test_init_force_overwrites_without_asking(monkeypatch, capsys, fake_client):
-    document.write_user_values({"formats.csv": True})
+    document.write_user_values({"export.formats": ["csv"]})
     answers(monkeypatch, "http://home-assistant.invalid", "", "jsonl", "")
     token(monkeypatch)
 
     assert cli.main(["init", "--force"]) == 0
-    assert document.read_user_values()["formats.csv"] is False
+    assert document.read_user_values()["export.formats"] == ["jsonl"]
 
 
 def test_init_keeps_an_existing_token_on_empty_input(
@@ -212,8 +210,8 @@ def test_init_non_interactive_uses_options_and_the_environment(
 
     assert secrets.read_token() == "synthetic-piped-token"
     values = document.read_user_values()
-    assert values["formats.parquet"] is True
-    assert values["home_assistant.timezone"] == "UTC"
+    assert values["export.formats"] == ["jsonl", "parquet"]
+    assert values["export.timezone"] == "UTC"
 
 
 def test_init_non_interactive_requires_a_url(monkeypatch, capsys, fake_client):
@@ -222,7 +220,7 @@ def test_init_non_interactive_requires_a_url(monkeypatch, capsys, fake_client):
 
 
 def test_init_non_interactive_refuses_to_overwrite(monkeypatch, capsys, fake_client):
-    document.write_user_values({"formats.csv": True})
+    document.write_user_values({"export.formats": ["csv"]})
 
     assert (
         cli.main(

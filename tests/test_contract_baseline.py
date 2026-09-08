@@ -26,10 +26,6 @@ DAY = "2026-07-28"
 LEGACY_SWITCH_DESTS = (
     "dry_run",
     "force",
-    "resume",
-    "no_csv",
-    "jsonl",
-    "parquet",
 )
 LEGACY_VALUE_DESTS = (
     "config",
@@ -46,33 +42,30 @@ LEGACY_VALUE_DESTS = (
     "log_level",
 )
 
-ALL_FORMATS = "jsonl: true\n  csv: true\n  parquet: true"
-JSONL_AND_CSV = "jsonl: true\n  csv: true\n  parquet: false"
-NO_FORMATS = "jsonl: false\n  csv: false\n  parquet: false"
+ALL_FORMATS = "[jsonl, csv, parquet]"
+JSONL_AND_CSV = "[jsonl, csv]"
+NO_FORMATS = "[]"
 
 
 def write_config(directory: Path, *, formats: str = JSONL_AND_CSV) -> Path:
-    path = directory / "export_config.yaml"
+    path = directory / "config.yaml"
     output = (directory / "output").as_posix()
     temp = (directory / "temp").as_posix()
     path.write_text(
         f"""
-home_assistant:
-  timezone: Europe/Berlin
 export:
   output_dir: "{output}"
-  resume: true
+  timezone: Europe/Berlin
+  formats: {formats}
 requests:
-  batch_size_entities: 2
-  sleep_between_requests_seconds: 0
-  sleep_between_days_seconds: 0
+  batch_size: 2
+  sleep_between_requests: 0
+  sleep_between_days: 0
   max_retries: 0
-formats:
-  {formats}
 storage:
   temp_dir: "{temp}"
-  cloud_storage_retry_count: 0
-  cloud_storage_retry_sleep_seconds: 0
+  locked_file_retries: 0
+  locked_file_retry_sleep: 0
 """,
         encoding="utf-8",
     )
@@ -111,11 +104,7 @@ def test_legacy_flags_all_still_parse_together():
             "--end-date", DAY,
             "--dry-run",
             "--force",
-            "--resume",
             "--outdir", "out",
-            "--no-csv",
-            "--jsonl",
-            "--parquet",
             "--timezone", "Europe/Berlin",
             "--batch-size", "9",
             "--sleep-between-requests", "0.5",
@@ -128,9 +117,8 @@ def test_legacy_flags_all_still_parse_together():
 
     assert args.config == "somewhere.yaml"
     assert (args.start_date, args.end_date) == ("2026-07-20", DAY)
-    assert args.dry_run and args.force and args.resume
+    assert args.dry_run and args.force
     assert args.outdir == "out"
-    assert args.no_csv and args.jsonl and args.parquet
     assert args.timezone == "Europe/Berlin"
     assert args.batch_size == 9
     assert args.sleep_between_requests == 0.5
@@ -159,19 +147,6 @@ def test_legacy_invocation_without_subcommand_exports(tmp_path, monkeypatch):
         (day_dir(tmp_path) / f"{DAY}.manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["status"] == "ok"
-
-
-def test_project_config_is_used_without_an_explicit_config_flag(
-    tmp_path, monkeypatch
-):
-    """Running inside a directory that holds export_config.yaml must work."""
-    write_config(tmp_path)
-    set_synthetic_env(monkeypatch)
-    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
-    monkeypatch.chdir(tmp_path)
-
-    assert cli.main(["--date", DAY]) == 0
-    assert (day_dir(tmp_path) / f"{DAY}.manifest.json").exists()
 
 
 # ── output layout and formats ─────────────────────────────────────────────────

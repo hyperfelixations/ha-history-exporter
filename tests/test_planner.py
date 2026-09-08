@@ -47,7 +47,7 @@ def test_build_plan_exports_complete_missing_days(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     patch_calendar(monkeypatch)
 
-    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False, resume=True)
+    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False)
 
     assert plan.days_to_export == [DAY]
     assert plan.days_skipped_existing == []
@@ -58,7 +58,7 @@ def test_build_plan_skips_incomplete_days(tmp_path, monkeypatch):
     patch_calendar(monkeypatch)
     today = date(2026, 7, 30)
 
-    plan = planner.build_plan(today, today, BERLIN, cfg, force=False, resume=True)
+    plan = planner.build_plan(today, today, BERLIN, cfg, force=False)
 
     assert plan.days_skipped_incomplete == [today]
 
@@ -68,7 +68,7 @@ def test_build_plan_skips_existing_ok_manifest(tmp_path, monkeypatch):
     patch_calendar(monkeypatch)
     write_manifest(cfg)
 
-    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False, resume=True)
+    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False)
 
     assert plan.days_skipped_existing == [DAY]
     assert "status=ok" in plan.decisions[0].reason
@@ -80,7 +80,7 @@ def test_force_reexports_existing_day(tmp_path, monkeypatch):
     write_manifest(cfg)
     cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
-    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=True, resume=False)
+    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=True)
 
     assert plan.days_to_export == [DAY]
 
@@ -175,6 +175,6 @@ def test_newly_requested_format_plans_local_derivation(tmp_path, monkeypatch):
     cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
     cfg.layout.day_file(DAY, "parquet").write_bytes(b"synthetic")
 
-    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False, resume=True)
+    plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False)
 
     assert plan.decisions[0].action == "derive"

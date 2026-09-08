@@ -11,6 +11,7 @@ from ha_history_exporter import __version__, cli
 from ha_history_exporter.cli import parser
 from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.errors import UsageError
+from ha_history_exporter.settings import Format
 from ha_history_exporter.time_utils import last_n_complete_days, today_local
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -150,23 +151,21 @@ def test_invalid_last_days_exits_with_code_two(tmp_path, monkeypatch, capsys, va
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("jsonl", {"jsonl": True, "csv": False, "parquet": False}),
-        ("parquet", {"jsonl": False, "csv": False, "parquet": True}),
-        ("jsonl,parquet", {"jsonl": True, "csv": False, "parquet": True}),
-        ("JSONL, CSV", {"jsonl": True, "csv": True, "parquet": False}),
-        ("none", {"jsonl": False, "csv": False, "parquet": False}),
+        ("jsonl", {Format.JSONL}),
+        ("parquet", {Format.PARQUET}),
+        ("jsonl,parquet", {Format.JSONL, Format.PARQUET}),
+        ("JSONL, CSV", {Format.JSONL, Format.CSV}),
+        ("none", set()),
     ],
 )
-def test_format_list_is_absolute(raw, expected):
-    assert export_command.parse_format_list(raw) == {
-        f"formats.{name}": value for name, value in expected.items()
-    }
+def test_format_list_states_the_complete_set(raw, expected):
+    assert export_command.parse_format_list(raw) == frozenset(expected)
 
 
 @pytest.mark.parametrize("raw", ["", " , "])
-def test_empty_format_list_is_rejected(raw):
-    with pytest.raises(UsageError, match="needs at least one value"):
-        export_command.parse_format_list(raw)
+def test_an_empty_format_list_means_snapshot_only(raw):
+    """An empty selection is honest about what it does; it is not an error."""
+    assert export_command.parse_format_list(raw) == frozenset()
 
 
 def test_unknown_format_lists_the_valid_values():
@@ -178,15 +177,16 @@ def test_unknown_format_lists_the_valid_values():
 
 
 def test_none_cannot_be_combined_with_another_format():
-    with pytest.raises(UsageError, match="cannot be combined"):
+    with pytest.raises(UsageError, match="cannot combine 'none'"):
         export_command.parse_format_list("none,jsonl")
 
 
 @pytest.mark.parametrize("legacy", ["--no-csv", "--jsonl", "--parquet"])
-def test_format_conflicts_with_the_legacy_switches(legacy):
-    args = cli.parse_args(["--date", "2026-07-28", "--format", "jsonl", legacy])
-    with pytest.raises(UsageError, match="cannot be combined"):
-        export_command.cli_overrides(args)
+def test_the_legacy_format_switches_are_gone(legacy):
+    """--format states the whole set; a switch that nudges one is a second way."""
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(["--date", "2026-07-28", legacy])
+    assert exc.value.code == 2
 
 
 def test_format_none_selects_snapshot_only(tmp_path, monkeypatch):
@@ -212,7 +212,7 @@ def test_format_switch_reaches_the_configuration(tmp_path, monkeypatch):
     monkeypatch.setenv("HA_TOKEN", "synthetic-test-token")
     monkeypatch.setenv("HHE_EXPORT_OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("HHE_STORAGE_TEMP_DIR", str(tmp_path / "temp"))
-    monkeypatch.setenv("HHE_REQUESTS_SLEEP_BETWEEN_REQUESTS_SECONDS", "0")
+    monkeypatch.setenv("HHE_REQUESTS_SLEEP_BETWEEN_REQUESTS", "0")
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     captured = {}
@@ -227,8 +227,7 @@ def test_format_switch_reaches_the_configuration(tmp_path, monkeypatch):
         cli.main(["export", "--date", "2026-07-28", "--format", "csv,parquet"]) == 0
     )
 
-    formats = captured["cfg"].formats
-    assert (formats.jsonl, formats.csv, formats.parquet) == (False, True, True)
+    assert captured["cfg"].export.formats == frozenset({Format.CSV, Format.PARQUET})
 
 
 # ── logging ───────────────────────────────────────────────────────────────────

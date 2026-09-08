@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -86,8 +87,8 @@ def extract_entity_ids(
 
 def apply_optional_excludes(
     entity_ids: List[str],
-    exclude_domains: List[str],
-    exclude_patterns: List[str],
+    exclude_domains: Sequence[str],
+    exclude_patterns: Sequence[str],
 ) -> tuple[List[str], int]:
     """Apply optional domain and glob excludes.  Exclude always wins.
 

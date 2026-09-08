@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from ... import ha_client
 from ...errors import HHEError, Remedy, UsageError
-from ...settings import ResolvedSettings, document, paths, resolve, secrets
+from ...settings import Format, ResolvedSettings, document, format_list, paths, resolve, secrets
 from .export import parse_format_list
 
 DEFAULT_URL = "http://homeassistant.local:8123"
@@ -53,8 +53,8 @@ def run(args: argparse.Namespace) -> int:
 
     values["homeassistant.url"] = url
     values["export.output_dir"] = output_dir
-    values["home_assistant.timezone"] = timezone
-    values.update(formats)
+    values["export.timezone"] = timezone
+    values["export.formats"] = formats
 
     config_path = document.write_user_values(values)
     credentials_path = secrets.write_token(token)
@@ -76,7 +76,7 @@ def _ask_url(
         return args.url.rstrip("/")
     if not interactive:
         raise _missing("--url")
-    default = current.config.ha_url or DEFAULT_URL
+    default = current.config.homeassistant.url or DEFAULT_URL
     return _ask(None, "Home Assistant URL", default, interactive).rstrip("/")
 
 
@@ -111,22 +111,12 @@ def _ask_token(args: argparse.Namespace, interactive: bool) -> str:
 
 def _ask_formats(
     args: argparse.Namespace, current: ResolvedSettings, interactive: bool
-) -> dict[str, bool]:
-    cfg = current.config
-    enabled = [
-        name
-        for name, on in (
-            ("jsonl", cfg.formats.jsonl),
-            ("csv", cfg.formats.csv),
-            ("parquet", cfg.formats.parquet),
-        )
-        if on
-    ]
-    default = ",".join(enabled) or "jsonl"
+) -> frozenset[Format]:
+    default = format_list(current.config.export.formats)
     raw = args.format or _ask(None, "Output formats", default, interactive)
     selection = parse_format_list(raw)
 
-    if selection["formats.parquet"]:
+    if Format.PARQUET in selection:
         try:
             import pyarrow  # noqa: F401
         except ImportError:
@@ -139,7 +129,7 @@ def _ask_timezone(
     args: argparse.Namespace, current: ResolvedSettings, interactive: bool
 ) -> str:
     value = args.timezone or _ask(
-        None, "Timezone", current.config.home_assistant.timezone, interactive
+        None, "Timezone", current.config.export.timezone, interactive
     )
     try:
         ZoneInfo(value)
@@ -159,9 +149,9 @@ def _verify(
         with ha_client.HomeAssistantClient(
             url=url,
             token=token,
-            timeout=current.config.requests.request_timeout_seconds,
+            timeout=current.config.requests.timeout,
             max_retries=0,
-            backoff_seconds=current.config.requests.backoff_seconds,
+            backoff_seconds=current.config.requests.backoff,
         ) as client:
             client.check_api()
             states = client.get_states()

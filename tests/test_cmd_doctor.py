@@ -52,7 +52,7 @@ def test_doctor_reports_missing_credentials_with_commands(tmp_path, capsys):
 
 def test_doctor_reports_an_invalid_timezone(configured, capsys):
     values = document.read_user_values()
-    values["home_assistant.timezone"] = "Nowhere/Nothing"
+    values["export.timezone"] = "Nowhere/Nothing"
     document.write_user_values(values)
 
     assert cli.main(["doctor", "--offline"]) == 1
@@ -81,7 +81,7 @@ def test_doctor_reports_an_unwritable_output_directory(
 
 def test_doctor_warns_when_no_format_is_enabled(configured, capsys):
     values = document.read_user_values()
-    values.update({"formats.jsonl": False, "formats.csv": False, "formats.parquet": False})
+    values["export.formats"] = []
     document.write_user_values(values)
 
     assert cli.main(["doctor", "--offline"]) == 0
@@ -94,7 +94,7 @@ def test_doctor_fails_when_parquet_lacks_pyarrow(configured, monkeypatch, capsys
     import builtins
 
     values = document.read_user_values()
-    values["formats.parquet"] = True
+    values["export.formats"] = ["jsonl", "parquet"]
     document.write_user_values(values)
 
     real_import = builtins.__import__

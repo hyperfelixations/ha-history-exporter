@@ -155,15 +155,8 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--outdir", metavar="DIR", help="Override output directory.")
     p.add_argument(
         "--format", metavar="LIST",
-        help="Comma-separated output formats: jsonl, csv, parquet, or none.",
+        help="Complete set of output formats: jsonl, csv, parquet, or none.",
     )
-    p.add_argument("--no-csv", action="store_true",
-                   help="Suppress CSV output (deprecated, use --format).")
-    p.add_argument("--jsonl", action="store_true",
-                   help="Ensure JSONL output (deprecated, use --format).")
-    p.add_argument("--parquet", action="store_true",
-                   help="Enable Parquet output (deprecated, use --format).")
-
     p.add_argument("--timezone", metavar="TZ",
                    help="Override timezone (default: Europe/Berlin).")
     p.add_argument("--batch-size", type=int, metavar="N",

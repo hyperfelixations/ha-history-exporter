@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Callable, List
 
@@ -41,14 +42,14 @@ class HomeAssistantClient:
         token: str,
         timeout: int = 120,
         max_retries: int = 3,
-        backoff_seconds: List[float] | None = None,
+        backoff_seconds: Sequence[float] | None = None,
         session: requests.Session | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._base = url.rstrip("/")
         self._timeout = timeout
         self._max_retries = max_retries
-        self._backoff = backoff_seconds or [2, 5, 15]
+        self._backoff = tuple(backoff_seconds) if backoff_seconds else (2.0, 5.0, 15.0)
         # Injectable so retry timing is deterministic in tests.
         self._sleep = sleep
         self._session = session if session is not None else requests.Session()

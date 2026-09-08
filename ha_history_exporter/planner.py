@@ -97,9 +97,8 @@ def build_plan(
     requested_start: date,
     requested_end: date,
     tz: ZoneInfo,
-    cfg,  # AppConfig
-    force: bool,
-    resume: bool,
+    cfg,  # Config
+    force: bool = False,
 ) -> ExportPlan:
     """Build an export plan for the given date range.
 
@@ -107,9 +106,8 @@ def build_plan(
         requested_start: First day requested by the user.
         requested_end:   Last day requested by the user (inclusive).
         tz:              Local timezone (e.g. Europe/Berlin).
-        cfg:             AppConfig with output paths.
-        force:           If True, always re-export even if status=ok.
-        resume:          If True, skip days with a valid existing export.
+        cfg:             Config with output paths.
+        force:           If True, re-export even days whose manifest says ok.
     """
     today = today_local(tz)
     latest = latest_complete_day(tz)
@@ -132,7 +130,7 @@ def build_plan(
             )
             continue
 
-        if resume and not force:
+        if not force:
             existing = _check_existing(day, cfg)
             if existing:
                 plan.decisions.append(

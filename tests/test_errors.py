@@ -139,41 +139,41 @@ def test_color_is_suppressed_by_environment(monkeypatch, variable):
 
 def test_configuration_errors_carry_actionable_remedies(tmp_path, monkeypatch):
     """Every error a first-time user can hit must offer a way forward."""
-    from ha_history_exporter.config import load_config
+    from ha_history_exporter.settings import resolve
 
     monkeypatch.delenv("HA_URL", raising=False)
     monkeypatch.delenv("HA_TOKEN", raising=False)
 
     with pytest.raises(ConfigError) as missing_file:
-        load_config(tmp_path / "absent.yaml")
+        resolve(explicit_config=tmp_path / "absent.yaml")
     assert missing_file.value.remedies
 
     path = tmp_path / "config.yaml"
-    path.write_text("home_assistant:\n  timezone: Europe/Berlin\n", encoding="utf-8")
+    path.write_text("export:\n  timezone: Europe/Berlin\n", encoding="utf-8")
 
     with pytest.raises(CredentialsError) as missing_url:
-        load_config(path)
+        resolve(explicit_config=path)
     assert missing_url.value.remedies
     assert any(remedy.command for remedy in missing_url.value.remedies)
 
     monkeypatch.setenv("HA_URL", "http://home-assistant.invalid")
     with pytest.raises(CredentialsError) as missing_token:
-        load_config(path)
+        resolve(explicit_config=path)
     assert missing_token.value.remedies
     assert "synthetic" not in str(missing_token.value)
 
 
 def test_no_error_remedy_ever_embeds_a_real_token(monkeypatch, tmp_path):
     """Remedies show placeholders, never a configured secret."""
-    from ha_history_exporter.config import load_config
+    from ha_history_exporter.settings import resolve
 
     monkeypatch.setenv("HA_URL", "http://home-assistant.invalid")
     monkeypatch.delenv("HA_TOKEN", raising=False)
     path = tmp_path / "config.yaml"
-    path.write_text("home_assistant:\n  timezone: Europe/Berlin\n", encoding="utf-8")
+    path.write_text("export:\n  timezone: Europe/Berlin\n", encoding="utf-8")
 
     with pytest.raises(CredentialsError) as exc:
-        load_config(path)
+        resolve(explicit_config=path)
 
     stream = io.StringIO()
     console.render_error(exc.value, stream=stream)

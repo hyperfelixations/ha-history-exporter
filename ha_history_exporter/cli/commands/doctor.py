@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from ... import __version__, ha_client
 from ...errors import HHEError
-from ...settings import AppConfig, ResolvedSettings, paths, resolve, secrets
+from ...settings import Config, Format, ResolvedSettings, paths, resolve, secrets
 
 OK = "ok"
 WARN = "warn"
@@ -45,7 +45,7 @@ def run(args: argparse.Namespace) -> int:
         settings = resolve(
             explicit_config=getattr(args, "config", None), require_credentials=False
         )
-        files = ", ".join(str(p) for p in settings.config_files)
+        files = str(settings.config_file or "")
         results.append(
             Result(
                 OK if files else WARN,
@@ -70,7 +70,7 @@ def run(args: argparse.Namespace) -> int:
     results.extend(_check_exports(cfg))
 
     if not args.offline:
-        results.extend(_check_home_assistant(cfg))
+        results.extend(_check_home_assistant(settings))
     else:
         results.append(
             Result(OK, "home assistant", "skipped (--offline)")
@@ -82,8 +82,8 @@ def run(args: argparse.Namespace) -> int:
 
 # ── individual checks ─────────────────────────────────────────────────────────
 
-def _check_timezone(cfg: AppConfig) -> list[Result]:
-    name = cfg.home_assistant.timezone
+def _check_timezone(cfg: Config) -> list[Result]:
+    name = cfg.export.timezone
     try:
         ZoneInfo(name)
     except Exception:
@@ -92,7 +92,7 @@ def _check_timezone(cfg: AppConfig) -> list[Result]:
                 FAIL,
                 "timezone",
                 f"'{name}' is not a known IANA time zone",
-                "hhe config set home_assistant.timezone Europe/Berlin",
+                "hhe config set export.timezone Europe/Berlin",
             )
         ]
     return [Result(OK, "timezone", name)]
@@ -102,12 +102,12 @@ def _check_credentials(settings: ResolvedSettings) -> list[Result]:
     cfg = settings.config
     results: list[Result] = []
 
-    if cfg.ha_url:
+    if cfg.homeassistant.url:
         results.append(
             Result(
                 OK,
                 "home assistant url",
-                f"{cfg.ha_url}  [{settings.origin('homeassistant.url')}]",
+                f"{cfg.homeassistant.url}  [{settings.origin('homeassistant.url')}]",
             )
         )
     else:
@@ -120,7 +120,7 @@ def _check_credentials(settings: ResolvedSettings) -> list[Result]:
             )
         )
 
-    if cfg.ha_token:
+    if settings.token:
         results.append(
             Result(
                 OK,
@@ -155,7 +155,7 @@ def _check_credentials(settings: ResolvedSettings) -> list[Result]:
     return results
 
 
-def _check_output_dir(cfg: AppConfig) -> list[Result]:
+def _check_output_dir(cfg: Config) -> list[Result]:
     path = Path(cfg.export.output_dir)
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -187,7 +187,7 @@ def _check_output_dir(cfg: AppConfig) -> list[Result]:
     return results
 
 
-def _check_temp_dir(cfg: AppConfig) -> list[Result]:
+def _check_temp_dir(cfg: Config) -> list[Result]:
     path = cfg.resolved_temp_dir
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -206,13 +206,13 @@ def _check_temp_dir(cfg: AppConfig) -> list[Result]:
     return [Result(OK, "temporary directory", str(path))]
 
 
-def _check_formats(cfg: AppConfig) -> list[Result]:
+def _check_formats(cfg: Config) -> list[Result]:
     enabled = [
         name
         for name, on in (
-            ("jsonl", cfg.formats.jsonl),
-            ("csv", cfg.formats.csv),
-            ("parquet", cfg.formats.parquet),
+            ("jsonl", cfg.wants(Format.JSONL)),
+            ("csv", cfg.wants(Format.CSV)),
+            ("parquet", cfg.wants(Format.PARQUET)),
         )
         if on
     ]
@@ -227,7 +227,7 @@ def _check_formats(cfg: AppConfig) -> list[Result]:
         ]
 
     results = [Result(OK, "output formats", ", ".join(enabled))]
-    if cfg.formats.parquet:
+    if cfg.wants(Format.PARQUET):
         try:
             import pyarrow  # noqa: F401
         except ImportError:
@@ -244,7 +244,7 @@ def _check_formats(cfg: AppConfig) -> list[Result]:
     return results
 
 
-def _check_exports(cfg: AppConfig) -> list[Result]:
+def _check_exports(cfg: Config) -> list[Result]:
     root = cfg.layout.daily_root
     if not root.exists():
         return [Result(OK, "existing exports", "none yet")]
@@ -263,8 +263,9 @@ def _check_exports(cfg: AppConfig) -> list[Result]:
     ]
 
 
-def _check_home_assistant(cfg: AppConfig) -> list[Result]:
-    if not (cfg.ha_url and cfg.ha_token):
+def _check_home_assistant(settings: ResolvedSettings) -> list[Result]:
+    cfg = settings.config
+    if not (cfg.homeassistant.url and settings.token):
         return [
             Result(
                 WARN,
@@ -275,11 +276,11 @@ def _check_home_assistant(cfg: AppConfig) -> list[Result]:
         ]
     try:
         with ha_client.HomeAssistantClient(
-            url=cfg.ha_url,
-            token=cfg.ha_token,
-            timeout=cfg.requests.request_timeout_seconds,
+            url=cfg.homeassistant.url,
+            token=settings.token,
+            timeout=cfg.requests.timeout,
             max_retries=0,
-            backoff_seconds=cfg.requests.backoff_seconds,
+            backoff_seconds=cfg.requests.backoff,
         ) as client:
             client.check_api()
             states = client.get_states()

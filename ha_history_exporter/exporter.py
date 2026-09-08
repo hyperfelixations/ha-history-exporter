@@ -26,11 +26,11 @@ from zoneinfo import ZoneInfo
 
 from . import manifest as mf
 from . import writers
-from .config import AppConfig
 from .errors import AuthError, ConfigError, Remedy
 from .ha_client import HomeAssistantClient
 from .planner import ExportPlan
 from .runtime.workspace import Workspace, open_workspace
+from .settings import Config, Format
 from .time_utils import format_iso, local_day_bounds, local_offset_str, to_utc
 from .validators import validate_csv, validate_jsonl, validate_parquet
 
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_export(
-    cfg: AppConfig,
+    cfg: Config,
     plan: ExportPlan,
     entity_ids: List[str],
     entity_count_total: int,
@@ -73,7 +73,7 @@ def run_export(
         return 0
 
     # Fail fast: verify pyarrow is available before touching HA or writing files.
-    if cfg.formats.parquet:
+    if cfg.wants(Format.PARQUET):
         try:
             import pyarrow  # noqa: F401
         except ImportError as exc:
@@ -124,7 +124,7 @@ def run_export(
 
 
 def _run_days(
-    cfg: AppConfig,
+    cfg: Config,
     days: List[date],
     entity_ids: List[str],
     entity_count_total: int,
@@ -149,22 +149,22 @@ def _run_days(
         )
 
         # Warn if this day is likely outside Recorder retention.
-        if cfg.recorder.expected_purge_keep_days is not None:
+        if cfg.recorder.purge_keep_days is not None:
             today = datetime.now(tz).date()
             days_ago = (today - day).days
-            if days_ago > cfg.recorder.expected_purge_keep_days:
+            if days_ago > cfg.recorder.purge_keep_days:
                 logger.warning(
                     "Day %s is %d days ago - likely outside Recorder retention "
                     "(%d days). Only raw REST history is queried; no Long-Term-Statistics.",
                     day_str,
                     days_ago,
-                    cfg.recorder.expected_purge_keep_days,
+                    cfg.recorder.purge_keep_days,
                 )
 
         # Load or create the manifest.
         m = mf.load_or_create(
             day=day,
-            tz_name=cfg.home_assistant.timezone,
+            tz_name=cfg.export.timezone,
             start_local=format_iso(start_dt),
             end_local=format_iso(end_dt),
             start_utc=format_iso(to_utc(start_dt)),
@@ -173,14 +173,14 @@ def _run_days(
         )
         m.entity_count_current = entity_count_total
         m.entity_count_requested = len(entity_ids)
-        m.batch_size_entities = cfg.requests.batch_size_entities
+        m.batch_size_entities = cfg.requests.batch_size
         m.history_request_options = {
             "minimal_response": cfg.history_request.minimal_response,
             "no_attributes": cfg.history_request.no_attributes,
             "significant_changes_only": cfg.history_request.significant_changes_only,
         }
         m.mark_started(tz)
-        mf.save(m, cfg, cfg.storage.cloud_storage_retry_count, cfg.storage.cloud_storage_retry_sleep_seconds)
+        mf.save(m, cfg, cfg.storage.locked_file_retries, cfg.storage.locked_file_retry_sleep)
 
         try:
             _export_day(
@@ -219,17 +219,17 @@ def _run_days(
             mf.save(
                 m,
                 cfg,
-                cfg.storage.cloud_storage_retry_count,
-                cfg.storage.cloud_storage_retry_sleep_seconds,
+                cfg.storage.locked_file_retries,
+                cfg.storage.locked_file_retry_sleep,
             )
             _append_run_log(cfg, day_str, m)
 
         if day_idx < len(days) - 1:
             logger.debug(
                 "Sleeping %.1f s between days ...",
-                cfg.requests.sleep_between_days_seconds,
+                cfg.requests.sleep_between_days,
             )
-            sleep(cfg.requests.sleep_between_days_seconds)
+            sleep(cfg.requests.sleep_between_days)
 
     return 1 if any_error else 0
 
@@ -237,7 +237,7 @@ def _run_days(
 # ── Day-level export ──────────────────────────────────────────────────────────
 
 def _export_day(
-    cfg: AppConfig,
+    cfg: Config,
     day: date,
     day_str: str,
     start_dt: datetime,
@@ -266,7 +266,7 @@ def _export_day(
     tmp_csv.unlink(missing_ok=True)
     tmp_parquet.unlink(missing_ok=True)
 
-    batches = _chunks(entity_ids, cfg.requests.batch_size_entities)
+    batches = _chunks(entity_ids, cfg.requests.batch_size)
     batch_list = list(batches)
     total_batches = len(batch_list)
 
@@ -279,12 +279,12 @@ def _export_day(
         "  %d entities -> %d batches of up to %d",
         len(entity_ids),
         total_batches,
-        cfg.requests.batch_size_entities,
+        cfg.requests.batch_size,
     )
 
     # Stream into temp files — never hold the whole day in RAM.
     with writers.JsonlWriter(tmp_jsonl) as jw, \
-         (writers.CsvWriter(tmp_csv) if cfg.formats.csv else _NullWriter()) as cw:
+         (writers.CsvWriter(tmp_csv) if cfg.wants(Format.CSV) else _NullWriter()) as cw:
 
         for batch_idx, batch in enumerate(batch_list, start=1):
             logger.debug(
@@ -316,7 +316,7 @@ def _export_day(
                 manifest.failed_request_count += 1
                 # Continue with remaining batches — day will be marked failed at end.
                 if batch_idx < total_batches:
-                    sleep(cfg.requests.sleep_between_requests_seconds)
+                    sleep(cfg.requests.sleep_between_requests)
                 continue
 
             # Flatten [[state,...],[state,...]] → [state, state, ...]
@@ -338,7 +338,7 @@ def _export_day(
             state_count += len(rows)
 
             if batch_idx < total_batches:
-                sleep(cfg.requests.sleep_between_requests_seconds)
+                sleep(cfg.requests.sleep_between_requests)
 
     # Update client retries counter in manifest.
     manifest.retried_request_count = retried_this_day
@@ -351,13 +351,13 @@ def _export_day(
 
     # Validate JSONL and CSV before any finalisation.
     validate_jsonl(tmp_jsonl, expected_rows=state_count)
-    if cfg.formats.csv:
+    if cfg.wants(Format.CSV):
         validate_csv(tmp_csv, expected_rows=state_count)
 
     # Parquet post-processing: convert the already-validated JSONL temp file
     # to Parquet.  Done AFTER JSONL validation so Parquet is derived from
     # confirmed-good data.  Runs locally (temp dir) before touching cloud-storage.
-    if cfg.formats.parquet:
+    if cfg.wants(Format.PARQUET):
         logger.info("  Converting JSONL -> Parquet ...")
         writers.convert_jsonl_to_parquet(
             src=tmp_jsonl,
@@ -371,34 +371,34 @@ def _export_day(
     # have passed. JSONL remains an internal streaming/intermediate format when
     # disabled as a final artifact.
     written_files: list[str] = []
-    if cfg.formats.jsonl:
+    if cfg.wants(Format.JSONL):
         workspace.promote(
             tmp_jsonl, final_jsonl,
-            cfg.storage.cloud_storage_retry_count,
-            cfg.storage.cloud_storage_retry_sleep_seconds,
+            cfg.storage.locked_file_retries,
+            cfg.storage.locked_file_retry_sleep,
         )
         written_files.append(final_jsonl.name)
-    if cfg.formats.csv:
+    if cfg.wants(Format.CSV):
         workspace.promote(
             tmp_csv, final_csv,
-            cfg.storage.cloud_storage_retry_count,
-            cfg.storage.cloud_storage_retry_sleep_seconds,
+            cfg.storage.locked_file_retries,
+            cfg.storage.locked_file_retry_sleep,
         )
         written_files.append(final_csv.name)
     else:
         tmp_csv.unlink(missing_ok=True)
 
-    if cfg.formats.parquet:
+    if cfg.wants(Format.PARQUET):
         workspace.promote(
             tmp_parquet, final_parquet,
-            cfg.storage.cloud_storage_retry_count,
-            cfg.storage.cloud_storage_retry_sleep_seconds,
+            cfg.storage.locked_file_retries,
+            cfg.storage.locked_file_retry_sleep,
         )
         written_files.append(final_parquet.name)
     else:
         tmp_parquet.unlink(missing_ok=True)
 
-    if not cfg.formats.jsonl:
+    if not cfg.wants(Format.JSONL):
         tmp_jsonl.unlink(missing_ok=True)
 
     # Populate manifest counters.
@@ -408,9 +408,9 @@ def _export_day(
     manifest.entity_count_zero_history = len(zero_history)
     manifest.zero_history_entities = zero_history
     manifest.output_files = {
-        "jsonl":   final_jsonl.name   if cfg.formats.jsonl   else None,
-        "csv":     final_csv.name     if cfg.formats.csv     else None,
-        "parquet": final_parquet.name if cfg.formats.parquet else None,
+        "jsonl":   final_jsonl.name   if cfg.wants(Format.JSONL)   else None,
+        "csv":     final_csv.name     if cfg.wants(Format.CSV)     else None,
+        "parquet": final_parquet.name if cfg.wants(Format.PARQUET) else None,
     }
 
     if zero_history:
@@ -437,7 +437,7 @@ class _NullWriter:
     def __exit__(self, *args): pass
 
 
-def _append_run_log(cfg: AppConfig, day_str: str, m: mf.DayManifest) -> None:
+def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:
     """Append one line to metadata/export_runs.jsonl."""
     try:
         cfg.layout.metadata_dir.mkdir(parents=True, exist_ok=True)

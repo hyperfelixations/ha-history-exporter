@@ -15,7 +15,15 @@ import yaml
 
 from ..errors import ConfigError, Remedy
 from . import schema
-from .schema import BY_ENV_VAR, BY_PATH, KEYS, KNOWN_SECTIONS, Key, KeyType
+from .schema import (
+    BY_ENV_VAR,
+    BY_PATH,
+    KEYS,
+    KNOWN_SECTIONS,
+    LEGACY_ENV_VARS,
+    Key,
+    KeyType,
+)
 
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
@@ -61,7 +69,7 @@ def _unknown_key(path: str, file: Path, line: int | None) -> ConfigError:
         remedies=(
             Remedy(
                 "List every supported key with its effective value:",
-                "ha-history-exporter config list",
+                "hhe config list",
             ),
         ),
         context={"config_file": str(file)},
@@ -157,6 +165,8 @@ def parse_scalar(key: Key, raw: str, source: str) -> Any:
             return [item.strip() for item in value.split(",") if item.strip()]
         if key.type is KeyType.NUM_LIST:
             return [float(item) for item in value.split(",") if item.strip()]
+        if key.type is KeyType.FORMAT_LIST:
+            return schema.format_set(value, key.path)
     except ValueError as exc:
         raise ConfigError(
             f"{source} is not a valid value for {key.path}: {exc}.",
@@ -166,14 +176,25 @@ def parse_scalar(key: Key, raw: str, source: str) -> Any:
 
 
 def env_entries(environ: Mapping[str, str]) -> dict[str, Entry]:
+    """Read every configured environment variable.
+
+    The legacy names HA_URL and HA_TOKEN are read after the HHE_ spellings and
+    therefore win when both are set: they are the ones already configured on
+    existing machines, and silently preferring the newer name would change a
+    working setup.
+    """
     entries: dict[str, Entry] = {}
     for name, key in BY_ENV_VAR.items():
-        if name not in environ:
-            continue
-        raw = environ[name]
-        entries[key.path] = Entry(
-            parse_scalar(key, raw, name), f"env:{name}", name
-        )
+        if name in environ:
+            entries[key.path] = Entry(
+                parse_scalar(key, environ[name], name), f"env:{name}", name
+            )
+    for name, key_path in LEGACY_ENV_VARS.items():
+        if name in environ:
+            key = BY_PATH[key_path]
+            entries[key_path] = Entry(
+                parse_scalar(key, environ[name], name), f"env:{name}", name
+            )
     return entries
 
 

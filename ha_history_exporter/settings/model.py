@@ -1,106 +1,108 @@
-"""Runtime configuration consumed by the application layer.
+"""The runtime configuration consumed by the application layer.
 
-``AppConfig`` is the shape the planner, exporter, and manifest have always
-used. It is built by :mod:`ha_history_exporter.settings.resolver`; nothing
-below the configuration layer knows where the values came from.
+``Config`` is immutable. It is built once, by
+:mod:`ha_history_exporter.settings.resolver`, from every configuration source;
+nothing below the configuration layer knows where a value came from, and no
+layer can change one afterwards.
+
+The access token is deliberately *not* part of this object. It travels beside
+it, so a configuration value can never carry a secret into a log line, a
+manifest, or a ``repr``. See internal dev doc, Zugangsdaten.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import List
 
-from ..errors import ConfigError
 from ..layout import ExportLayout
-from . import paths, schema
 
 
-@dataclass
-class HAConfig:
-    url_env: str = "HA_URL"
-    token_env: str = "HA_TOKEN"  # noqa: S105 - variable name, not a secret
+class Format(str, Enum):
+    """An output format for exported history."""
+
+    JSONL = "jsonl"
+    CSV = "csv"
+    PARQUET = "parquet"
+
+
+#: Formats in their canonical order, used wherever a set is rendered for a user.
+FORMAT_ORDER: tuple[Format, ...] = (Format.JSONL, Format.CSV, Format.PARQUET)
+
+
+def format_list(formats: frozenset[Format]) -> str:
+    """Render a format set the way it is written on the command line."""
+    return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in formats) or "none"
+
+
+@dataclass(frozen=True)
+class HomeAssistantSettings:
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class ExportSettings:
+    output_dir: str = ""
     timezone: str = "Europe/Berlin"
+    formats: frozenset[Format] = frozenset({Format.JSONL})
 
 
-@dataclass
-class ExportConfig:
-    output_dir: str = field(default_factory=lambda: str(paths.default_output_dir()))
-    mode: str = "all_current_entities"
-    include_current_day: bool = False
-    resume: bool = True
-    force: bool = False
-
-
-@dataclass
-class RequestsConfig:
-    batch_size_entities: int = 5
-    sleep_between_requests_seconds: float = 1.0
-    sleep_between_days_seconds: float = 5.0
-    request_timeout_seconds: int = 120
+@dataclass(frozen=True)
+class RequestSettings:
+    batch_size: int = 5
+    sleep_between_requests: float = 1.0
+    sleep_between_days: float = 5.0
+    timeout: int = 120
     max_retries: int = 3
-    backoff_seconds: List[float] = field(default_factory=lambda: [2, 5, 15])
+    backoff: tuple[float, ...] = (2.0, 5.0, 15.0)
 
 
-@dataclass
-class FormatsConfig:
-    jsonl: bool = True
-    csv: bool = False
-    parquet: bool = False
+@dataclass(frozen=True)
+class HistoryRequestSettings:
+    """Options passed straight through to the Home Assistant history endpoint.
 
+    All three reduce what Home Assistant returns. They default to off, so the
+    export is complete unless a user deliberately asks for less.
+    """
 
-@dataclass
-class StorageConfig:
-    use_temp_dir: bool = True
-    temp_dir: str = field(default_factory=lambda: str(paths.default_temp_root()))
-    cloud_storage_retry_count: int = 5
-    cloud_storage_retry_sleep_seconds: float = 2.0
-
-
-@dataclass
-class HistoryRequestConfig:
     minimal_response: bool = False
     no_attributes: bool = False
     significant_changes_only: bool = False
 
 
-@dataclass
-class RecorderConfig:
-    export_long_term_statistics: bool = False
-    expected_purge_keep_days: int | None = None
-
-
-@dataclass
-class EntitySelectionConfig:
-    source: str = "api_states_runtime"
+@dataclass(frozen=True)
+class EntitySettings:
     include_unknown: bool = True
     include_unavailable: bool = True
-    include_deleted_from_previous_runs: bool = False
-    optional_exclude_patterns: List[str] = field(default_factory=list)
-    optional_exclude_domains: List[str] = field(default_factory=list)
+    exclude_domains: tuple[str, ...] = ()
+    exclude_patterns: tuple[str, ...] = ()
 
 
-@dataclass
-class AppConfig:
-    home_assistant: HAConfig = field(default_factory=HAConfig)
-    export: ExportConfig = field(default_factory=ExportConfig)
-    requests: RequestsConfig = field(default_factory=RequestsConfig)
-    formats: FormatsConfig = field(default_factory=FormatsConfig)
-    storage: StorageConfig = field(default_factory=StorageConfig)
-    history_request: HistoryRequestConfig = field(default_factory=HistoryRequestConfig)
-    recorder: RecorderConfig = field(default_factory=RecorderConfig)
-    entity_selection: EntitySelectionConfig = field(
-        default_factory=EntitySelectionConfig
-    )
-    # Resolved at load time from the environment or the credentials file.
-    ha_url: str = ""
-    ha_token: str = ""
+@dataclass(frozen=True)
+class RecorderSettings:
+    purge_keep_days: int | None = None
 
-    @property
-    def resolved_temp_dir(self) -> Path:
-        """Expand %ENV_VARS% and return the temp directory path."""
-        return Path(os.path.expandvars(self.storage.temp_dir))
+
+@dataclass(frozen=True)
+class StorageSettings:
+    temp_dir: str = ""
+    locked_file_retries: int = 5
+    locked_file_retry_sleep: float = 2.0
+
+
+@dataclass(frozen=True)
+class Config:
+    """Everything one export run needs, except the access token."""
+
+    homeassistant: HomeAssistantSettings = HomeAssistantSettings()
+    export: ExportSettings = ExportSettings()
+    requests: RequestSettings = RequestSettings()
+    history_request: HistoryRequestSettings = HistoryRequestSettings()
+    entities: EntitySettings = EntitySettings()
+    recorder: RecorderSettings = RecorderSettings()
+    storage: StorageSettings = StorageSettings()
 
     @property
     def layout(self) -> ExportLayout:
@@ -112,47 +114,14 @@ class AppConfig:
         return ExportLayout(Path(self.export.output_dir))
 
     @property
+    def resolved_temp_dir(self) -> Path:
+        """The working directory root, with %ENV_VARS% expanded."""
+        return Path(os.path.expandvars(self.storage.temp_dir))
+
+    @property
     def snapshot_only(self) -> bool:
-        """True when no history output format is enabled."""
-        return not any((self.formats.jsonl, self.formats.csv, self.formats.parquet))
+        """True when no output format is enabled, so no history is requested."""
+        return not self.export.formats
 
-
-def validate_config(cfg: AppConfig) -> None:
-    """Re-check the numeric contract of an already built configuration."""
-    schema.positive_int(
-        cfg.requests.batch_size_entities, "requests.batch_size_entities"
-    )
-    schema.non_negative_number(
-        cfg.requests.sleep_between_requests_seconds,
-        "requests.sleep_between_requests_seconds",
-    )
-    schema.non_negative_number(
-        cfg.requests.sleep_between_days_seconds,
-        "requests.sleep_between_days_seconds",
-    )
-    schema.positive_int(
-        cfg.requests.request_timeout_seconds, "requests.request_timeout_seconds"
-    )
-    schema.non_negative_int(cfg.requests.max_retries, "requests.max_retries")
-    backoff = schema.non_negative_number_list(
-        cfg.requests.backoff_seconds, "requests.backoff_seconds"
-    )
-    if cfg.requests.max_retries > 0 and not backoff:
-        raise ConfigError(
-            "requests.backoff_seconds must contain at least one value "
-            "when requests.max_retries is greater than 0.",
-            details=(
-                "Retries are enabled but no wait time is configured, so the "
-                "client would have no backoff schedule to follow."
-            ),
-        )
-    schema.non_negative_int(
-        cfg.storage.cloud_storage_retry_count, "storage.cloud_storage_retry_count"
-    )
-    schema.non_negative_number(
-        cfg.storage.cloud_storage_retry_sleep_seconds,
-        "storage.cloud_storage_retry_sleep_seconds",
-    )
-    schema.optional_positive_int(
-        cfg.recorder.expected_purge_keep_days, "recorder.expected_purge_keep_days"
-    )
+    def wants(self, fmt: Format) -> bool:
+        return fmt in self.export.formats

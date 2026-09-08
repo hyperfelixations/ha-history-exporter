@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ...errors import ConfigError, Remedy, UsageError
 from ...settings import ResolvedSettings, document, paths, resolve, schema, secrets
+from ...settings.model import FORMAT_ORDER
 from ...settings.schema import Key, KeyStatus
 
 TOKEN_KEY = "homeassistant.token"  # noqa: S105 - key path, not a secret
@@ -74,8 +75,8 @@ def _path(args: argparse.Namespace) -> int:
             ("temporary directory", settings.config.resolved_temp_dir),
         ]
     )
-    for path in settings.config_files:
-        entries.append(("in use", path))
+    if settings.config_file is not None:
+        entries.append(("in use", settings.config_file))
 
     width = max(len(label) for label, _ in entries)
     for label, path in entries:
@@ -190,7 +191,12 @@ def _display_value(settings: ResolvedSettings, key: Key) -> str:
     """Never echo a secret; report only whether one is stored."""
     if key.status is KeyStatus.SECRET:
         return str(settings.values.get(key.path, "<not set>"))
-    return str(settings.values.get(key.path, ""))
+    value = settings.values.get(key.path, "")
+    if isinstance(value, frozenset):
+        return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in value) or "none"
+    if isinstance(value, tuple):
+        return ",".join(str(item) for item in value)
+    return str(value)
 
 
 def _refuse_explicit_config(args: argparse.Namespace) -> None:

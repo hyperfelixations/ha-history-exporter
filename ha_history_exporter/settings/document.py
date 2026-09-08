@@ -1,9 +1,13 @@
 """Reading and writing the user configuration document.
 
-``config set`` must never bake a value that came from the environment or from
-a project file into the user file. Everything here therefore works on the user
-file's own keys only, and the document is regenerated from the key registry so
-its comments and ordering stay in sync with the supported options.
+The file is regenerated from the key registry rather than edited in place, so
+it always lists every supported setting with its documentation. Keys the user
+has set appear as real entries; the rest appear commented out, showing the
+built-in default for this machine. That makes the file self-documenting and
+removes the need for a separate example file that could drift.
+
+``config set`` must never bake a value that came from the environment into the
+user file, so everything here works on the file's own keys only.
 """
 
 from __future__ import annotations
@@ -15,15 +19,18 @@ import yaml
 
 from ..errors import ConfigError, Remedy
 from . import paths, schema, sources
-from .schema import KeyStatus
+from .model import FORMAT_ORDER, Format
+from .schema import KeyStatus, KeyType
 
 HEADER = """\
 # Home Assistant History Exporter configuration.
 #
-# Written by `hhe config set` and `hhe init`; safe to edit by hand.
+# Written by `hhe init` and `hhe config set`; safe to edit by hand.
 # The access token is NOT stored here - it lives in credentials.yaml.
-# Every key can also be set through an environment variable, for example
-# HHE_EXPORT_OUTPUT_DIR, which takes precedence over this file.
+#
+# Commented-out lines show the built-in default. Every key can also be set
+# through an environment variable, which takes precedence over this file;
+# `hhe config list --origin` shows what is actually in effect.
 """
 
 
@@ -57,38 +64,61 @@ def write_user_values(
 
 
 def render(values: Mapping[str, Any]) -> str:
-    """Render a configuration document for the given dotted-path values."""
+    """Render the complete configuration document for *values*.
+
+    Every supported key appears. Keys absent from *values* are written as a
+    comment carrying their effective default.
+    """
     lines = [HEADER]
     for section in schema.SECTIONS:
         keys = [
             key
             for key in schema.KEYS
-            if key.section == section
-            and key.status is not KeyStatus.SECRET
-            and key.path in values
+            if key.section == section and key.status is not KeyStatus.SECRET
         ]
         if not keys:
             continue
         lines.append(f"{section}:")
         for key in keys:
             lines.append(f"  # {key.doc}")
-            lines.append(f"  {key.name}: {_scalar(values[key.path])}")
+            if key.path in values:
+                lines.append(f"  {key.name}: {_scalar(key, values[key.path])}")
+            else:
+                default = schema.default_value(key)
+                lines.append(f"  # {key.name}: {_scalar(key, default)}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _scalar(value: Any) -> str:
+def _scalar(key: schema.Key, value: Any) -> str:
     """Render one value as inline YAML.
 
     ``safe_dump`` of a bare scalar appends an explicit document-end marker,
     which would terminate the surrounding document; drop the markers and keep
     the value itself.
     """
-    dumped = yaml.safe_dump(value, default_flow_style=True, allow_unicode=True)
+    dumped = yaml.safe_dump(
+        _plain(key, value), default_flow_style=True, allow_unicode=True
+    )
     lines = [
         line for line in dumped.splitlines() if line.strip() not in ("...", "---")
     ]
     return " ".join(line.strip() for line in lines).strip()
+
+
+def _plain(key: schema.Key, value: Any) -> Any:
+    """Reduce a coerced value back to something PyYAML can represent."""
+    if key.type is KeyType.FORMAT_LIST:
+        if isinstance(value, (frozenset, set)):
+            return [fmt.value for fmt in FORMAT_ORDER if fmt in value]
+        if isinstance(value, str):
+            return [
+                part.strip() for part in value.split(",") if part.strip()
+            ]
+        return [item.value if isinstance(item, Format) else item for item in value]
+    if isinstance(value, tuple):
+        return list(value)
+    return value
 
 
 def validate_document(path: Path) -> None:
@@ -109,8 +139,6 @@ def parse_value(key_path: str, raw: str) -> Any:
         raise ConfigError(
             f"Unknown configuration key '{key_path}'.",
             details=details,
-            remedies=(
-                Remedy("List every supported key:", "hhe config list"),
-            ),
+            remedies=(Remedy("List every supported key:", "hhe config list"),),
         )
     return key.coerce(sources.parse_scalar(key, raw, "the given value"))

@@ -173,8 +173,8 @@ hhe config edit                       # open the file in $EDITOR
 ```
 
 Writes always go to your user configuration, never to a project file or a file
-you passed with `--config`. `config.example.yaml` in this repository documents
-every key with its default.
+you passed with `--config`. The file lists every key with its documentation;
+keys you have not set appear commented out, showing the built-in default.
 
 ### Environment variables
 
