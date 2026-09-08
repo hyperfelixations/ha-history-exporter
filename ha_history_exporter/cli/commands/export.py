@@ -30,6 +30,7 @@ from ...time_utils import (
     last_n_complete_days,
     latest_complete_day,
     parse_date_arg,
+    today_local,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,12 +101,22 @@ def run(args: argparse.Namespace) -> int:
             ),
         ) from exc
 
+    partial_day = requested_partial_day(args, tz)
+    if partial_day is not None:
+        logger.warning(
+            "Today (%s) is not over yet. Exporting it now captures only the "
+            "state changes recorded so far. The day is recorded as "
+            "status=partial, and a later run will export it again in full.",
+            partial_day,
+        )
+
     plan = build_plan(
         requested_start=requested_start,
         requested_end=requested_end,
         tz=tz,
         cfg=cfg,
         force=args.force,
+        partial_day=partial_day,
     )
 
     if not plan.days_to_export and not args.dry_run and not cfg.snapshot_only:
@@ -184,7 +195,7 @@ def run(args: argparse.Namespace) -> int:
             cfg.requests.batch_size,
         )
 
-        return run_export(
+        exit_code = run_export(
             cfg=cfg,
             plan=plan,
             entity_ids=entity_ids,
@@ -193,6 +204,31 @@ def run(args: argparse.Namespace) -> int:
             tz=tz,
             dry_run=False,
         )
+
+        for day in plan.partial_days:
+            logger.warning(
+                "Day %s was written from an incomplete day and is marked "
+                "status=partial. The next run that includes it will replace "
+                "it with the complete day.",
+                day,
+            )
+        return exit_code
+
+
+def requested_partial_day(
+    args: argparse.Namespace, tz: ZoneInfo
+) -> date | None:
+    """The running day, when --date named it; otherwise None.
+
+    Only a single-day selection can ask for today. A range or --last-days
+    that happens to include today skips it, exactly as before: reaching into
+    an unfinished day must be something the caller said, not something that
+    happens to them. See internal dev doc, Teil-Export des heutigen Tages.
+    """
+    if not getattr(args, "date", None):
+        return None
+    day = parse_date_arg(args.date, tz)
+    return day if day == today_local(tz) else None
 
 
 # ── argument translation ──────────────────────────────────────────────────────

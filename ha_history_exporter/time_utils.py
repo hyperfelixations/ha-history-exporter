@@ -71,6 +71,29 @@ def last_n_complete_days(n: int, tz: ZoneInfo) -> tuple[date, date]:
     return end - timedelta(days=n - 1), end
 
 
+def partial_day_bounds(
+    day: date, tz: ZoneInfo, now: datetime | None = None
+) -> tuple[datetime, datetime]:
+    """Return (start, end) for a day that is still running.
+
+    The window begins at local midnight and ends at *now*, truncated to whole
+    seconds. Only ``--date`` pointing at today produces such a window, and the
+    day is recorded as ``partial`` so a later run replaces it in full. See
+    internal dev doc, Teil-Export des heutigen Tages.
+
+    Raises:
+        ValueError if *day* is not the current local day.
+    """
+    current = datetime.now(tz) if now is None else now.astimezone(tz)
+    if day != current.date():
+        raise ValueError(
+            f"Day {day} is not today ({current.date()}) in {tz}; "
+            "only the running day can be exported partially."
+        )
+    start, _ = local_day_bounds(day, tz)
+    return start, current.replace(microsecond=0)
+
+
 def iter_days(start: date, end: date) -> Iterator[date]:
     """Yield calendar dates from *start* to *end* inclusive."""
     current = start

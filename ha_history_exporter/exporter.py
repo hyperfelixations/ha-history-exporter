@@ -31,7 +31,13 @@ from .ha_client import HomeAssistantClient
 from .planner import ExportPlan
 from .runtime.workspace import Workspace, open_workspace
 from .settings import Config, Format
-from .time_utils import format_iso, local_day_bounds, local_offset_str, to_utc
+from .time_utils import (
+    format_iso,
+    local_day_bounds,
+    local_offset_str,
+    partial_day_bounds,
+    to_utc,
+)
 from .validators import validate_csv, validate_jsonl, validate_parquet
 
 logger = logging.getLogger(__name__)
@@ -46,6 +52,7 @@ def run_export(
     tz: ZoneInfo,
     dry_run: bool = False,
     sleep: Callable[[float], None] = time.sleep,
+    now: datetime | None = None,
 ) -> int:
     """Execute the export plan.
 
@@ -58,6 +65,8 @@ def run_export(
         tz:                Local timezone.
         dry_run:           If True, only print the plan — make no history calls.
         sleep:             Pause function; injectable so tests stay instant.
+        now:               Clock for the partial-day window; injectable so the
+                           cut-off is deterministic in tests.
 
     Returns:
         0 on full success, 1 if any day had errors.
@@ -112,12 +121,14 @@ def run_export(
         return _run_days(
             cfg=cfg,
             days=days,
+            partial_days=frozenset(plan.partial_days),
             entity_ids=entity_ids,
             entity_count_total=entity_count_total,
             client=client,
             tz=tz,
             workspace=workspace,
             sleep=sleep,
+            now=now,
         )
     finally:
         workspace.close()
@@ -126,17 +137,23 @@ def run_export(
 def _run_days(
     cfg: Config,
     days: List[date],
+    partial_days: frozenset[date],
     entity_ids: List[str],
     entity_count_total: int,
     client: HomeAssistantClient,
     tz: ZoneInfo,
     workspace: Workspace,
     sleep: Callable[[float], None],
+    now: datetime | None = None,
 ) -> int:
     any_error = False
 
     for day_idx, day in enumerate(days):
-        start_dt, end_dt = local_day_bounds(day, tz)
+        is_partial = day in partial_days
+        if is_partial:
+            start_dt, end_dt = partial_day_bounds(day, tz, now)
+        else:
+            start_dt, end_dt = local_day_bounds(day, tz)
         day_str = str(day)
 
         logger.info(
@@ -196,7 +213,7 @@ def _run_days(
                 workspace=workspace,
                 sleep=sleep,
             )
-            m.mark_finished(tz, status="ok")
+            m.mark_finished(tz, status="partial" if is_partial else "ok")
             logger.info(
                 "Day %s done - %d state objects, %d/%d entities had history.",
                 day_str,

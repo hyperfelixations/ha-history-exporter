@@ -1,9 +1,11 @@
 """Export plan builder.
 
-Determines which days in a requested range need to be exported, based on:
-  - whether the day is already complete in local time
-  - whether a valid export already exists (resume mode)
-  - whether --force overrides existing exports
+Decides, for every requested day, whether to export it, skip it, or export
+it as a partial day:
+  - a day that is not yet complete is skipped, unless it was asked for
+    explicitly as the partial day
+  - a day whose manifest says ``ok`` is skipped, unless --force is given
+  - everything else is exported
 """
 
 from __future__ import annotations
@@ -25,10 +27,17 @@ from .time_utils import (
 logger = logging.getLogger(__name__)
 
 
+#: Actions a day can be planned for.
+EXPORT = "export"
+EXPORT_PARTIAL = "export_partial"
+SKIP_EXISTING = "skip_existing"
+SKIP_INCOMPLETE = "skip_incomplete"
+
+
 @dataclass
 class DayDecision:
     day: date
-    action: str            # "export" | "skip_existing" | "skip_incomplete"
+    action: str
     reason: str | None = None
 
 
@@ -42,15 +51,25 @@ class ExportPlan:
 
     @property
     def days_to_export(self) -> List[date]:
-        return [d.day for d in self.decisions if d.action == "export"]
+        """Every day that will be fetched, complete or partial."""
+        return [
+            d.day
+            for d in self.decisions
+            if d.action in (EXPORT, EXPORT_PARTIAL)
+        ]
+
+    @property
+    def partial_days(self) -> List[date]:
+        """Days fetched only up to now, and therefore not finished."""
+        return [d.day for d in self.decisions if d.action == EXPORT_PARTIAL]
 
     @property
     def days_skipped_existing(self) -> List[date]:
-        return [d.day for d in self.decisions if d.action == "skip_existing"]
+        return [d.day for d in self.decisions if d.action == SKIP_EXISTING]
 
     @property
     def days_skipped_incomplete(self) -> List[date]:
-        return [d.day for d in self.decisions if d.action == "skip_incomplete"]
+        return [d.day for d in self.decisions if d.action == SKIP_INCOMPLETE]
 
     def print_summary(
         self,
@@ -76,10 +95,12 @@ class ExportPlan:
         print(f"  Batch size      : {batch_size}")
         print(f"  Requests / day  : ~{batches_per_day}")
         print()
+        partial = set(self.partial_days)
         if self.days_to_export:
             print(f"  Will export ({len(self.days_to_export)}):")
             for d in self.days_to_export:
-                print(f"    {d}")
+                marker = "  (partial - today is not over yet)" if d in partial else ""
+                print(f"    {d}{marker}")
         else:
             print("  Nothing to export.")
         if self.days_skipped_existing:
@@ -99,6 +120,7 @@ def build_plan(
     tz: ZoneInfo,
     cfg,  # Config
     force: bool = False,
+    partial_day: date | None = None,
 ) -> ExportPlan:
     """Build an export plan for the given date range.
 
@@ -108,6 +130,8 @@ def build_plan(
         tz:              Local timezone (e.g. Europe/Berlin).
         cfg:             Config with output paths.
         force:           If True, re-export even days whose manifest says ok.
+        partial_day:     The still running day the caller asked for by name.
+                         Any other incomplete day is skipped as before.
     """
     today = today_local(tz)
     latest = latest_complete_day(tz)
@@ -121,10 +145,22 @@ def build_plan(
 
     for day in iter_days(requested_start, requested_end):
         if not is_day_complete(day, tz):
+            if day == partial_day:
+                plan.decisions.append(
+                    DayDecision(
+                        day=day,
+                        action=EXPORT_PARTIAL,
+                        reason=(
+                            f"Day {day} was requested by name and is exported "
+                            "up to now."
+                        ),
+                    )
+                )
+                continue
             plan.decisions.append(
                 DayDecision(
                     day=day,
-                    action="skip_incomplete",
+                    action=SKIP_INCOMPLETE,
                     reason=f"Day {day} is not yet complete (today is {today}).",
                 )
             )
@@ -134,16 +170,18 @@ def build_plan(
             existing = _check_existing(day, cfg)
             if existing:
                 plan.decisions.append(
-                    DayDecision(day=day, action="skip_existing", reason=existing)
+                    DayDecision(day=day, action=SKIP_EXISTING, reason=existing)
                 )
                 logger.info("Day %s: skipping - %s", day, existing)
                 continue
 
-        plan.decisions.append(DayDecision(day=day, action="export"))
+        plan.decisions.append(DayDecision(day=day, action=EXPORT))
 
     logger.info(
-        "Export plan: %d days to export, %d skip (existing), %d skip (incomplete).",
+        "Export plan: %d day(s) to export (%d partial), %d skip (existing), "
+        "%d skip (incomplete).",
         len(plan.days_to_export),
+        len(plan.partial_days),
         len(plan.days_skipped_existing),
         len(plan.days_skipped_incomplete),
     )
