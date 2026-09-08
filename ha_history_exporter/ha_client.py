@@ -29,11 +29,13 @@ _RETRYABLE_STATUS = {500, 502, 503, 504}
 class HomeAssistantClient:
     """Thin wrapper around the HA REST API.
 
-    The base URL is read from the HA_URL environment variable and can be:
+    The caller passes the base URL; the configuration layer resolves it from
+    ``homeassistant.url`` or the environment. Any address this machine can
+    reach works:
       http://homeassistant.local:8123   (mDNS — local network only)
-      http://192.0.2.10:8123          (IP address)
+      http://192.0.2.10:8123            (IP address)
       http://100.x.x.x:8123             (Tailscale)
-      https://myhome.duckdns.org:8123   (external HTTPS)
+      https://myhome.example.net:8123   (external HTTPS)
     """
 
     def __init__(
