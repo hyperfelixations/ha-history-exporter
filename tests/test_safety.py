@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import os
 import re
 import socket
@@ -55,6 +56,26 @@ def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
             assert not pattern.search(text), f"{path} contains {pattern.pattern}"
 
 
+#: Account names too generic to search for without false positives.
+GENERIC_ACCOUNT_NAMES = frozenset(
+    {"user", "users", "home", "runner", "root", "admin", "build"}
+)
+
+
+def private_identifiers() -> list[str]:
+    """Strings that would identify whoever checked this repository out.
+
+    Derived from the account running the suite, never written down: this file
+    is published, so naming the thing it guards against would be the leak
+    itself. ``Path.home`` is redirected by the isolation fixture and therefore
+    unusable here. See internal dev doc, Datenschutz des Public Repository.
+    """
+    name = getpass.getuser()
+    if len(name) < 4 or name.lower() in GENERIC_ACCOUNT_NAMES:
+        return []
+    return [name]
+
+
 def test_publishable_sources_contain_no_private_workspace_paths():
     publishable_paths = [
         ROOT / "README.md",
@@ -64,18 +85,22 @@ def test_publishable_sources_contain_no_private_workspace_paths():
         ROOT / ".github" / "workflows" / "release.yml",
         ROOT / "tools" / "refresh_golden.py",
         *(ROOT / "ha_history_exporter").rglob("*.py"),
+        *(ROOT / "tests").rglob("*.py"),
         *(ROOT / "tests" / "golden").iterdir(),
     ]
-    forbidden_patterns = [
-        re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE),
-        re.compile(r"\buser\b", re.IGNORECASE),
-        re.compile(r"\bInternal-(?:Data|HomeAssistant)\b", re.IGNORECASE),
-    ]
+    # A POSIX home directory is not checked by shape: the README documents
+    # /home/you/... as a placeholder. A real one is caught by name below.
+    absolute_user_paths = [re.compile(r"[A-Za-z]:\\+Users\\+", re.IGNORECASE)]
+    identifiers = private_identifiers()
 
     for path in publishable_paths:
-        text = path.read_text(encoding="utf-8")
-        for pattern in forbidden_patterns:
-            assert not pattern.search(text), f"{path} contains {pattern.pattern}"
+        content = path.read_text(encoding="utf-8")
+        for pattern in absolute_user_paths:
+            assert not pattern.search(content), f"{path} contains {pattern.pattern}"
+        for identifier in identifiers:
+            assert identifier.lower() not in content.lower(), (
+                f"{path} names the account this checkout belongs to"
+            )
 
 
 def test_local_helper_script_is_not_published():
