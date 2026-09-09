@@ -51,8 +51,16 @@ class ExportSettings:
 
 @dataclass(frozen=True)
 class RequestSettings:
-    batch_size: int = 5
-    sleep_between_requests: float = 1.0
+    """How hard HHE asks Home Assistant for history.
+
+    The sizing is the one proven over months of daily exports on an instance
+    with roughly 1400 entities: 15 entities per request cuts a day to about a
+    third of the requests, and 0.7 s between them keeps the instance
+    responsive. See internal dev doc, Konfiguration.
+    """
+
+    batch_size: int = 15
+    sleep_between_requests: float = 0.7
     sleep_between_days: float = 5.0
     timeout: int = 120
     max_retries: int = 3

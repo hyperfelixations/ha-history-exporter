@@ -21,7 +21,28 @@ from typing import Any, Callable
 
 from ..errors import ConfigError, Remedy
 from . import paths
-from .model import FORMAT_ORDER, Format
+from .model import (
+    FORMAT_ORDER,
+    EntitySettings,
+    ExportSettings,
+    Format,
+    HistoryRequestSettings,
+    HomeAssistantSettings,
+    RecorderSettings,
+    RequestSettings,
+    StorageSettings,
+)
+
+# The configuration model is the single source of every default. Declaring a
+# value here as well would let the two drift apart unnoticed; a test compares
+# them key by key.
+_HOMEASSISTANT = HomeAssistantSettings()
+_EXPORT = ExportSettings()
+_REQUESTS = RequestSettings()
+_HISTORY_REQUEST = HistoryRequestSettings()
+_ENTITIES = EntitySettings()
+_RECORDER = RecorderSettings()
+_STORAGE = StorageSettings()
 
 
 class KeyType(str, Enum):
@@ -212,7 +233,7 @@ KEYS: tuple[Key, ...] = (
     Key(
         "homeassistant.url",
         KeyType.STRING,
-        "",
+        _HOMEASSISTANT.url,
         "Home Assistant base URL, for example http://homeassistant.local:8123.",
         text,
         env="HHE_URL",
@@ -236,112 +257,112 @@ KEYS: tuple[Key, ...] = (
     Key(
         "export.timezone",
         KeyType.STRING,
-        "Europe/Berlin",
+        _EXPORT.timezone,
         "IANA time zone that defines local calendar days.",
         text,
     ),
     Key(
         "export.formats",
         KeyType.FORMAT_LIST,
-        [Format.JSONL.value],
+        [fmt.value for fmt in FORMAT_ORDER if fmt in _EXPORT.formats],
         "Output formats: any of jsonl, csv, parquet - or none for snapshot only.",
         format_set,
     ),
     Key(
         "requests.batch_size",
         KeyType.INT,
-        5,
+        _REQUESTS.batch_size,
         "Entities per history request.",
         positive_int,
     ),
     Key(
         "requests.sleep_between_requests",
         KeyType.FLOAT,
-        1.0,
+        _REQUESTS.sleep_between_requests,
         "Pause between history requests, in seconds.",
         non_negative_number,
     ),
     Key(
         "requests.sleep_between_days",
         KeyType.FLOAT,
-        5.0,
+        _REQUESTS.sleep_between_days,
         "Pause between exported days, in seconds.",
         non_negative_number,
     ),
     Key(
         "requests.timeout",
         KeyType.INT,
-        120,
+        _REQUESTS.timeout,
         "HTTP timeout per request, in seconds.",
         positive_int,
     ),
     Key(
         "requests.max_retries",
         KeyType.INT,
-        3,
+        _REQUESTS.max_retries,
         "Retries on timeouts and 5xx responses.",
         non_negative_int,
     ),
     Key(
         "requests.backoff",
         KeyType.NUM_LIST,
-        [2, 5, 15],
+        list(_REQUESTS.backoff),
         "Wait times between retries, in seconds.",
         non_negative_number_list,
     ),
     Key(
         "history_request.minimal_response",
         KeyType.BOOL,
-        False,
+        _HISTORY_REQUEST.minimal_response,
         "Ask Home Assistant for a reduced history payload.",
         boolean,
     ),
     Key(
         "history_request.no_attributes",
         KeyType.BOOL,
-        False,
+        _HISTORY_REQUEST.no_attributes,
         "Ask Home Assistant to omit entity attributes.",
         boolean,
     ),
     Key(
         "history_request.significant_changes_only",
         KeyType.BOOL,
-        False,
+        _HISTORY_REQUEST.significant_changes_only,
         "Ask Home Assistant for significant changes only.",
         boolean,
     ),
     Key(
         "entities.include_unknown",
         KeyType.BOOL,
-        True,
+        _ENTITIES.include_unknown,
         "Request history for entities currently in state unknown.",
         boolean,
     ),
     Key(
         "entities.include_unavailable",
         KeyType.BOOL,
-        True,
+        _ENTITIES.include_unavailable,
         "Request history for entities currently in state unavailable.",
         boolean,
     ),
     Key(
         "entities.exclude_domains",
         KeyType.STR_LIST,
-        [],
+        list(_ENTITIES.exclude_domains),
         "Entity domains to exclude, for example update or button.",
         string_list,
     ),
     Key(
         "entities.exclude_patterns",
         KeyType.STR_LIST,
-        [],
+        list(_ENTITIES.exclude_patterns),
         "Glob patterns for entity IDs to exclude, for example sensor.*_debug.",
         string_list,
     ),
     Key(
         "recorder.purge_keep_days",
         KeyType.OPTIONAL_INT,
-        None,
+        _RECORDER.purge_keep_days,
         "Recorder retention in days; HHE warns before requesting older days.",
         optional_positive_int,
     ),
@@ -355,14 +376,14 @@ KEYS: tuple[Key, ...] = (
     Key(
         "storage.locked_file_retries",
         KeyType.INT,
-        5,
+        _STORAGE.locked_file_retries,
         "Retries when another program holds a lock on an output file.",
         non_negative_int,
     ),
     Key(
         "storage.locked_file_retry_sleep",
         KeyType.FLOAT,
-        2.0,
+        _STORAGE.locked_file_retry_sleep,
         "Pause between file-lock retries, in seconds.",
         non_negative_number,
     ),

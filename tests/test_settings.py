@@ -14,7 +14,14 @@ from pathlib import Path
 import pytest
 
 from ha_history_exporter.errors import ConfigError, CredentialsError
-from ha_history_exporter.settings import Format, paths, resolve, schema, secrets
+from ha_history_exporter.settings import (
+    Config,
+    Format,
+    paths,
+    resolve,
+    schema,
+    secrets,
+)
 from ha_history_exporter.settings.schema import KeyStatus
 
 SYNTHETIC_ENV = {
@@ -46,6 +53,37 @@ def test_config_dir_without_override_is_platform_specific(monkeypatch):
     resolved = paths.user_config_dir()
     assert resolved.name == "ha-history-exporter"
     assert resolved.is_absolute()
+
+
+#: Keys whose registry default cannot be a plain copy of a model field.
+DEFAULTS_WITHOUT_A_MODEL_FIELD = {
+    # Resolved from the platform at load time, not a fixed value.
+    "export.output_dir",
+    "storage.temp_dir",
+    # The token never becomes part of the configuration object.
+    "homeassistant.token",
+}
+
+
+def test_key_registry_defaults_match_the_configuration_model():
+    """One default per key.
+
+    The registry and the dataclasses both state defaults; declaring a value in
+    two places invites them to drift apart unnoticed.
+    """
+    config = Config()
+
+    for key in schema.KEYS:
+        if key.path in DEFAULTS_WITHOUT_A_MODEL_FIELD:
+            continue
+        expected = getattr(getattr(config, key.section), key.name)
+        assert key.coerce(key.default) == expected, key.path
+
+
+def test_request_defaults_follow_the_sizing_proven_in_production():
+    requests = Config().requests
+    assert requests.batch_size == 15
+    assert requests.sleep_between_requests == 0.7
 
 
 def test_default_output_directory_is_in_the_home_directory():
@@ -97,7 +135,7 @@ def test_no_configuration_is_discovered_in_the_working_directory(
 
     settings = resolve(environ=SYNTHETIC_ENV)
 
-    assert settings.config.requests.batch_size == 5
+    assert settings.config.requests.batch_size == 15
     assert settings.config_file is None
 
 
@@ -136,8 +174,8 @@ def test_defaults_match_the_runtime_configuration():
     cfg = settings.config
     assert cfg.export.timezone == "Europe/Berlin"
     assert cfg.export.formats == frozenset({Format.JSONL})
-    assert cfg.requests.batch_size == 5
-    assert cfg.requests.sleep_between_requests == 1.0
+    assert cfg.requests.batch_size == 15
+    assert cfg.requests.sleep_between_requests == 0.7
     assert cfg.requests.sleep_between_days == 5.0
     assert cfg.requests.timeout == 120
     assert cfg.requests.max_retries == 3
@@ -211,7 +249,7 @@ def test_formats_from_a_file_reach_the_configuration(isolated_user_environment):
 def test_defaults_apply_without_any_configuration_file(tmp_path):
     settings = resolve(environ=SYNTHETIC_ENV)
     assert settings.config_file is None
-    assert settings.config.requests.batch_size == 5
+    assert settings.config.requests.batch_size == 15
     assert settings.origin("requests.batch_size") == "default"
 
 
@@ -230,7 +268,7 @@ def test_explicit_config_replaces_the_user_file(tmp_path, isolated_user_environm
     settings = resolve(explicit_config=explicit, environ=SYNTHETIC_ENV)
 
     assert settings.config.requests.timeout == 42
-    assert settings.config.requests.batch_size == 5  # the user file was not read
+    assert settings.config.requests.batch_size == 15  # the user file was not read
     assert settings.config_file == explicit
 
 
@@ -333,7 +371,7 @@ def test_section_that_is_not_a_mapping_is_rejected(isolated_user_environment):
 
 def test_empty_section_is_accepted(isolated_user_environment):
     user_config(isolated_user_environment, "requests:\n")
-    assert resolve(environ=SYNTHETIC_ENV).config.requests.batch_size == 5
+    assert resolve(environ=SYNTHETIC_ENV).config.requests.batch_size == 15
 
 
 def test_invalid_yaml_is_reported_with_the_file(isolated_user_environment):

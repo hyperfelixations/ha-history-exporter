@@ -28,6 +28,7 @@ from datetime import date, datetime
 from typing import List
 
 from . import __version__ as SCRIPT_VERSION
+from .settings.model import RequestSettings
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class DayManifest:
 
     # ── Data counts ───────────────────────────────────────────────────────────
     state_object_count: int = 0
-    batch_size_entities: int = 5
+    batch_size_entities: int = RequestSettings().batch_size
     request_count: int = 0
     failed_request_count: int = 0
     retried_request_count: int = 0
