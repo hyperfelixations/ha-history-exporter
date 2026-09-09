@@ -222,7 +222,7 @@ def _check_formats(cfg: Config) -> list[Result]:
                 WARN,
                 "output formats",
                 "none enabled; runs capture the entity snapshot only",
-                "hhe config set formats.jsonl true",
+                "hhe config set export.formats jsonl",
             )
         ]
 

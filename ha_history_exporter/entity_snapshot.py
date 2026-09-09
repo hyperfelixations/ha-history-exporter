@@ -63,7 +63,7 @@ def extract_entity_ids(
 
     Entities whose current state is `unknown` or `unavailable` are included by
     default: they exist in HA and may well have historical state changes worth
-    exporting. Excluding them is opt-in through entity_selection.
+    exporting. Excluding them is opt-in through the entities section.
 
     The snapshot itself always keeps every entity — the filter only narrows
     which entities history is requested for.

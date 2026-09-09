@@ -8,8 +8,7 @@ Quick start (PowerShell):
     hhe export --date yesterday --dry-run
 
 Both console commands, ``ha-history-exporter`` and the short ``hhe``, and
-``python -m ha_history_exporter`` behave identically. The historical flag-only
-form without a command keeps working.
+``python -m ha_history_exporter`` behave identically. A command is mandatory.
 
 This module owns dispatch and the mapping from errors to exit codes:
     0 success · 1 runtime failure · 2 usage or configuration · 130 interrupted

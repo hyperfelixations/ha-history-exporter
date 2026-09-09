@@ -1,21 +1,12 @@
-"""Per-day manifest: tracks export status, entity counts, and file paths.
+"""Per-day manifest: the durable record of what one export day produced.
 
 Written atomically (temp → rename) so a crashed export never leaves a
-partially-written manifest that looks complete.
+partially-written manifest that looks complete. A manifest with status "ok" is
+the single source of truth for resume decisions: the exported files themselves
+may be moved or archived afterwards.
 
-Schema version 1.1:
-  Added start_utc / end_utc, zero_history_entities, schema_version field.
-
-Schema version 1.2:
-  JSONL and CSV rows now include a local_offset field (e.g. '+02:00')
-  computed per row from last_changed so consumers can convert UTC
-  timestamps to local time without consulting the manifest.
-
-Schema version 1.3:
-  Parquet output added as post-processing step after JSONL validation.
-  Parquet uses a fixed schema with last_changed/last_updated stored as
-  timestamp[us, tz=UTC] and attributes as a JSON string column.
-  CSV is disabled by default; Parquet is enabled by default.
+Schema 1.3 is the current version. Its history is in the internal changelog,
+the field-by-field contract in the internal dev doc, section Ausgabedateien.
 """
 
 from __future__ import annotations
@@ -28,7 +19,7 @@ from datetime import date, datetime
 from typing import List
 
 from . import __version__ as SCRIPT_VERSION
-from .settings.model import RequestSettings
+from .settings.model import HistoryRequestSettings, RequestSettings
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +30,7 @@ SCHEMA_VERSION = "1.3"
 class DayManifest:
     # ── Identity ──────────────────────────────────────────────────────────────
     schema_version: str = SCHEMA_VERSION
-    status: str = "pending"           # pending | ok | failed
+    status: str = "pending"           # pending | ok | partial | failed
     source: str = "home_assistant_rest_history"
     date: str = ""
     timezone: str = "Europe/Berlin"
@@ -69,9 +60,8 @@ class DayManifest:
     # ── History request options ───────────────────────────────────────────────
     history_request_options: dict = field(
         default_factory=lambda: {
-            "minimal_response": False,
-            "no_attributes": False,
-            "significant_changes_only": False,
+            name: getattr(HistoryRequestSettings(), name)
+            for name in ("minimal_response", "no_attributes", "significant_changes_only")
         }
     )
 
