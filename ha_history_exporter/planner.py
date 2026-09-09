@@ -17,6 +17,7 @@ from datetime import date
 from typing import List
 from zoneinfo import ZoneInfo
 
+from .errors import ExportError, Remedy
 from .time_utils import (
     is_day_complete,
     iter_days,
@@ -193,19 +194,51 @@ def _check_existing(day: date, cfg) -> str | None:
 
     The manifest is the durable source of truth for resume decisions. Export
     artifacts may have been archived or moved after a successful run.
+
+    Three distinct answers, never collapsed into one: the manifest is absent
+    (export the day), unreadable (stop — treating it as absent would overwrite
+    a finished day), or malformed (warn and export). See internal dev doc,
+    Wiederanlauf.
     """
     manifest_path = cfg.layout.day_file(day, "manifest.json")
-
-    if not manifest_path.exists():
-        return None
 
     try:
         with manifest_path.open("r", encoding="utf-8") as f:
             m = json.load(f)
-        if not isinstance(m, dict):
-            return None
-        if m.get("status") != "ok":
-            return None
-        return f"manifest.json status=ok, {m.get('state_object_count', '?')} state objects"
-    except (OSError, json.JSONDecodeError):
+    except (FileNotFoundError, NotADirectoryError):
         return None
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Day %s: manifest %s is not valid JSON (%s); exporting the day again.",
+            day,
+            manifest_path,
+            exc,
+        )
+        return None
+    except OSError as exc:
+        raise ExportError(
+            f"Cannot read the manifest for {day}: {exc.strerror or exc}",
+            details=(
+                "The manifest records whether this day was already captured. "
+                "Without it HHE cannot tell a finished day from a missing one, "
+                "and exporting again would overwrite the existing files."
+            ),
+            remedies=(
+                Remedy(
+                    "Check the permissions on the export directory, then run again:",
+                    "hhe doctor",
+                ),
+            ),
+            context={"day": str(day), "output_dir": str(manifest_path)},
+        ) from exc
+
+    if not isinstance(m, dict):
+        logger.warning(
+            "Day %s: manifest %s does not contain an object; exporting the day again.",
+            day,
+            manifest_path,
+        )
+        return None
+    if m.get("status") != "ok":
+        return None
+    return f"manifest.json status=ok, {m.get('state_object_count', '?')} state objects"

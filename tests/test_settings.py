@@ -52,6 +52,41 @@ def test_default_output_directory_is_in_the_home_directory():
     assert paths.default_output_dir() == Path.home() / "ha-history-exports"
 
 
+@pytest.mark.parametrize("lookup_result", ["", ".", "./ha-history-exporter"])
+def test_config_dir_rejects_a_relative_platform_answer(
+    monkeypatch, tmp_path, lookup_result
+):
+    """platformdirs does not check the Windows known-folder call.
+
+    An empty answer becomes '.', and the configuration directory would then
+    depend on the working directory the tool happened to start in.
+    """
+    monkeypatch.delenv(paths.ENV_CONFIG_DIR, raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+    monkeypatch.setattr(
+        paths.platformdirs, "user_config_dir", lambda *a, **k: lookup_result
+    )
+
+    resolved = paths.user_config_dir()
+
+    assert resolved.is_absolute()
+    assert resolved == tmp_path / "roaming" / paths.APP_NAME
+
+
+def test_config_dir_falls_back_to_the_home_directory_as_a_last_resort(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(paths.ENV_CONFIG_DIR, raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(paths.platformdirs, "user_config_dir", lambda *a, **k: "")
+
+    resolved = paths.user_config_dir()
+
+    assert resolved.is_absolute()
+    assert resolved == Path.home() / ".config" / paths.APP_NAME
+
+
 def test_no_configuration_is_discovered_in_the_working_directory(
     tmp_path, monkeypatch
 ):
@@ -319,6 +354,30 @@ def test_a_directory_named_as_the_config_file_is_reported(tmp_path):
     directory.mkdir()
     with pytest.raises(ConfigError, match="Config file not found"):
         resolve(explicit_config=directory, environ=SYNTHETIC_ENV)
+
+
+def test_a_user_configuration_that_cannot_be_examined_is_an_error(
+    isolated_user_environment, monkeypatch
+):
+    """"Cannot read it" must never be treated as "it is not there".
+
+    The silent fallback to built-in defaults would send the export to a
+    different output directory, where no manifest exists and every day looks
+    unexported.
+    """
+    user_config(isolated_user_environment, "requests:\n  batch_size: 3\n")
+    target = paths.user_config_file()
+    real_stat = Path.stat
+
+    def refuse(self, *args, **kwargs):
+        if self == target:
+            raise PermissionError(13, "Access is denied")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", refuse)
+
+    with pytest.raises(ConfigError, match="Cannot examine configuration file"):
+        resolve(environ=SYNTHETIC_ENV)
 
 
 def test_an_unreadable_file_is_reported_with_its_path(tmp_path):

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from ha_history_exporter import planner
+from ha_history_exporter.errors import ExportError
 from tests.helpers import make_config
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -94,14 +97,41 @@ def test_non_ok_manifest_does_not_skip(tmp_path, status):
     assert planner._check_existing(DAY, cfg) is None
 
 
-def test_invalid_manifest_does_not_skip(tmp_path):
+def test_invalid_manifest_warns_and_does_not_skip(tmp_path, caplog):
+    """A broken manifest is a statement about the run, not about readability."""
     cfg = make_config(tmp_path)
     path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{broken", encoding="utf-8")
     cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
-    assert planner._check_existing(DAY, cfg) is None
+    with caplog.at_level(logging.WARNING):
+        assert planner._check_existing(DAY, cfg) is None
+
+    assert str(path) in caplog.text
+
+
+def test_an_unreadable_manifest_stops_the_run_instead_of_re_exporting(
+    tmp_path, monkeypatch
+):
+    """The manifest is the only durable record that a day was captured.
+
+    Treating an unreadable one as "not exported" would silently overwrite a
+    finished day.
+    """
+    cfg = make_config(tmp_path)
+    target = write_manifest(cfg)
+    real_open = Path.open
+
+    def refuse(self, *args, **kwargs):
+        if self == target:
+            raise PermissionError(13, "Access is denied")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", refuse)
+
+    with pytest.raises(ExportError, match="manifest"):
+        planner._check_existing(DAY, cfg)
 
 
 def test_plan_properties_partition_decisions():

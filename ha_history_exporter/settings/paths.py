@@ -15,11 +15,14 @@ relies on it so no test ever touches a real user profile.
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
 
 import platformdirs
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "ha-history-exporter"
 ENV_CONFIG_DIR = "HHE_CONFIG_DIR"
@@ -29,11 +32,38 @@ CREDENTIALS_FILENAME = "credentials.yaml"
 
 
 def user_config_dir() -> Path:
-    """Directory holding the user-level configuration and credentials."""
+    """Directory holding the user-level configuration and credentials.
+
+    The result is always absolute. platformdirs does not check the return
+    value of the Windows known-folder call, so a failed lookup yields an empty
+    string and, after normalisation, a path relative to the working directory.
+    See internal dev doc, Einrichtung.
+    """
     override = os.environ.get(ENV_CONFIG_DIR, "").strip()
     if override:
         return Path(override)
-    return Path(platformdirs.user_config_dir(APP_NAME, appauthor=False, roaming=True))
+
+    candidate = Path(platformdirs.user_config_dir(APP_NAME, appauthor=False, roaming=True))
+    if candidate.is_absolute():
+        return candidate
+
+    fallback = _fallback_config_dir()
+    logger.warning(
+        "The platform configuration directory resolved to %s, which is not "
+        "absolute; using %s instead.",
+        candidate,
+        fallback,
+    )
+    return fallback
+
+
+def _fallback_config_dir() -> Path:
+    """Where configuration goes when the platform lookup gives no usable answer."""
+    for variable in ("APPDATA", "XDG_CONFIG_HOME"):
+        raw = os.environ.get(variable, "").strip()
+        if raw and Path(raw).is_absolute():
+            return Path(raw) / APP_NAME
+    return Path.home() / ".config" / APP_NAME
 
 
 def user_config_file() -> Path:

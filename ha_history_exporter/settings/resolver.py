@@ -19,6 +19,7 @@ it is returned beside the configuration rather than inside it.
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -62,11 +63,22 @@ def discover_config_file(explicit: Path | None = None) -> Path | None:
 
     An explicit path replaces the user file entirely; asking for a specific
     file must never silently mix in another one.
+
+    "Not there" and "cannot be examined" are different answers: falling back to
+    built-in defaults after an unreadable file would move the whole export to
+    another output directory. See internal dev doc, Einrichtung.
     """
     if explicit is not None:
         return Path(explicit)
+
     user_file = paths.user_config_file()
-    return user_file if user_file.is_file() else None
+    try:
+        mode = user_file.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
+        raise _unexaminable_config_file(user_file, exc) from exc
+    return user_file if stat.S_ISREG(mode) else None
 
 
 def resolve(
@@ -228,6 +240,28 @@ def _reject_token_in_file(entries: Mapping[str, Entry], path: Path) -> None:
                 ),
                 context={"config_file": str(entry.location or path)},
             )
+
+
+def _unexaminable_config_file(path: Path, exc: OSError) -> ConfigError:
+    return ConfigError(
+        f"Cannot examine configuration file {path}: {exc.strerror or exc}",
+        details=(
+            "The file is there but its status could not be read, so HHE cannot "
+            "tell whether it holds settings. Continuing with built-in defaults "
+            "would export to a different directory."
+        ),
+        remedies=(
+            Remedy(
+                "Check the permissions on the configuration directory:",
+                "hhe config path",
+            ),
+            Remedy(
+                "Or point at a configuration file HHE can read:",
+                "hhe export --config <path>",
+            ),
+        ),
+        context={"config_file": str(path)},
+    )
 
 
 def _missing_config_file(path: Path) -> ConfigError:
