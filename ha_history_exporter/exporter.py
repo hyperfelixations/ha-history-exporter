@@ -17,20 +17,23 @@ Recovery:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Callable, List
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
 from . import writers
-from .errors import AuthError, ConfigError, Remedy
+from .errors import AuthError, ConfigError, ExportError, Remedy
 from .ha_client import HomeAssistantClient
 from .planner import ExportPlan
 from .runtime.workspace import Workspace, open_workspace
 from .settings import Config, Format
+from .settings.model import FORMAT_ORDER
 from .time_utils import (
     format_iso,
     local_day_bounds,
@@ -41,6 +44,12 @@ from .time_utils import (
 from .validators import validate_csv, validate_jsonl, validate_parquet
 
 logger = logging.getLogger(__name__)
+
+#: Physical Parquet layout. Part of the frozen output contract: a fixture small
+#: enough to fit one row group cannot show a change here, so it is pinned by
+#: name. See internal dev doc, Ausgabedateien.
+PARQUET_ROW_GROUP_SIZE = 200_000
+PARQUET_COMPRESSION = "snappy"
 
 
 def run_export(
@@ -104,7 +113,7 @@ def run_export(
                     ),
                     Remedy(
                         "Or turn Parquet off:",
-                        "hhe config set formats.parquet false",
+                        "hhe config set export.formats jsonl",
                     ),
                 ),
             ) from exc
@@ -266,31 +275,101 @@ def _export_day(
     workspace: Workspace,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Stream history for all entities on one day into JSONL (and CSV)."""
+    """Fetch one day, validate it, and publish the requested formats."""
     work_dir = workspace.work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    tmp_jsonl   = work_dir / f"{day_str}.jsonl"
-    tmp_csv     = work_dir / f"{day_str}.csv"
-    tmp_parquet = work_dir / f"{day_str}.parquet"
+    # A format's value is its file suffix; the frozen output contract names the
+    # files YYYY-MM-DD.{jsonl,csv,parquet}.
+    temp = {fmt: work_dir / f"{day_str}.{fmt.value}" for fmt in FORMAT_ORDER}
+    for path in temp.values():
+        # A retried day within the same run must not see the previous attempt.
+        path.unlink(missing_ok=True)
 
-    final_jsonl   = cfg.layout.day_file(day, "jsonl")
-    final_csv     = cfg.layout.day_file(day, "csv")
-    final_parquet = cfg.layout.day_file(day, "parquet")
+    fetched = _fetch_day_rows(
+        cfg=cfg,
+        temp=temp,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        entity_ids=entity_ids,
+        client=client,
+        manifest=manifest,
+        tz=tz,
+        sleep=sleep,
+    )
 
-    # A retried day within the same run must not see the previous attempt.
-    tmp_jsonl.unlink(missing_ok=True)
-    tmp_csv.unlink(missing_ok=True)
-    tmp_parquet.unlink(missing_ok=True)
+    manifest.retried_request_count = fetched.retried
+    if fetched.failed_batches:
+        manifest.failed_batches = fetched.failed_batches
+        raise ExportError(
+            f"{len(fetched.failed_batches)} batch(es) failed for {day_str}.",
+            details=(
+                "The day was not written. Every failed batch is recorded in "
+                "the day manifest with the entities it covered."
+            ),
+            remedies=(
+                Remedy(
+                    "Retry the day with a longer timeout and more retries:",
+                    f"hhe export --date {day_str} --timeout 300 --max-retries 5",
+                ),
+            ),
+            context={"day": day_str},
+        )
 
-    batches = _chunks(entity_ids, cfg.requests.batch_size)
-    batch_list = list(batches)
+    written = _finalize_day(
+        cfg=cfg,
+        day=day,
+        temp=temp,
+        expected_rows=fetched.state_count,
+        workspace=workspace,
+    )
+
+    zero_history = sorted(set(entity_ids) - fetched.entities_with_history)
+    manifest.state_object_count = fetched.state_count
+    manifest.entity_count_with_history = len(fetched.entities_with_history)
+    manifest.entity_count_zero_history = len(zero_history)
+    manifest.zero_history_entities = zero_history
+    manifest.output_files = {fmt.value: written.get(fmt) for fmt in FORMAT_ORDER}
+
+    if zero_history:
+        logger.debug(
+            "  %d entities had no history "
+            "(excluded from recorder, no changes, or retention exceeded).",
+            len(zero_history),
+        )
+
+    logger.info("  Written: %s", ", ".join(written.values()))
+
+
+@dataclass
+class _FetchedDay:
+    """What one day's history retrieval produced."""
+
+    state_count: int = 0
+    entities_with_history: set = field(default_factory=set)
+    failed_batches: list = field(default_factory=list)
+    retried: int = 0
+
+
+def _fetch_day_rows(
+    cfg: Config,
+    temp: dict,
+    start_dt: datetime,
+    end_dt: datetime,
+    entity_ids: List[str],
+    client: HomeAssistantClient,
+    manifest: mf.DayManifest,
+    tz: ZoneInfo,
+    sleep: Callable[[float], None],
+) -> _FetchedDay:
+    """Stream one day of history into the working directory.
+
+    JSONL is always written: it is the intermediate every other format is
+    derived from, whether or not it was requested as an output.
+    """
+    result = _FetchedDay()
+    batch_list = list(_chunks(entity_ids, cfg.requests.batch_size))
     total_batches = len(batch_list)
-
-    state_count = 0
-    entities_with_history: set[str] = set()
-    failed_batches: list[dict] = []
-    retried_this_day = 0
 
     logger.info(
         "  %d entities -> %d batches of up to %d",
@@ -299,16 +378,18 @@ def _export_day(
         cfg.requests.batch_size,
     )
 
-    # Stream into temp files — never hold the whole day in RAM.
-    with writers.JsonlWriter(tmp_jsonl) as jw, \
-         (writers.CsvWriter(tmp_csv) if cfg.wants(Format.CSV) else _NullWriter()) as cw:
+    csv_writer = (
+        writers.CsvWriter(temp[Format.CSV])
+        if cfg.wants(Format.CSV)
+        else contextlib.nullcontext(None)
+    )
 
+    with writers.JsonlWriter(temp[Format.JSONL]) as jw, csv_writer as cw:
         for batch_idx, batch in enumerate(batch_list, start=1):
             logger.debug(
                 "  Batch %d/%d (%d entities) ...", batch_idx, total_batches, len(batch)
             )
 
-            payload = None
             try:
                 retries_before = client.total_retries
                 payload = client.get_history(
@@ -319,7 +400,7 @@ def _export_day(
                     no_attributes=cfg.history_request.no_attributes,
                     significant_changes_only=cfg.history_request.significant_changes_only,
                 )
-                retried_this_day += client.total_retries - retries_before
+                result.retried += client.total_retries - retries_before
                 manifest.request_count += 1
 
             except AuthError:
@@ -327,117 +408,80 @@ def _export_day(
                 raise
             except Exception as exc:
                 logger.error("  Batch %d failed: %s", batch_idx, exc)
-                failed_batches.append(
+                result.failed_batches.append(
                     {"batch_index": batch_idx, "entities": batch, "error": str(exc)}
                 )
                 manifest.failed_request_count += 1
-                # Continue with remaining batches — day will be marked failed at end.
+                # Continue with remaining batches - day will be marked failed at end.
                 if batch_idx < total_batches:
                     sleep(cfg.requests.sleep_between_requests)
                 continue
 
-            # Flatten [[state,...],[state,...]] → [state, state, ...]
             rows = writers.flatten_payload(payload)
 
-            # Write each row immediately — no accumulation.
-            # Enrich with local_offset (e.g. '+02:00') so consumers know
-            # how to convert the UTC timestamps to local time without
-            # consulting the manifest. Computed per row so DST transition
-            # days return the correct offset for each individual timestamp.
+            # local_offset is computed per row from last_changed, so a DST
+            # transition day carries the correct offset for each timestamp.
             for row in rows:
-                enriched = {**row, "local_offset": local_offset_str(row.get("last_changed"), tz)}
+                enriched = {
+                    **row,
+                    "local_offset": local_offset_str(row.get("last_changed"), tz),
+                }
                 jw.write(enriched)
-                cw.write(enriched)
+                if cw is not None:
+                    cw.write(enriched)
                 eid = row.get("entity_id")
                 if eid:
-                    entities_with_history.add(eid)
+                    result.entities_with_history.add(eid)
 
-            state_count += len(rows)
+            result.state_count += len(rows)
 
             if batch_idx < total_batches:
                 sleep(cfg.requests.sleep_between_requests)
 
-    # Update client retries counter in manifest.
-    manifest.retried_request_count = retried_this_day
+    return result
 
-    if failed_batches:
-        manifest.failed_batches = failed_batches
-        raise RuntimeError(
-            f"{len(failed_batches)} batch(es) failed - see manifest for details."
-        )
 
-    # Validate JSONL and CSV before any finalisation.
-    validate_jsonl(tmp_jsonl, expected_rows=state_count)
+def _finalize_day(
+    cfg: Config,
+    day: date,
+    temp: dict,
+    expected_rows: int,
+    workspace: Workspace,
+) -> dict:
+    """Validate, derive, and publish; return the file name per written format.
+
+    Parquet is derived from the already validated JSONL, so it can only ever
+    contain data that passed its own check first. Nothing reaches a final path
+    before every local validation has passed.
+    """
+    validate_jsonl(temp[Format.JSONL], expected_rows)
     if cfg.wants(Format.CSV):
-        validate_csv(tmp_csv, expected_rows=state_count)
+        validate_csv(temp[Format.CSV], expected_rows)
 
-    # Parquet post-processing: convert the already-validated JSONL temp file
-    # to Parquet.  Done AFTER JSONL validation so Parquet is derived from
-    # confirmed-good data.  Runs locally (temp dir) before touching cloud-storage.
     if cfg.wants(Format.PARQUET):
         logger.info("  Converting JSONL -> Parquet ...")
         writers.convert_jsonl_to_parquet(
-            src=tmp_jsonl,
-            dst=tmp_parquet,
-            row_group_size=200_000,
-            compression="snappy",
+            src=temp[Format.JSONL],
+            dst=temp[Format.PARQUET],
+            row_group_size=PARQUET_ROW_GROUP_SIZE,
+            compression=PARQUET_COMPRESSION,
         )
-        validate_parquet(tmp_parquet, expected_rows=state_count)
+        validate_parquet(temp[Format.PARQUET], expected_rows)
 
-    # Finalize only the configured output formats after all local validations
-    # have passed. JSONL remains an internal streaming/intermediate format when
-    # disabled as a final artifact.
-    written_files: list[str] = []
-    if cfg.wants(Format.JSONL):
+    written: dict = {}
+    for fmt in FORMAT_ORDER:
+        if not cfg.wants(fmt):
+            temp[fmt].unlink(missing_ok=True)
+            continue
+        final = cfg.layout.day_file(day, fmt.value)
         workspace.promote(
-            tmp_jsonl, final_jsonl,
+            temp[fmt],
+            final,
             cfg.storage.locked_file_retries,
             cfg.storage.locked_file_retry_sleep,
         )
-        written_files.append(final_jsonl.name)
-    if cfg.wants(Format.CSV):
-        workspace.promote(
-            tmp_csv, final_csv,
-            cfg.storage.locked_file_retries,
-            cfg.storage.locked_file_retry_sleep,
-        )
-        written_files.append(final_csv.name)
-    else:
-        tmp_csv.unlink(missing_ok=True)
-
-    if cfg.wants(Format.PARQUET):
-        workspace.promote(
-            tmp_parquet, final_parquet,
-            cfg.storage.locked_file_retries,
-            cfg.storage.locked_file_retry_sleep,
-        )
-        written_files.append(final_parquet.name)
-    else:
-        tmp_parquet.unlink(missing_ok=True)
-
-    if not cfg.wants(Format.JSONL):
-        tmp_jsonl.unlink(missing_ok=True)
-
-    # Populate manifest counters.
-    zero_history = sorted(set(entity_ids) - entities_with_history)
-    manifest.state_object_count = state_count
-    manifest.entity_count_with_history = len(entities_with_history)
-    manifest.entity_count_zero_history = len(zero_history)
-    manifest.zero_history_entities = zero_history
-    manifest.output_files = {
-        "jsonl":   final_jsonl.name   if cfg.wants(Format.JSONL)   else None,
-        "csv":     final_csv.name     if cfg.wants(Format.CSV)     else None,
-        "parquet": final_parquet.name if cfg.wants(Format.PARQUET) else None,
-    }
-
-    if zero_history:
-        logger.debug(
-            "  %d entities had no history "
-            "(excluded from recorder, no changes, or retention exceeded).",
-            len(zero_history),
-        )
-
-    logger.info("  Written: %s", ", ".join(written_files))
+        written[fmt] = final.name
+    return written
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -445,13 +489,6 @@ def _export_day(
 def _chunks(lst: list, n: int):
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
-
-
-class _NullWriter:
-    """Drop-in replacement for CsvWriter when CSV output is disabled."""
-    def write(self, row: dict) -> None: pass
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
 
 
 def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:

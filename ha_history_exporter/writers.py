@@ -1,10 +1,10 @@
 """Streaming file writers for JSONL and CSV output, plus Parquet post-processing.
 
 Write pattern for JSONL / CSV:
-  1. Open a temporary file outside cloud-storage (in temp_dir).
+  1. Open a temporary file in temp_dir, outside the output directory.
   2. Stream state objects line by line as they arrive from each batch.
-  3. After all batches: validate, then atomic-replace to final cloud-storage path.
-     os.replace() is used; on PermissionError (cloud-storage file lock) we retry.
+  3. After all batches: validate, then atomic-replace to the final path.
+     os.replace() is used; on PermissionError (a file lock) we retry.
 
 Parquet post-processing (convert_jsonl_to_parquet):
   Reads the already-validated JSONL temp file and converts it to Parquet.
@@ -140,12 +140,12 @@ def atomic_replace(
 ) -> None:
     """Move *src* to *dst* atomically, retrying on PermissionError.
 
-    cloud-storage occasionally holds a file lock during synchronisation.
-    We retry up to *locked_file_retries* times with *locked_file_retry_sleep*
-    second intervals before giving up.
+    Any program may hold a lock on an output file: a sync client, a virus
+    scanner, an indexer. We retry up to *locked_file_retries* times with
+    *locked_file_retry_sleep* second intervals before giving up.
 
-    os.replace() is atomic on NTFS when source and destination are on the
-    same volume (which is always the case here: both are on C:\\).
+    os.replace() is atomic when source and destination are on the same
+    volume, which the workspace guarantees.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, locked_file_retries + 2):
@@ -156,7 +156,7 @@ def atomic_replace(
             if attempt > locked_file_retries:
                 raise
             logger.warning(
-                "PermissionError replacing %s (cloud-storage lock?) - "
+                "PermissionError replacing %s (file locked?) - "
                 "attempt %d/%d, sleeping %.1f s ...",
                 dst.name,
                 attempt,

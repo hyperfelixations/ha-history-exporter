@@ -96,7 +96,7 @@ def validate_parquet(path: Path, expected_rows: int) -> int:
     fast even for files with millions of rows.
 
     Also verifies that the required columns are present in the schema so that
-    a corrupt or truncated write is caught before the file is moved to cloud-storage.
+    a corrupt or truncated write is caught before the file is published.
 
     Raises:
         ValidationError on any mismatch or missing column.
