@@ -179,6 +179,44 @@ def test_print_summary_reports_every_decision_category(capsys):
     assert "not yet complete (1)" in output
 
 
+def make_plan() -> planner.ExportPlan:
+    return planner.ExportPlan(
+        requested_start=DAY,
+        requested_end=DAY,
+        today=date(2026, 7, 30),
+        latest_complete=date(2026, 7, 29),
+        decisions=[planner.DayDecision(DAY, "export")],
+    )
+
+
+def test_print_summary_names_where_the_run_writes_and_what_configured_it(capsys):
+    """The two facts a wrong run is recognised by, before anything is fetched."""
+    make_plan().print_summary(
+        entity_count=5,
+        unknown_count=1,
+        unavailable_count=2,
+        batch_size=2,
+        output_dir="/archive/history",
+        config_source="/home/you/.config/ha-history-exporter/config.yaml",
+        log_file="/archive/history/logs/run.log",
+    )
+
+    output = capsys.readouterr().out
+    assert "Output          : /archive/history" in output
+    assert "Configuration   : /home/you/.config/ha-history-exporter/config.yaml" in output
+    assert "Log file        : /archive/history/logs/run.log" in output
+
+
+def test_print_summary_stays_usable_without_the_optional_context(capsys):
+    make_plan().print_summary(
+        entity_count=5, unknown_count=1, unavailable_count=2, batch_size=2
+    )
+
+    output = capsys.readouterr().out
+    assert "Output" not in output
+    assert "Will export (1)" in output
+
+
 def test_successful_manifest_skips_when_artifacts_were_archived(tmp_path):
     cfg = make_config(tmp_path)
     write_manifest(cfg)

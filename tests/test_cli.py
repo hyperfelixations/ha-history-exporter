@@ -387,6 +387,43 @@ def test_main_reports_the_resolved_output_directory(tmp_path, monkeypatch, caplo
     assert str(path) in messages
 
 
+def test_main_names_the_log_file_and_the_configuration_in_the_summary(
+    tmp_path, monkeypatch, capsys
+):
+    path = write_config(tmp_path)
+    set_synthetic_env(monkeypatch)
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    assert (
+        cli.main(
+            ["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "Output          :" in output
+    assert str(path) in output
+    assert "Log file        :" in output
+
+
+def test_main_warns_when_no_configuration_file_was_found(
+    tmp_path, monkeypatch, capsys
+):
+    """The incident this warning exists for: a silent fall back to defaults
+    sends the export to a different directory, where every day looks missing.
+    """
+    set_synthetic_env(monkeypatch)
+    monkeypatch.setenv("HHE_EXPORT_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
+
+    assert cli.main(["export", "--date", "2026-07-28", "--dry-run"]) == 0
+
+    captured = capsys.readouterr()
+    assert "No configuration file" in captured.err
+    assert "built-in defaults only" in captured.out
+
+
 def test_cli_overrides_are_translated_into_configuration_keys():
     args = cli._parse_args(
         [

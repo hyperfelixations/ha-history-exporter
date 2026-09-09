@@ -82,10 +82,21 @@ def run(args: argparse.Namespace) -> int:
         ) from exc
 
     log_level = getattr(logging, (args.log_level or "INFO").upper(), logging.INFO)
-    configure_logging(log_level, cfg, tz)
+    log_file = configure_logging(log_level, cfg, tz)
 
-    logger.info("Output directory: %s", Path(cfg.export.output_dir).resolve())
+    output_dir = Path(cfg.export.output_dir).resolve()
+    logger.info("Output directory: %s", output_dir)
     logger.info("Configuration: %s", config_source)
+    if log_file is not None:
+        logger.info("Log file: %s", log_file)
+
+    if settings.config_file is None:
+        logger.warning(
+            "No configuration file found; running with built-in defaults. "
+            "Exports go to %s. Run 'hhe config path' to see where a "
+            "configuration file is expected, or 'hhe init' to create one.",
+            output_dir,
+        )
 
     try:
         requested_start, requested_end = resolve_date_range(args, tz)
@@ -178,6 +189,9 @@ def run(args: argparse.Namespace) -> int:
             unknown_count=snapshot["entity_count_unknown"],
             unavailable_count=snapshot["entity_count_unavailable"],
             batch_size=cfg.requests.batch_size,
+            output_dir=str(output_dir),
+            config_source=config_source,
+            log_file=str(log_file) if log_file is not None else None,
         )
 
         if args.dry_run:
@@ -212,6 +226,8 @@ def run(args: argparse.Namespace) -> int:
                 "it with the complete day.",
                 day,
             )
+        if log_file is not None:
+            logger.info("Log file: %s", log_file)
         return exit_code
 
 
@@ -307,11 +323,12 @@ def resolve_date_range(args: argparse.Namespace, tz: ZoneInfo) -> tuple[date, da
 _HHE_HANDLER = "_hhe_handler"
 
 
-def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> None:
-    """Set up stderr and file logging, idempotently.
+def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> Path | None:
+    """Set up stderr and file logging, idempotently; return the log file.
 
     Repeated calls in one process replace HHE's own handlers instead of
     stacking them, so a library user or a test may call the CLI more than once.
+    Returns ``None`` when no log file could be opened.
     """
     from datetime import datetime as _dt
 
@@ -333,6 +350,7 @@ def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> None:
 
     ts = _dt.now(tz).strftime("%Y-%m-%d_%H%M%S")
     log_dir = cfg.layout.logs_dir
+    log_file: Path | None = None
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"ha_history_export_{ts}.log"
@@ -340,14 +358,16 @@ def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> None:
         file_handler.setFormatter(logging.Formatter(fmt, datefmt))
         setattr(file_handler, _HHE_HANDLER, True)
         root.addHandler(file_handler)
-        logger.debug("Log file: %s", log_file)
     except Exception as exc:
         logger.warning("Could not create log file: %s", exc)
+        log_file = None
 
     # Suppress urllib3/requests noise unless DEBUG.
     if level > logging.DEBUG:
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("requests").setLevel(logging.WARNING)
+
+    return log_file
 
 
 __all__ = [

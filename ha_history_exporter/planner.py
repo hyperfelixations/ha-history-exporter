@@ -78,14 +78,31 @@ class ExportPlan:
         unknown_count: int,
         unavailable_count: int,
         batch_size: int,
+        output_dir: str | None = None,
+        config_source: str | None = None,
+        log_file: str | None = None,
     ) -> None:
-        """Print a human-readable dry-run or pre-run summary."""
+        """Print a human-readable dry-run or pre-run summary.
+
+        Where the run writes and what configured it come first: a run pointed
+        at the wrong directory is recognised by those two lines alone, and this
+        summary appears before anything is fetched.
+        """
         import math
 
         batches_per_day = math.ceil(entity_count / batch_size) if entity_count else 0
         print(f"\n{'=' * 60}")
         print("  Home Assistant REST History Exporter")
         print(f"{'=' * 60}")
+        for label, value in (
+            ("Output", output_dir),
+            ("Configuration", config_source),
+            ("Log file", log_file),
+        ):
+            if value is not None:
+                print(f"  {label:<16}: {value}")
+        if output_dir is not None:
+            print()
         print(f"  Requested range : {self.requested_start} -> {self.requested_end}")
         print(f"  Current local   : {self.today}")
         print(f"  Latest complete : {self.latest_complete}")
