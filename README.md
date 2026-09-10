@@ -137,17 +137,13 @@ problem it finds.
 
 ## Join the community
 
-The Home Assistant forum thread is where setups, questions and ideas for this
-tool are discussed. The remaining links are for following along as new things
-are built.
+Questions, setups and ideas are welcome as
+[issues](https://github.com/hyperfelixations/ha-history-exporter/issues). The
+links below are for following along as new things are built.
 
-[![Questions](https://img.shields.io/badge/Questions%3F-Ask%20here-41BDF5?logo=homeassistant&logoColor=white)](https://community.home-assistant.io/)
 [![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/hyperfelixations)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@hyperfelixations)
 [![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/hyperfelixations/)
-
-Ideas and bug reports are welcome as
-[issues](https://github.com/hyperfelixations/ha-history-exporter/issues) too.
 
 ## Configuration
 
@@ -220,8 +216,8 @@ existing setup does not have to change.
 | `export.output_dir` | `~/ha-history-exports` | Receives exports, metadata, and logs |
 | `export.timezone` | `Europe/Berlin` | IANA time zone defining local days |
 | `export.formats` | `[jsonl]` | Any of `jsonl`, `csv`, `parquet`; empty for snapshot only |
-| `requests.batch_size` | `5` | Entities per history request |
-| `requests.sleep_between_requests` | `1.0` | Seconds between requests |
+| `requests.batch_size` | `15` | Entities per history request |
+| `requests.sleep_between_requests` | `0.7` | Seconds between requests |
 | `requests.sleep_between_days` | `5.0` | Seconds between days |
 | `requests.timeout` | `120` | HTTP timeout per request, in seconds |
 | `requests.max_retries` | `3` | Retries on timeouts and 5xx |
@@ -241,9 +237,11 @@ existing setup does not have to change.
 Every key name matches the command-line option that overrides it:
 `--batch-size` sets `requests.batch_size`, `--timeout` sets `requests.timeout`.
 
-Larger batches finish sooner but put more load on Home Assistant. On a
-Raspberry Pi, `requests.batch_size: 15` with
-`requests.sleep_between_requests: 0.7` is a good compromise.
+Larger batches finish sooner but put more load on Home Assistant. The
+defaults are the sizing proven over months of daily exports on an instance with
+roughly 1400 entities. If your Home Assistant runs on modest hardware and feels
+sluggish during an export, lower `requests.batch_size` and raise
+`requests.sleep_between_requests`.
 
 The three `history_request` options ask Home Assistant to send *less*. They are
 off by default, so an export is complete unless you deliberately choose
