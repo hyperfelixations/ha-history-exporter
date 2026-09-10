@@ -34,7 +34,7 @@ def test_load_or_create_builds_fresh_manifest(tmp_path):
     assert item.date == str(DAY)
     assert item.status == "pending"
     assert item.schema_version == "1.3"
-    assert item.script_version == "1.3.2"
+    assert item.script_version == "1.4.0"
     assert item.output_files == {"jsonl": None, "csv": None, "parquet": None}
 
 

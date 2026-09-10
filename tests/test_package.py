@@ -19,7 +19,7 @@ SUITE_INPUTS = (
 
 
 def test_version_constants_are_consistent():
-    assert __version__ == "1.3.2"
+    assert __version__ == "1.4.0"
     assert __version__ == SCRIPT_VERSION
     assert SCHEMA_VERSION == "1.3"
 
