@@ -1,3 +1,4 @@
 # Golden fixtures record exported bytes. Git must never rewrite their line
 # endings, or the comparison would depend on the checkout platform.
 tests/golden/** -text
+tests/golden/*.csv whitespace=cr-at-eol

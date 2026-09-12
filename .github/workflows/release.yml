@@ -1,24 +1,6 @@
-# This workflow builds and tests a release candidate, then publishes it where
-# publish_to says. Only the repository owner may start it, and a GitHub
-# Release is always created as a draft for manual review and publication.
-#
-# publish_to:
-#   github           a GitHub release draft, nothing uploaded to an index
-#   pypi             uploaded to PyPI, no GitHub draft
-#   github-and-pypi  both
-#   testpypi         uploaded to TestPyPI as a rehearsal, no GitHub draft
-#
-# Index uploads use Trusted Publishing (OIDC), so no API token is stored
-# anywhere. They require, on the index side, a Trusted Publisher entry for
-# this repository, this workflow file, and the matching GitHub environment;
-# and on the GitHub side, environments named "pypi" and "testpypi" with
-# required reviewers. Until those exist, publish_to: github runs unchanged.
-
 name: Release Candidate
 
-run-name: >-
-  Release v${{ inputs.version }} to ${{ inputs.publish_to }}
-  from ${{ inputs.expected_sha }} (${{ inputs.release_kind }})
+run-name: Build GitHub draft v${{ inputs.version }} from ${{ inputs.expected_sha }}
 
 on:
   workflow_dispatch:
@@ -36,19 +18,7 @@ on:
         required: true
         default: stable
         type: choice
-        options:
-          - stable
-          - beta
-      publish_to:
-        description: "Where to publish the tested release"
-        required: true
-        default: github
-        type: choice
-        options:
-          - github
-          - pypi
-          - github-and-pypi
-          - testpypi
+        options: [stable, beta]
 
 permissions:
   contents: read
@@ -68,14 +38,15 @@ jobs:
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
       title: ${{ steps.metadata.outputs.title }}
-
     steps:
       - name: Check out the selected commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
       - name: Validate owner, branch, SHA, version, and tag
         id: metadata
         shell: bash
@@ -89,74 +60,31 @@ jobs:
           TRIGGERING_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-
           actual_sha="$(echo "$ACTUAL_SHA" | tr '[:upper:]' '[:lower:]')"
           expected_sha="$(echo "$EXPECTED_SHA" | xargs | tr '[:upper:]' '[:lower:]')"
           version="$(echo "$RELEASE_VERSION" | xargs)"
-
-          if [[ "$TRIGGERING_ACTOR" != "$REPOSITORY_OWNER" ]]; then
-            echo "Only the repository owner may start a release candidate." >&2
-            exit 1
-          fi
-          if [[ "$SELECTED_REF" != "refs/heads/main" ]]; then
-            echo "Release candidates must be started with branch 'main' selected." >&2
-            exit 1
-          fi
-          if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "expected_sha must be the complete 40-character commit SHA." >&2
-            exit 1
-          fi
-          if [[ "$expected_sha" != "$actual_sha" ]]; then
-            echo "The selected commit is $actual_sha, not the approved commit $expected_sha." >&2
-            exit 1
-          fi
-
+          [[ "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
+          [[ "$SELECTED_REF" == "refs/heads/main" ]]
+          [[ "$expected_sha" =~ ^[0-9a-f]{40}$ && "$expected_sha" == "$actual_sha" ]]
           case "$RELEASE_KIND" in
             stable)
-              if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "A stable version must look like 1.4.0." >&2
-                exit 1
-              fi
+              [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
               title="ha-history-exporter $version"
               ;;
             beta)
-              # PEP 440 normalised form: setuptools would rewrite 1.4.0-beta.1
-              # to 1.4.0b1, so the distribution filename and the approved
-              # version would no longer match.
-              if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+$ ]]; then
-                echo "A beta version must be PEP 440 normalised, for example 1.4.0b1." >&2
-                exit 1
-              fi
+              [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(a|b|rc)[0-9]+$ ]]
               title="ha-history-exporter $version (Beta)"
               ;;
-            *)
-              echo "Unsupported release kind '$RELEASE_KIND'." >&2
-              exit 1
-              ;;
+            *) exit 1 ;;
           esac
-
-          tag="v$version"
-          if git tag --list "$tag" | grep -qx "$tag"; then
-            echo "Tag '$tag' already exists. Release tags are immutable; use a new version." >&2
-            exit 1
-          fi
-
-          # Read the single version source without importing the package,
-          # so this job needs no installed dependencies.
           package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
-          if [[ -z "$package_version" ]]; then
-            echo "ha_history_exporter/__init__.py defines no __version__." >&2
-            exit 1
-          fi
-          if [[ "$package_version" != "$version" ]]; then
-            echo "ha_history_exporter.__version__ is '$package_version', expected '$version'." >&2
-            echo "Bump the version in ha_history_exporter/__init__.py first (a separate, explicit step)." >&2
-            exit 1
-          fi
-
+          [[ "$package_version" == "$version" ]]
+          tag="v$version"
+          ! git show-ref --verify --quiet "refs/tags/$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "title=$title" >> "$GITHUB_OUTPUT"
-          echo "Validated $title ($tag) at $actual_sha."
+      - name: Audit the publishable tree and reachable history
+        run: python tools/privacy_audit.py --repository . --history
 
   test:
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -166,81 +94,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-        python-version:
-          - "3.10"
-          - "3.13"
-
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.13"]
     env:
       HA_URL: ""
       HA_TOKEN: ""
-
     steps:
-      - name: Check out the selected commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-
-      - name: Install dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
-
-      - name: Run the complete test suite
-        run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
+      - run: |
+          python -m ruff check .
+          python -m mypy
 
   build:
     name: Build release artifacts
-    needs:
-      - validate
-      - test
+    needs: [validate, test]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      wheel_sha256: ${{ steps.checksums.outputs.wheel_sha256 }}
-      sdist_sha256: ${{ steps.checksums.outputs.sdist_sha256 }}
-
     steps:
-      - name: Check out the selected commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
-
-      - name: Install build tooling
-        run: python -m pip install --disable-pip-version-check build twine
-
-      - name: Build sdist and wheel
-        run: python -m build --outdir "$DIST_DIR"
-
-      - name: Check distribution metadata
-        run: python -m twine check "$DIST_DIR"/*
-
-      - name: Record distribution checksums
-        id: checksums
+      - run: python -m pip install --disable-pip-version-check build twine
+      - name: Build and verify distributions
         shell: bash
         run: |
           set -euo pipefail
+          python -m build --outdir "$DIST_DIR"
+          python -m twine check "$DIST_DIR"/*
+          python tools/privacy_audit.py --repository . \
+            --artifact "$DIST_DIR"/*.whl --artifact "$DIST_DIR"/*.tar.gz
           cd "$DIST_DIR"
-          sha256sum -- *.whl *.tar.gz | tee checksums.txt
-          echo "wheel_sha256=$(sha256sum -- *.whl | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "sdist_sha256=$(sha256sum -- *.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-
-      - name: Upload the built distributions
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+          sha256sum -- *.whl *.tar.gz > checksums.txt
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: release-candidate-${{ needs.validate.outputs.tag }}
           path: |
@@ -250,74 +147,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish:
-    name: Upload to ${{ inputs.publish_to == 'testpypi' && 'TestPyPI' || 'PyPI' }}
-    needs:
-      - validate
-      - build
-    if: inputs.publish_to != 'github'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # The environment carries the required-reviewer gate and is half of the
-    # Trusted Publisher identity registered on the index.
-    environment: ${{ inputs.publish_to == 'testpypi' && 'testpypi' || 'pypi' }}
-    permissions:
-      # Mandatory for Trusted Publishing, and deliberately granted to this job
-      # only. No API token exists anywhere in this repository.
-      id-token: write
-
-    steps:
-      # Nothing is built here: only the artifacts the test matrix already
-      # validated are uploaded, as the Python Packaging Authority recommends.
-      - name: Download the tested distributions
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: release-candidate-${{ needs.validate.outputs.tag }}
-          path: dist
-
-      - name: Verify the downloaded checksums one final time
-        shell: bash
-        env:
-          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
-          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
-        run: |
-          set -euo pipefail
-          cd dist
-          if [[ "$(sha256sum -- *.whl | cut -d ' ' -f 1)" != "$WHEEL_SHA256" ]]; then
-            echo "Downloaded wheel checksum does not match the tested build." >&2
-            exit 1
-          fi
-          if [[ "$(sha256sum -- *.tar.gz | cut -d ' ' -f 1)" != "$SDIST_SHA256" ]]; then
-            echo "Downloaded sdist checksum does not match the tested build." >&2
-            exit 1
-          fi
-          # twine only accepts distributions.
-          rm -f checksums.txt
-
-      - name: Upload through Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        with:
-          repository-url: ${{ inputs.publish_to == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
-          print-hash: true
-
-      - name: Summarize the upload
-        shell: bash
-        run: |
-          {
-            echo "## Uploaded to ${{ inputs.publish_to == 'testpypi' && 'TestPyPI' || 'PyPI' }}"
-            echo
-            echo "- Version: \`${{ inputs.version }}\`"
-            echo "- Commit: \`${{ inputs.expected_sha }}\`"
-            echo
-            echo "A published version can never be replaced. Any correction needs a new version."
-          } >> "$GITHUB_STEP_SUMMARY"
-
   create-draft-release:
     name: Create unpublished GitHub draft
-    needs:
-      - validate
-      - build
-    if: contains(inputs.publish_to, 'github')
+    needs: [validate, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -325,123 +157,44 @@ jobs:
     env:
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       GH_TOKEN: ${{ github.token }}
-      PUBLISH_TO: ${{ inputs.publish_to }}
       RELEASE_KIND: ${{ inputs.release_kind }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_TITLE: ${{ needs.validate.outputs.title }}
-      RELEASE_VERSION: ${{ inputs.version }}
-      SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
-      WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
-
     steps:
-      - name: Download the tested distributions
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: release-candidate-${{ needs.validate.outputs.tag }}
-          path: release-asset
-
-      - name: Verify the downloaded checksums one final time
+          path: release-assets
+      - name: Verify assets and refuse an existing release
         shell: bash
         run: |
           set -euo pipefail
-          cd release-asset
-          actual_wheel_sha256="$(sha256sum -- *.whl | cut -d ' ' -f 1)"
-          actual_sdist_sha256="$(sha256sum -- *.tar.gz | cut -d ' ' -f 1)"
-          if [[ "$actual_wheel_sha256" != "$WHEEL_SHA256" ]]; then
-            echo "Downloaded wheel checksum does not match the tested build." >&2
-            exit 1
-          fi
-          if [[ "$actual_sdist_sha256" != "$SDIST_SHA256" ]]; then
-            echo "Downloaded sdist checksum does not match the tested build." >&2
-            exit 1
-          fi
-
-      - name: Refuse to reuse an existing tag or release
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "A release for $RELEASE_TAG already exists. Use a new version." >&2
-            exit 1
-          fi
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG already exists. Release tags are immutable; use a new version." >&2
-            exit 1
-          fi
-
-      # The tag does NOT exist yet after this step. GitHub records the target commit on
-      # the draft and creates the tag when the draft is published — a discarded draft
-      # leaves nothing behind to clean up.
-      - name: Create the unpublished draft against the approved commit
+          cd release-assets
+          sha256sum --check --strict checksums.txt
+          cd ..
+          ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1
+      - name: Create the unpublished draft
         id: draft
         shell: bash
         run: |
           set -euo pipefail
-          wheel_name="$(basename release-asset/*.whl)"
-          sdist_name="$(basename release-asset/*.tar.gz)"
-          if [[ "$PUBLISH_TO" == *pypi* && "$PUBLISH_TO" != "testpypi" ]]; then
-            install_hint="pipx install ha-history-exporter==$RELEASE_VERSION"
-          else
-            install_hint="pipx install \"git+https://github.com/$GITHUB_REPOSITORY.git@$RELEASE_TAG\""
-          fi
           notes_file="$RUNNER_TEMP/release-notes.md"
-          cat > "$notes_file" <<EOF
-          > Automatically built and tested release draft. Review and replace these notes before publishing.
-
-          Target commit: \`$EXPECTED_SHA\`
-
-          Install:
-
-          \`\`\`
-          $install_hint
-          \`\`\`
-
-          | Asset | SHA-256 |
-          |---|---|
-          | \`$wheel_name\` | \`$WHEEL_SHA256\` |
-          | \`$sdist_name\` | \`$SDIST_SHA256\` |
-
-          ## Release notes
-
-          Replace this paragraph with the approved, user-facing release notes.
-          EOF
-
-          args=(
-            gh release create "$RELEASE_TAG"
-            release-asset/*.whl
-            release-asset/*.tar.gz
-            release-asset/checksums.txt
-            --repo "$GITHUB_REPOSITORY"
-            --draft
-            --target "$EXPECTED_SHA"
-            --title "$RELEASE_TITLE"
-            --notes-file "$notes_file"
-          )
+          printf '%s\n' \
+            '> Automatically built and tested release draft. Review before publishing.' \
+            '' "Target commit: \`$EXPECTED_SHA\`" '' '## Release notes' '' \
+            'Replace this paragraph with the approved user-facing release notes.' \
+            > "$notes_file"
+          args=(gh release create "$RELEASE_TAG" release-assets/*
+            --repo "$GITHUB_REPOSITORY" --draft --target "$EXPECTED_SHA"
+            --title "$RELEASE_TITLE" --notes-file "$notes_file")
           if [[ "$RELEASE_KIND" == "beta" ]]; then
             args+=(--prerelease --latest=false)
           fi
           "${args[@]}"
-
-          release_url="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
-          echo "url=$release_url" >> "$GITHUB_OUTPUT"
-
-      - name: Summarize the manual approval step
-        shell: bash
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url \
+            | sed 's/^/url=/' >> "$GITHUB_OUTPUT"
+      - name: Summarize the manual publication gate
         run: |
-          {
-            echo "## Unpublished release draft created"
-            echo
-            if [[ "$PUBLISH_TO" == "github" ]]; then
-              echo "Nothing was uploaded to an index; only this draft exists."
-            else
-              echo "The distributions were uploaded to an index; the GitHub release is still a draft."
-            fi
-            echo
-            echo "- Draft: ${{ steps.draft.outputs.url }}"
-            echo "- Tag to be created on publish: \`$RELEASE_TAG\`"
-            echo "- Commit: \`$EXPECTED_SHA\`"
-            echo "- Wheel SHA-256: \`$WHEEL_SHA256\`"
-            echo "- Sdist SHA-256: \`$SDIST_SHA256\`"
-            echo
-            echo "The repository owner must review the notes, assets and settings, then publish manually."
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft: ${{ steps.draft.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Publishing this release triggers the separate PyPI workflow." >> "$GITHUB_STEP_SUMMARY"

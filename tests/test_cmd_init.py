@@ -52,6 +52,7 @@ def test_init_writes_both_files(monkeypatch, tmp_path, capsys, fake_client):
 
     out = capsys.readouterr().out
     assert "1 entities" in out or "entities" in out
+    assert "Contacting http://home-assistant.invalid:8123" in out
     assert SYNTHETIC_TOKEN not in out
 
     values = document.read_user_values()

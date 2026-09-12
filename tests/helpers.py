@@ -31,6 +31,7 @@ def make_config(
     csv: bool = False,
     parquet: bool = False,
     batch_size: int = 2,
+    purge_keep_days: int | None = 14,
 ) -> Config:
     """Build a configuration for a test export into *root*.
 
@@ -63,7 +64,7 @@ def make_config(
         ),
         history_request=HistoryRequestSettings(),
         entities=EntitySettings(),
-        recorder=RecorderSettings(),
+        recorder=RecorderSettings(purge_keep_days=purge_keep_days),
         storage=StorageSettings(
             temp_dir=str(root / "temp"),
             locked_file_retries=0,

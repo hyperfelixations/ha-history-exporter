@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from ... import ha_client
 from ...errors import HHEError, Remedy, UsageError
 from ...settings import Format, ResolvedSettings, document, format_list, paths, resolve, secrets
+from ...settings.resolver import validate_home_assistant_url
 from .export import parse_format_list
 
 DEFAULT_URL = "http://homeassistant.local:8123"
@@ -73,11 +74,13 @@ def _ask_url(
     args: argparse.Namespace, current: ResolvedSettings, interactive: bool
 ) -> str:
     if args.url:
-        return args.url.rstrip("/")
+        return validate_home_assistant_url(args.url)
     if not interactive:
         raise _missing("--url")
     default = current.config.homeassistant.url or DEFAULT_URL
-    return _ask(None, "Home Assistant URL", default, interactive).rstrip("/")
+    return validate_home_assistant_url(
+        _ask(None, "Home Assistant URL", default, interactive)
+    )
 
 
 def _ask_token(args: argparse.Namespace, interactive: bool) -> str:

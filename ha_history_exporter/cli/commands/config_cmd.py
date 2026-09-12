@@ -92,7 +92,27 @@ def _set(args: argparse.Namespace) -> int:
     _refuse_explicit_config(args)
 
     if key.status is KeyStatus.SECRET:
-        token = args.value if args.value is not None else _prompt_secret()
+        if args.value is not None:
+            raise UsageError(
+                "Secret values must not be passed as command-line arguments.",
+                details=(
+                    "Command-line arguments may be retained in shell history or "
+                    "visible to other processes. The supplied value was not shown "
+                    "and was not stored."
+                ),
+                remedies=(
+                    Remedy(
+                        "Enter the token at the hidden prompt:",
+                        "hhe config set homeassistant.token",
+                    ),
+                    Remedy(
+                        "Or read it explicitly from standard input:",
+                        "Get-Content <token-file> | hhe config set "
+                        "homeassistant.token --stdin",
+                    ),
+                ),
+            )
+        token = _read_secret_stdin() if args.stdin else _prompt_secret()
         if not token.strip():
             raise UsageError(
                 "No token was entered; nothing was stored.",
@@ -103,6 +123,9 @@ def _set(args: argparse.Namespace) -> int:
         path = secrets.write_token(token.strip())
         print(f"Stored the access token in {path}")
         return 0
+
+    if args.stdin:
+        raise UsageError("--stdin is only supported for secret configuration values.")
 
     if args.value is None:
         raise UsageError(
@@ -225,17 +248,22 @@ def _refuse_explicit_config(args: argparse.Namespace) -> None:
 
 def _prompt_secret() -> str:
     if not sys.stdin.isatty():
-        data = sys.stdin.read()
-        if data:
-            return data
         raise UsageError(
-            "No token was provided.",
-            details="Pass the value as an argument or pipe it on standard input.",
+            "A hidden token prompt needs an interactive terminal.",
+            details="Use --stdin when the token is intentionally piped.",
             remedies=(
                 Remedy(
-                    "For example:",
-                    "hhe config set homeassistant.token <token>",
+                    "Read the token explicitly from standard input:",
+                    "Get-Content <token-file> | hhe config set "
+                    "homeassistant.token --stdin",
                 ),
             ),
         )
     return getpass.getpass("Long-lived access token (input hidden): ")
+
+
+def _read_secret_stdin() -> str:
+    data = sys.stdin.read()
+    if not data.strip():
+        raise UsageError("No token was received on standard input.")
+    return data

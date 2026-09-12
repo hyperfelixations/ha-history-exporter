@@ -12,14 +12,18 @@ scheduled task or a double-clicked batch file can never block on one.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from ha_history_exporter import cli, ha_client, planner
 from ha_history_exporter.cli.commands import export as export_command
-from ha_history_exporter.time_utils import partial_day_bounds, today_local
+from ha_history_exporter.time_utils import (
+    local_day_bounds,
+    partial_day_bounds,
+    today_local,
+)
 from tests.helpers import FakeCliClient, make_config, state_row
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -31,6 +35,19 @@ def today() -> date:
 
 def yesterday() -> date:
     return today() - timedelta(days=1)
+
+
+def history_row_for(day: date, state: str = "1", fraction: float = 0.5) -> dict:
+    if day == today():
+        start, end = partial_day_bounds(day, BERLIN)
+    else:
+        start, end = local_day_bounds(day, BERLIN)
+    timestamp = start + (end - start) * fraction
+    return state_row(
+        "sensor.synthetic",
+        state,
+        timestamp.astimezone(timezone.utc).isoformat(),
+    )
 
 
 def write_config(config_dir, tmp_path, formats: str = "[jsonl]"):
@@ -202,9 +219,7 @@ def test_the_partial_day_is_written_and_marked_partial(
 ):
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
-    FakeCliClient.history_payload = [
-        [state_row("sensor.synthetic", "1", f"{today()}T06:00:00+00:00")]
-    ]
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--date", "today"]) == 0
@@ -221,6 +236,7 @@ def test_the_manifest_records_how_far_the_partial_day_reaches(
     """end_utc is the cut-off, so no extra field is needed to document it."""
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--date", "today"]) == 0
@@ -237,6 +253,7 @@ def test_the_run_warns_before_and_after(
 ):
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     with caplog.at_level("WARNING"):
@@ -264,6 +281,7 @@ def test_a_partial_day_never_reads_from_standard_input(
 
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
     monkeypatch.setattr("sys.stdin", ForbiddenStdin())
 
@@ -275,6 +293,7 @@ def test_a_dry_run_shows_the_partial_day_and_fetches_nothing(
 ):
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--date", "today", "--dry-run"]) == 0
@@ -291,6 +310,7 @@ def test_a_partial_day_is_exported_again_in_full_later(
     """The whole point: partial is not done, so a later run replaces it."""
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(today())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--date", "today"]) == 0
@@ -301,8 +321,8 @@ def test_a_partial_day_is_exported_again_in_full_later(
     FakeCliClient.reset()
     FakeCliClient.history_payload = [
         [
-            state_row("sensor.synthetic", "1", f"{today()}T06:00:00+00:00"),
-            state_row("sensor.synthetic", "2", f"{today()}T20:00:00+00:00"),
+            history_row_for(today(), "1", 0.25),
+            history_row_for(today(), "2", 0.75),
         ]
     ]
     cfg = make_config(tmp_path)
@@ -321,6 +341,7 @@ def test_a_successful_day_is_still_skipped(
     """The partial path must not weaken the ordinary resume decision."""
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
+    FakeCliClient.history_payload = [[history_row_for(yesterday())]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--date", "yesterday"]) == 0

@@ -27,6 +27,17 @@ from typing import ClassVar, TextIO
 
 logger = logging.getLogger(__name__)
 
+_CANONICAL_ROW_FIELDS = frozenset(
+    {
+        "entity_id",
+        "state",
+        "last_changed",
+        "last_updated",
+        "attributes",
+        "local_offset",
+    }
+)
+
 
 # ── JSONL streaming writer ────────────────────────────────────────────────────
 
@@ -88,6 +99,7 @@ class CsvWriter:
         "last_updated",
         "attributes_json",
         "local_offset",
+        "extra_json",
     ]
 
     def __init__(self, path: Path) -> None:
@@ -105,16 +117,18 @@ class CsvWriter:
 
     def write(self, row: dict) -> None:
         assert self._writer is not None, "CsvWriter must be used as a context manager"
+        extra = {
+            key: value for key, value in row.items() if key not in _CANONICAL_ROW_FIELDS
+        }
         self._writer.writerow(
             {
                 "entity_id": row.get("entity_id", ""),
                 "state": row.get("state", ""),
                 "last_changed": row.get("last_changed", ""),
                 "last_updated": row.get("last_updated", ""),
-                "attributes_json": json.dumps(
-                    row.get("attributes", {}), ensure_ascii=False
-                ),
+                "attributes_json": json.dumps(row.get("attributes"), ensure_ascii=False),
                 "local_offset": row.get("local_offset", ""),
+                "extra_json": json.dumps(extra, ensure_ascii=False) if extra else "",
             }
         )
         self._count += 1
@@ -197,36 +211,41 @@ def _parquet_schema():
       be mapped to a fixed column schema.
     - ``local_offset``: e.g. '+02:00', computed per row at export time, tells
       consumers how to convert UTC to local time without reading the manifest.
-    - Extra fields returned by the HA API (e.g. 'context') are not included;
-      JSONL is the source of truth and contains everything.
+    - ``extra_json`` preserves top-level fields added by the HA API without
+      making the fixed column schema depend on a particular Core version.
     """
     import pyarrow as pa
     return pa.schema([
         pa.field("entity_id",       pa.string(),                  nullable=False),
-        pa.field("state",           pa.string(),                  nullable=True),
-        pa.field("last_changed",    pa.timestamp("us", tz="UTC"), nullable=True),
-        pa.field("last_updated",    pa.timestamp("us", tz="UTC"), nullable=True),
+        pa.field("state",           pa.string(),                  nullable=False),
+        pa.field("last_changed",    pa.timestamp("us", tz="UTC"), nullable=False),
+        pa.field("last_updated",    pa.timestamp("us", tz="UTC"), nullable=False),
         pa.field("attributes_json", pa.string(),                  nullable=True),
-        pa.field("local_offset",    pa.string(),                  nullable=True),
+        pa.field("local_offset",    pa.string(),                  nullable=False),
+        pa.field("extra_json",      pa.string(),                  nullable=True),
     ])
 
 
-def _parse_ts_utc(ts_str: str | None) -> datetime | None:
+def _parse_ts_utc(ts_str: str | None) -> datetime:
     """Parse an ISO-8601 timestamp string and return a UTC-aware datetime.
 
     Handles both microsecond and non-microsecond variants from the HA API:
       '2026-06-17T06:55:31.889481+00:00'   (with microseconds)
       '2026-06-16T22:00:00+00:00'           (without microseconds)
 
-    Returns None on missing input or parse errors so that invalid or absent
-    timestamps become null in Parquet rather than crashing the export.
+    Invalid or missing timestamps are rejected before Parquet publication.
     """
+    from .errors import ValidationError
+
     if not ts_str:
-        return None
+        raise ValidationError("A required timestamp is missing.")
     try:
-        return datetime.fromisoformat(ts_str).astimezone(timezone.utc)
-    except (ValueError, AttributeError, TypeError):
-        return None
+        parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValidationError("A timestamp is not valid ISO 8601.") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValidationError("A timestamp needs a timezone.")
+    return parsed.astimezone(timezone.utc)
 
 
 def convert_jsonl_to_parquet(
@@ -241,9 +260,9 @@ def convert_jsonl_to_parquet(
     batch as one Parquet row group.  Peak memory usage is bounded to roughly
     one batch at a time (~100–200 MB for a 200 k-row batch).
 
-    The Parquet schema is fixed (see ``_parquet_schema``).  Unknown fields
-    present in the JSONL (e.g. future HA API additions like ``context``) are
-    silently ignored so that schema evolution does not break existing files.
+    The Parquet schema is fixed (see ``_parquet_schema``). Unknown top-level
+    fields present in JSONL are retained as an object in ``extra_json`` so
+    schema evolution does not discard data or add dynamic columns.
 
     Args:
         src:            Path to the validated JSONL temp file (local temp dir).
@@ -284,6 +303,7 @@ def convert_jsonl_to_parquet(
     buf_last_updated:  list = []
     buf_attributes:    list = []
     buf_local_offsets: list = []
+    buf_extras: list = []
 
     def _flush(writer: pq.ParquetWriter) -> None:
         if not buf_entity_ids:
@@ -296,6 +316,7 @@ def convert_jsonl_to_parquet(
                 "last_updated":    pa.array(buf_last_updated,   type=pa.timestamp("us", tz="UTC")),
                 "attributes_json": pa.array(buf_attributes,     type=pa.string()),
                 "local_offset":    pa.array(buf_local_offsets,  type=pa.string()),
+                "extra_json":      pa.array(buf_extras,         type=pa.string()),
             },
             schema=schema,
         )
@@ -306,29 +327,33 @@ def convert_jsonl_to_parquet(
         buf_last_updated.clear()
         buf_attributes.clear()
         buf_local_offsets.clear()
+        buf_extras.clear()
 
-    with pq.ParquetWriter(str(dst), schema, compression=compression) as writer:
-        with src.open("r", encoding="utf-8") as f:
-            for raw_line in f:
-                line = raw_line.rstrip()
-                if not line:
-                    continue
-                row = json.loads(line)
+    from .readers import read_jsonl
 
-                buf_entity_ids.append(row.get("entity_id") or "")
-                buf_states.append(row.get("state"))
-                buf_last_changed.append(_parse_ts_utc(row.get("last_changed")))
-                buf_last_updated.append(_parse_ts_utc(row.get("last_updated")))
+    try:
+        with pq.ParquetWriter(str(dst), schema, compression=compression) as writer:
+            for record in read_jsonl(src):
+                buf_entity_ids.append(record.entity_id)
+                buf_states.append(record.state)
+                buf_last_changed.append(record.last_changed)
+                buf_last_updated.append(record.last_updated)
                 buf_attributes.append(
-                    json.dumps(row.get("attributes") or {}, ensure_ascii=False)
+                    json.dumps(record.attributes, ensure_ascii=False)
                 )
-                buf_local_offsets.append(row.get("local_offset"))
+                buf_local_offsets.append(record.local_offset)
+                buf_extras.append(
+                    json.dumps(record.extra, ensure_ascii=False) if record.extra else None
+                )
                 total_rows += 1
 
                 if total_rows % row_group_size == 0:
                     _flush(writer)
 
-        _flush(writer)  # write remaining rows in the last (partial) batch
+            _flush(writer)  # write remaining rows in the last (partial) batch
+    except Exception:
+        dst.unlink(missing_ok=True)
+        raise
 
     n_groups = max(1, -(-total_rows // row_group_size))  # ceiling division
     logger.info(

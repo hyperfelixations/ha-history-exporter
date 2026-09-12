@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 import getpass
+import importlib.util
 import os
 import re
 import socket
+import sys
 from pathlib import Path
 
 import pytest
 from pytest_socket import SocketBlockedError
 
+from ha_history_exporter.settings import paths, schema
+
 ROOT = Path(__file__).parents[1]
+
+
+def load_privacy_audit():
+    path = ROOT / "tools" / "privacy_audit.py"
+    spec = importlib.util.spec_from_file_location("privacy_audit", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_socket_access_is_blocked_by_default():
@@ -21,8 +35,27 @@ def test_socket_access_is_blocked_by_default():
 
 
 def test_production_environment_is_removed():
-    assert "HA_URL" not in os.environ
-    assert "HA_TOKEN" not in os.environ
+    for name in (
+        "HA_URL",
+        "HA_TOKEN",
+        *(key.env_var for key in schema.KEYS if key.env_var != paths.ENV_CONFIG_DIR),
+    ):
+        assert name not in os.environ
+
+
+def test_public_checkout_contains_no_local_live_artifacts():
+    """Ignored files still belong to the checkout and must remain synthetic."""
+    forbidden = (
+        ROOT / "export_config.yaml",
+        ROOT / "ha-history-exporter.yaml",
+        ROOT / "config.yaml",
+        ROOT / "ha_history_export_last_10_days.bat",
+        ROOT / "exports",
+        ROOT / "metadata",
+        ROOT / "logs",
+    )
+
+    assert not [path.name for path in forbidden if path.exists()]
 
 
 def test_local_configuration_files_are_ignored():
@@ -77,30 +110,34 @@ def private_identifiers() -> list[str]:
 
 
 def test_publishable_sources_contain_no_private_workspace_paths():
-    publishable_paths = [
-        ROOT / "README.md",
-        ROOT / "LICENSE",
-        ROOT / "pyproject.toml",
-        ROOT / ".gitattributes",
-        ROOT / ".github" / "workflows" / "release.yml",
-        ROOT / "tools" / "refresh_golden.py",
-        *(ROOT / "ha_history_exporter").rglob("*.py"),
-        *(ROOT / "tests").rglob("*.py"),
-        *(ROOT / "tests" / "golden").iterdir(),
-    ]
-    # A POSIX home directory is not checked by shape: the README documents
-    # /home/you/... as a placeholder. A real one is caught by name below.
-    absolute_user_paths = [re.compile(r"[A-Za-z]:\\+Users\\+", re.IGNORECASE)]
-    identifiers = private_identifiers()
+    audit = load_privacy_audit()
+    identifiers = tuple(private_identifiers())
 
-    for path in publishable_paths:
-        content = path.read_text(encoding="utf-8")
-        for pattern in absolute_user_paths:
-            assert not pattern.search(content), f"{path} contains {pattern.pattern}"
-        for identifier in identifiers:
-            assert identifier.lower() not in content.lower(), (
-                f"{path} names the account this checkout belongs to"
-            )
+    assert audit.scan_paths(ROOT, identifiers) == set()
+
+
+def test_generic_privacy_audit_covers_the_publishable_tree():
+    audit = load_privacy_audit()
+    assert audit.scan_paths(ROOT) == set()
+
+
+def test_generic_privacy_audit_detects_secret_shapes_without_echoing_values(tmp_path):
+    audit = load_privacy_audit()
+    marker = "gh" + "p_" + "A" * 36
+    path = tmp_path / "sample.txt"
+    path.write_text("Authorization: Bearer " + marker, encoding="utf-8")
+
+    findings = audit.scan_paths(tmp_path)
+
+    assert {item.rule for item in findings} == {"bearer_token", "known_token_shape"}
+    assert marker not in repr(findings)
+
+
+def test_private_denylist_must_live_outside_the_repository(tmp_path):
+    audit = load_privacy_audit()
+    denylist = ROOT / "synthetic-private-denylist.txt"
+    with pytest.raises(ValueError, match="outside the repository"):
+        audit.load_external_denylist(denylist, ROOT)
 
 
 def test_local_helper_script_is_not_published():

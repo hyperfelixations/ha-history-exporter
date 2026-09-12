@@ -6,13 +6,15 @@ instance.
 ## Safety contract
 
 - Tests must never use a real `HA_URL` or `HA_TOKEN`.
-- The autouse environment fixture removes both variables before every test.
+- The autouse environment fixture removes every declared HHE variable by its
+  public name before every test. It never inventories the host environment.
 - Pytest runs with `--disable-socket`; any attempted network connection fails
   immediately.
 - HTTP behavior is simulated with in-memory responses.
 - Export integration tests use a `FakeHomeAssistantClient`.
 - All files are written below pytest's temporary directories.
-- Tests must never read or write a production History Export directory.
+- Tests must never examine, read, or write a production configuration or
+  History Export directory.
 
 ## Test layers
 

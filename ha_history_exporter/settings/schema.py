@@ -332,6 +332,13 @@ KEYS: tuple[Key, ...] = (
         boolean,
     ),
     Key(
+        "history_request.skip_initial_state",
+        KeyType.BOOL,
+        _HISTORY_REQUEST.skip_initial_state,
+        "Omit the synthetic carry-in state at the start of the history window.",
+        boolean,
+    ),
+    Key(
         "entities.include_unknown",
         KeyType.BOOL,
         _ENTITIES.include_unknown,

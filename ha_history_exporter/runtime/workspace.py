@@ -118,9 +118,23 @@ def open_workspace(cfg: Config) -> Workspace:
     run_id = new_run_id()
     lock_path = output_dir / LOCK_FILENAME
     _acquire_lock(lock_path, run_id)
+    try:
+        from .transaction import recover_incomplete
 
-    work_dir = temp_root / f"{RUN_PREFIX}{run_id}"
-    work_dir.mkdir(parents=True, exist_ok=False)
+        recovered = recover_incomplete(
+            output_dir,
+            cfg.storage.locked_file_retries,
+            cfg.storage.locked_file_retry_sleep,
+        )
+        if recovered:
+            logger.warning(
+                "Recovered %d interrupted day transaction(s).", recovered
+            )
+        work_dir = temp_root / f"{RUN_PREFIX}{run_id}"
+        work_dir.mkdir(parents=True, exist_ok=False)
+    except BaseException:
+        _release_lock(lock_path, run_id)
+        raise
     logger.debug("Run %s working directory: %s", run_id, work_dir)
     return Workspace(
         run_id=run_id,

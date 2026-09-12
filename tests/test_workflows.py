@@ -15,6 +15,8 @@ import yaml
 
 WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
 RELEASE = WORKFLOW_DIR / "release.yml"
+PUBLISH = WORKFLOW_DIR / "publish.yml"
+TEST_PUBLISH = WORKFLOW_DIR / "test-publish.yml"
 TESTS = WORKFLOW_DIR / "tests.yml"
 
 #: Secret names that would replace Trusted Publishing with a stored token.
@@ -40,7 +42,7 @@ def steps(job: dict) -> list[dict]:
     return job.get("steps", [])
 
 
-# ── both workflows ────────────────────────────────────────────────────────────
+# ── all workflows ─────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
 def test_workflow_is_valid_yaml(path):
@@ -69,55 +71,42 @@ def test_release_runs_only_on_manual_dispatch():
     assert set(triggers) == {"workflow_dispatch"}
 
 
-def test_release_offers_the_four_publication_targets_and_defaults_to_github():
-    target = load(RELEASE)[True]["workflow_dispatch"]["inputs"]["publish_to"]
-    assert target["default"] == "github"
-    assert target["options"] == ["github", "pypi", "github-and-pypi", "testpypi"]
-    assert target["required"] is True
+def test_release_candidate_cannot_select_or_publish_to_an_index():
+    workflow = load(RELEASE)
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    assert "publish_to" not in inputs
+    assert "publish" not in workflow["jobs"]
+    assert "pypa/gh-action-pypi-publish" not in RELEASE.read_text(encoding="utf-8")
 
 
-def test_publish_job_is_skipped_for_a_github_only_release():
-    job = load(RELEASE)["jobs"]["publish"]
-    assert job["if"] == "inputs.publish_to != 'github'"
-
-
-def test_the_github_draft_is_created_only_when_github_was_chosen():
+def test_release_candidate_always_creates_an_unpublished_github_draft():
     job = load(RELEASE)["jobs"]["create-draft-release"]
-    assert job["if"] == "contains(inputs.publish_to, 'github')"
+    assert "if" not in job
+    assert "--draft" in " ".join(step.get("run", "") for step in steps(job))
 
 
-def test_testpypi_uploads_to_the_test_index_and_its_own_environment():
-    """The rehearsal must not touch the real index or the real environment."""
-    job = load(RELEASE)["jobs"]["publish"]
-    assert "testpypi" in job["environment"]
-    upload = next(
-        step for step in job["steps"] if "pypi-publish" in str(step.get("uses", ""))
+def test_real_pypi_requires_a_published_github_release():
+    triggers = load(PUBLISH)[True]
+    assert triggers == {"release": {"types": ["published"]}}
+    assert "workflow_dispatch" not in triggers
+
+
+def test_real_publish_job_uses_only_verified_release_assets():
+    jobs = load(PUBLISH)["jobs"]
+    assert set(jobs) == {"verify-release", "publish"}
+    assert jobs["publish"]["needs"] == "verify-release"
+    commands = " ".join(
+        step.get("run", "") for step in steps(jobs["verify-release"])
     )
-    assert "test.pypi.org/legacy" in upload["with"]["repository-url"]
+    assert "gh release download" in commands
+    assert "sha256sum --check" in commands
+    assert "python -m twine check" in commands
+    assert 'metadata["Name"] == "ha-history-exporter"' in commands
+    assert 'metadata["Version"] == expected_version' in commands
 
 
-def test_publish_job_depends_on_validation_and_the_tested_build():
-    job = load(RELEASE)["jobs"]["publish"]
-    assert set(job["needs"]) == {"validate", "build"}
-
-
-def test_only_the_publish_job_may_request_an_oidc_token():
-    jobs = load(RELEASE)["jobs"]
-    for name, job in jobs.items():
-        permissions = job.get("permissions", {})
-        has_oidc = permissions.get("id-token") == "write"
-        assert has_oidc == (name == "publish"), name
-
-
-def test_publish_job_runs_behind_a_github_environment():
-    job = load(RELEASE)["jobs"]["publish"]
-    assert "inputs.publish_to" in job["environment"]
-    assert "pypi" in job["environment"]
-
-
-def test_publish_job_never_builds_its_own_distributions():
-    """Building inside the publishing job is unsupported by the PyPA guidance."""
-    job = load(RELEASE)["jobs"]["publish"]
+def test_real_publish_job_never_builds_its_own_distributions():
+    job = load(PUBLISH)["jobs"]["publish"]
     commands = " ".join(step.get("run", "") for step in steps(job))
     assert "python -m build" not in commands
     assert any(
@@ -125,18 +114,56 @@ def test_publish_job_never_builds_its_own_distributions():
     )
 
 
-def test_publish_job_uses_the_official_action():
-    job = load(RELEASE)["jobs"]["publish"]
+def test_real_publish_job_uses_the_official_action_and_environment():
+    job = load(PUBLISH)["jobs"]["publish"]
+    assert job["environment"] == "pypi"
     uses = [step.get("uses", "") for step in steps(job)]
     assert any(item.startswith("pypa/gh-action-pypi-publish@") for item in uses)
 
 
-def test_publish_job_verifies_the_checksums_before_uploading():
-    job = load(RELEASE)["jobs"]["publish"]
-    commands = " ".join(step.get("run", "") for step in steps(job))
-    assert "sha256sum" in commands
-    assert "WHEEL_SHA256" in commands
-    assert "SDIST_SHA256" in commands
+def test_testpypi_is_manual_and_cannot_select_real_pypi():
+    workflow = load(TEST_PUBLISH)
+    assert set(workflow[True]) == {"workflow_dispatch"}
+    assert "publish_to" not in workflow[True]["workflow_dispatch"]["inputs"]
+    job = workflow["jobs"]["publish"]
+    assert job["environment"] == "testpypi"
+    upload = next(
+        step for step in steps(job) if "pypi-publish" in step.get("uses", "")
+    )
+    assert upload["with"]["repository-url"] == "https://test.pypi.org/legacy/"
+
+
+def test_release_paths_privacy_scan_history_and_distributions():
+    release_jobs = load(RELEASE)["jobs"]
+    release_validate = " ".join(
+        step.get("run", "") for step in steps(release_jobs["validate"])
+    )
+    release_build = " ".join(
+        step.get("run", "") for step in steps(release_jobs["build"])
+    )
+    publish_verify = " ".join(
+        step.get("run", "")
+        for step in steps(load(PUBLISH)["jobs"]["verify-release"])
+    )
+    testpypi_build = " ".join(
+        step.get("run", "")
+        for step in steps(load(TEST_PUBLISH)["jobs"]["build"])
+    )
+
+    assert "tools/privacy_audit.py --repository . --history" in release_validate
+    for commands in (release_build, publish_verify, testpypi_build):
+        assert "tools/privacy_audit.py" in commands
+        assert "--artifact" in commands
+
+
+def test_only_actual_upload_jobs_receive_oidc():
+    for path in workflow_files():
+        for name, job in load(path)["jobs"].items():
+            has_oidc = job.get("permissions", {}).get("id-token") == "write"
+            assert has_oidc == (
+                (path == PUBLISH and name == "publish")
+                or (path == TEST_PUBLISH and name == "publish")
+            ), f"{path.name}:{name}"
 
 
 def test_release_validates_the_package_version_against_the_input():
@@ -156,7 +183,11 @@ def test_beta_versions_must_be_pep440_normalised():
 
 def test_every_release_action_is_pinned_to_a_commit_sha():
     """A moving tag in the release path would be an unreviewed code change."""
-    jobs = load(RELEASE)["jobs"]
+    jobs = {
+        f"{path.name}:{name}": job
+        for path in (RELEASE, PUBLISH, TEST_PUBLISH)
+        for name, job in load(path)["jobs"].items()
+    }
     used = [
         step["uses"]
         for job in jobs.values()

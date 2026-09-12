@@ -76,11 +76,15 @@ MANIFEST_FIELDS = {
     "failed_request_count",
     "retried_request_count",
     "history_request_options",
+    "capture_profile",
+    "retention",
     "output_files",
+    "artifacts",
     "zero_history_entities",
     "failed_batches",
     "skipped_reason",
     "error",
+    "error_code",
     "script_version",
 }
 
@@ -100,6 +104,7 @@ CSV_HEADER = [
     "last_updated",
     "attributes_json",
     "local_offset",
+    "extra_json",
 ]
 
 #: Fields whose value depends on when the run happened, not on what it produced.
@@ -210,13 +215,12 @@ HISTORY_RESPONSES: list[list[list[dict[str, Any]]]] = [
                 _TEMPERATURE_ATTRS,
             ),
         ],
-        [],
     ],
     [
         [
             # One second before the changeover, updated two seconds after it.
-            # local_offset is derived from last_changed, so this row must carry
-            # +02:00 even though last_updated already falls into +01:00.
+            # local_offset follows the actual Recorder event time
+            # (last_updated), which is already in +01:00.
             _row(
                 "binary_sensor.front_door",
                 "off",
@@ -447,12 +451,12 @@ def test_day_file_paths_are_zero_padded(tmp_path, day: date, suffix: str, expect
     assert relative == expected
 
 
-def test_manifest_field_set_is_unchanged(produced: Path):
+def test_manifest_field_set_matches_schema_1_4(produced: Path):
     manifest = json.loads(
         day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8")
     )
     assert set(manifest) == MANIFEST_FIELDS
-    assert manifest["schema_version"] == "1.3"
+    assert manifest["schema_version"] == "1.4"
     assert manifest["source"] == "home_assistant_rest_history"
     assert manifest["status"] == "ok"
     # Read by the internal data-analysis documentation; the keys must stay.
@@ -461,6 +465,7 @@ def test_manifest_field_set_is_unchanged(produced: Path):
         "minimal_response",
         "no_attributes",
         "significant_changes_only",
+        "skip_initial_state",
     ]
 
 
@@ -493,12 +498,12 @@ def test_local_offset_follows_the_dst_change_within_one_file(produced: Path):
     ]
     offsets = {row["last_changed"]: row["local_offset"] for row in rows}
     assert offsets["2026-10-24T23:30:00+00:00"] == "+02:00"
-    assert offsets["2026-10-25T00:59:59+00:00"] == "+02:00"
+    assert offsets["2026-10-25T00:59:59+00:00"] == "+01:00"
     assert offsets["2026-10-25T01:00:00+00:00"] == "+01:00"
     assert offsets["2026-10-25T01:30:00+00:00"] == "+01:00"
 
 
-def test_local_offset_is_derived_from_last_changed_not_last_updated(produced: Path):
+def test_local_offset_is_derived_from_last_updated(produced: Path):
     """The one row whose two timestamps sit on opposite sides of the change."""
     rows = [
         json.loads(line)
@@ -511,7 +516,7 @@ def test_local_offset_is_derived_from_last_changed_not_last_updated(produced: Pa
     )
     assert straddling["last_changed"] == "2026-10-25T00:59:59+00:00"
     assert straddling["last_updated"] == "2026-10-25T01:00:01+00:00"
-    assert straddling["local_offset"] == "+02:00"
+    assert straddling["local_offset"] == "+01:00"
 
 
 def test_the_dst_day_spans_twenty_five_hours(produced: Path):

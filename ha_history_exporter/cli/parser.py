@@ -108,6 +108,11 @@ def add_config_arguments(p: argparse.ArgumentParser) -> None:
     set_.add_argument("key", metavar="KEY")
     set_.add_argument("value", metavar="VALUE", nargs="?",
                       help="Omit for a secret to be asked for without echo.")
+    set_.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read a secret value from standard input without putting it in argv.",
+    )
 
     unset = actions.add_parser("unset", help="Remove a value from the user configuration.")
     unset.add_argument("key", metavar="KEY")

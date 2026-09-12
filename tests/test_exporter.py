@@ -33,7 +33,7 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
         "2026-07-28T11:00:00+00:00",
         attributes={"friendly_name": "Synthetic two"},
     )
-    client = FakeHomeAssistantClient([[[first]], [[second]]])
+    client = FakeHomeAssistantClient([[[first], [second]], []])
 
     result = exporter.run_export(
         cfg,
@@ -79,9 +79,10 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
         "state",
         "last_changed",
         "last_updated",
-        "attributes_json",
-        "local_offset",
-    ]
+            "attributes_json",
+            "local_offset",
+            "extra_json",
+        ]
 
     day_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert day_manifest["status"] == "ok"
@@ -109,7 +110,7 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
 
 def test_run_export_handles_empty_history(tmp_path):
     cfg = make_config(tmp_path, jsonl=True, csv=True, parquet=True, batch_size=2)
-    client = FakeHomeAssistantClient([[[], []]])
+    client = FakeHomeAssistantClient([[]])
 
     result = exporter.run_export(
         cfg,
@@ -133,6 +134,40 @@ def test_run_export_handles_empty_history(tmp_path):
         "sensor.one",
         "sensor.two",
     ]
+    assert day_manifest["retention"] == {
+        "status": "known_safe",
+        "purge_keep_days": 14,
+    }
+
+
+def test_empty_history_with_unknown_retention_is_not_published_as_ok(tmp_path):
+    cfg = make_config(
+        tmp_path,
+        jsonl=True,
+        csv=True,
+        parquet=True,
+        purge_keep_days=None,
+    )
+    client = FakeHomeAssistantClient([[]])
+
+    result = exporter.run_export(
+        cfg,
+        make_export_plan(DAY),
+        ["sensor.one"],
+        1,
+        client,
+        BERLIN,
+    )
+
+    assert result == 1
+    assert not cfg.layout.day_file(DAY, "jsonl").exists()
+    assert not cfg.layout.day_file(DAY, "csv").exists()
+    assert not cfg.layout.day_file(DAY, "parquet").exists()
+    day_manifest = json.loads(
+        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
+    )
+    assert day_manifest["status"] == "failed"
+    assert day_manifest["retention"]["status"] == "unknown"
 
 
 def test_run_export_dry_run_never_calls_client_or_writes_files(tmp_path):
@@ -211,8 +246,47 @@ def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_pat
     )
     assert day_manifest["status"] == "failed"
     assert day_manifest["failed_request_count"] == 1
-    assert day_manifest["failed_batches"][0]["entities"] == ["sensor.one"]
+    assert day_manifest["failed_batches"][0] == {
+        "batch_index": 1,
+        "entity_count": 1,
+        "error_code": "unexpected_error",
+        "error": "Unexpected error while fetching this batch.",
+    }
     assert "1 batch(es) failed" in day_manifest["error"]
+
+
+def test_failed_force_export_preserves_the_previous_generation_byte_for_byte(tmp_path):
+    cfg = make_config(tmp_path, jsonl=True, csv=True, parquet=True)
+    plan = make_export_plan(DAY)
+    paths = [
+        cfg.layout.day_file(DAY, suffix)
+        for suffix in ("jsonl", "csv", "parquet", "manifest.json")
+    ]
+
+    assert exporter.run_export(
+        cfg,
+        plan,
+        ["sensor.one"],
+        1,
+        FakeHomeAssistantClient([[[state_row("sensor.one")]]]),
+        BERLIN,
+    ) == 0
+    before = {path: path.read_bytes() for path in paths}
+
+    invalid = state_row(
+        "sensor.one",
+        timestamp="2026-07-30T00:00:00+00:00",
+    )
+    assert exporter.run_export(
+        cfg,
+        plan,
+        ["sensor.one"],
+        1,
+        FakeHomeAssistantClient([[[invalid]]]),
+        BERLIN,
+    ) == 1
+
+    assert {path: path.read_bytes() for path in paths} == before
 
 
 def test_run_export_leaves_foreign_temp_files_alone(tmp_path):

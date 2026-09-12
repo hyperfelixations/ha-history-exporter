@@ -23,6 +23,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from ..errors import ConfigError, CredentialsError, Remedy
 from . import paths, schema, secrets, sources
@@ -135,7 +136,7 @@ def resolve(
 def _build_config(values: Mapping[str, Any]) -> Config:
     return Config(
         homeassistant=HomeAssistantSettings(
-            url=str(values[URL_KEY]).strip().rstrip("/"),
+            url=validate_home_assistant_url(str(values[URL_KEY])),
         ),
         export=ExportSettings(
             output_dir=values["export.output_dir"],
@@ -156,6 +157,7 @@ def _build_config(values: Mapping[str, Any]) -> Config:
             significant_changes_only=values[
                 "history_request.significant_changes_only"
             ],
+            skip_initial_state=values["history_request.skip_initial_state"],
         ),
         entities=EntitySettings(
             include_unknown=values["entities.include_unknown"],
@@ -170,6 +172,48 @@ def _build_config(values: Mapping[str, Any]) -> Config:
             temp_dir=values["storage.temp_dir"],
             locked_file_retries=values["storage.locked_file_retries"],
             locked_file_retry_sleep=values["storage.locked_file_retry_sleep"],
+        ),
+    )
+
+
+def validate_home_assistant_url(raw: str) -> str:
+    """Validate and normalize a base URL without reflecting invalid input."""
+    value = raw.strip()
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise _invalid_url() from exc
+    if (
+        raw != value
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        raise _invalid_url()
+    return value.rstrip("/")
+
+
+def _invalid_url() -> ConfigError:
+    return ConfigError(
+        "homeassistant.url is not a valid Home Assistant base URL.",
+        details=(
+            "Use an http:// or https:// base URL with a host and optional port. "
+            "User information, path components, query strings, and fragments "
+            "are not accepted. The invalid value is deliberately not shown."
+        ),
+        remedies=(
+            Remedy(
+                "Store a base URL without credentials or query parameters:",
+                "hhe config set homeassistant.url http://homeassistant.local:8123",
+            ),
         ),
     )
 

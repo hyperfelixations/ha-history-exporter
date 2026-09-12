@@ -57,10 +57,12 @@ def test_check_api_accepts_expected_message(monkeypatch):
 
 def test_check_api_rejects_unexpected_message(monkeypatch):
     client = make_client()
-    install_get(monkeypatch, client, [FakeResponse(payload={"message": "wrong"})])
+    marker = "synthetic-private-response-marker"
+    install_get(monkeypatch, client, [FakeResponse(payload={"message": marker})])
 
-    with pytest.raises(HAAPIError, match="Unexpected /api/ response"):
+    with pytest.raises(HAAPIError, match="Unexpected response contract") as exc:
         client.check_api()
+    assert marker not in exc.value.summary
 
 
 def test_check_api_requires_object(monkeypatch):
@@ -108,6 +110,7 @@ def test_get_history_builds_expected_path_and_options(monkeypatch):
         minimal_response=True,
         no_attributes=True,
         significant_changes_only=True,
+        skip_initial_state=True,
     )
 
     url, kwargs = sequence.calls[0]
@@ -116,11 +119,68 @@ def test_get_history_builds_expected_path_and_options(monkeypatch):
     assert kwargs["params"] == {
         "end_time": end.isoformat(),
         "filter_entity_id": "sensor.one,sensor.two",
-        "minimal_response": "true",
-        "no_attributes": "true",
-        "significant_changes_only": "true",
+        "minimal_response": "1",
+        "no_attributes": "1",
+        "significant_changes_only": "1",
+        "skip_initial_state": "1",
     }
     assert result == payload
+
+
+@pytest.mark.parametrize(
+    (
+        "minimal_response",
+        "no_attributes",
+        "significant_changes_only",
+        "skip_initial_state",
+        "expected",
+    ),
+    [
+        (False, False, False, False, {"significant_changes_only": "0"}),
+        (False, False, True, False, {"significant_changes_only": "1"}),
+        (
+            True,
+            True,
+            False,
+            True,
+            {
+                "minimal_response": "1",
+                "no_attributes": "1",
+                "significant_changes_only": "0",
+                "skip_initial_state": "1",
+            },
+        ),
+    ],
+)
+def test_get_history_serializes_the_home_assistant_query_contract(
+    monkeypatch,
+    minimal_response,
+    no_attributes,
+    significant_changes_only,
+    skip_initial_state,
+    expected,
+):
+    client = make_client()
+    sequence = install_get(monkeypatch, client, [FakeResponse(payload=[])])
+    start = datetime(2026, 7, 28, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 29, 0, tzinfo=UTC)
+
+    client.get_history(
+        start,
+        end,
+        ["sensor.one"],
+        minimal_response=minimal_response,
+        no_attributes=no_attributes,
+        significant_changes_only=significant_changes_only,
+        skip_initial_state=skip_initial_state,
+    )
+
+    params = sequence.calls[0][1]["params"]
+    assert params == {
+        "end_time": end.isoformat(),
+        "filter_entity_id": "sensor.one",
+        **expected,
+    }
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -169,6 +229,16 @@ def test_network_timeout_exhaustion_raises_connection_error(monkeypatch):
     assert "Timeout" in (exc.value.details or "")
     assert len(sequence.calls) == 2
     assert client.total_retries == 1
+    rendered = " ".join(
+        [
+            exc.value.summary,
+            exc.value.details or "",
+            *exc.value.context.values(),
+            *(remedy.command or "" for remedy in exc.value.remedies),
+        ]
+    )
+    assert exc.value.context["url"] == BASE_URL
+    assert f"curl -sS {BASE_URL}/api/" in rendered
 
 
 def test_non_retryable_http_error_is_immediate(monkeypatch):

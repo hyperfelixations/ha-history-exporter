@@ -8,17 +8,17 @@
     [
       "state",
       "string",
-      true
+      false
     ],
     [
       "last_changed",
       "timestamp[us, tz=UTC]",
-      true
+      false
     ],
     [
       "last_updated",
       "timestamp[us, tz=UTC]",
-      true
+      false
     ],
     [
       "attributes_json",
@@ -27,6 +27,11 @@
     ],
     [
       "local_offset",
+      "string",
+      false
+    ],
+    [
+      "extra_json",
       "string",
       true
     ]
@@ -41,7 +46,8 @@
       "last_changed": "2026-10-24T23:30:00+00:00",
       "last_updated": "2026-10-24T23:30:00+00:00",
       "attributes_json": "{\"friendly_name\": \"Küche Temperatur — über dem Herd\", \"unit_of_measurement\": \"°C\", \"device_class\": \"temperature\"}",
-      "local_offset": "+02:00"
+      "local_offset": "+02:00",
+      "extra_json": null
     },
     {
       "entity_id": "sensor.kitchen_temperature",
@@ -49,7 +55,8 @@
       "last_changed": "2026-10-25T01:30:00+00:00",
       "last_updated": "2026-10-25T01:30:00+00:00",
       "attributes_json": "{\"friendly_name\": \"Küche Temperatur — über dem Herd\", \"unit_of_measurement\": \"°C\", \"device_class\": \"temperature\"}",
-      "local_offset": "+01:00"
+      "local_offset": "+01:00",
+      "extra_json": null
     },
     {
       "entity_id": "binary_sensor.front_door",
@@ -57,7 +64,8 @@
       "last_changed": "2026-10-25T00:59:59+00:00",
       "last_updated": "2026-10-25T01:00:01+00:00",
       "attributes_json": "{\"friendly_name\": \"Front door\", \"device_class\": \"door\"}",
-      "local_offset": "+02:00"
+      "local_offset": "+01:00",
+      "extra_json": null
     },
     {
       "entity_id": "sensor.unicode_payload",
@@ -65,7 +73,8 @@
       "last_changed": "2026-10-25T01:00:00+00:00",
       "last_updated": "2026-10-25T01:00:00+00:00",
       "attributes_json": "{\"friendly_name\": \"Ünïcödé 🌡\", \"nested\": {\"values\": [1, 2, null], \"note\": \"he said \\\"yes\\\"\"}}",
-      "local_offset": "+01:00"
+      "local_offset": "+01:00",
+      "extra_json": null
     }
   ]
 }

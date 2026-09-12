@@ -42,6 +42,12 @@ def test_exit_codes_are_declared_per_error_type(error_type, expected_code):
     assert error_type("synthetic").exit_code == expected_code
 
 
+def test_error_codes_are_stable_and_can_be_specialized():
+    assert ConfigError("synthetic").code == "configuration_error"
+    assert HAAPIError("synthetic").code == "home_assistant_api_error"
+    assert ExportError("synthetic", code="empty_unverified").code == "empty_unverified"
+
+
 def test_credentials_error_stays_a_config_error():
     """Callers that catch ConfigError must keep catching missing credentials."""
     assert issubclass(CredentialsError, ConfigError)
@@ -98,19 +104,24 @@ def test_render_error_wraps_long_details():
     assert all(len(line) <= console.WIDTH for line in body)
 
 
-def test_render_error_drops_unregistered_context_keys():
-    """An unexpected context key must never reach the terminal."""
+def test_render_error_shows_the_safe_url_and_drops_unregistered_context_keys():
+    """A validated base URL is useful context; arbitrary values stay hidden."""
     stream = io.StringIO()
     console.render_error(
         HHEError(
             "boom",
-            context={"token": "synthetic-secret-value", "url": "http://ha.invalid"},
+            context={
+                "token": "synthetic-secret-value",
+                "raw_payload": "synthetic-private-payload",
+                "url": "http://home-assistant.invalid",
+            },
         ),
         stream=stream,
     )
     rendered = stream.getvalue()
     assert "synthetic-secret-value" not in rendered
-    assert "http://ha.invalid" in rendered
+    assert "synthetic-private-payload" not in rendered
+    assert "http://home-assistant.invalid" in rendered
 
 
 def test_color_is_used_only_on_a_tty_without_no_color(monkeypatch):

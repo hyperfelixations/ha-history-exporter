@@ -186,7 +186,7 @@ class HomeAssistantClient:
                 f"Expected object from /api/, got {type(data).__name__}"
             )
         if data.get("message") != "API running.":
-            raise HAAPIError(f"Unexpected /api/ response: {data}")
+            raise HAAPIError("Unexpected response contract from /api/.")
         logger.info("HA API is reachable at %s.", self._base)
 
     def get_states(self) -> List[dict]:
@@ -211,6 +211,7 @@ class HomeAssistantClient:
         minimal_response: bool = False,
         no_attributes: bool = False,
         significant_changes_only: bool = False,
+        skip_initial_state: bool = True,
     ) -> List[List[dict]]:
         """Fetch history for a batch of entities over a time range.
 
@@ -227,11 +228,14 @@ class HomeAssistantClient:
             "filter_entity_id": ",".join(entity_ids),
         }
         if minimal_response:
-            params["minimal_response"] = "true"
+            params["minimal_response"] = "1"
         if no_attributes:
-            params["no_attributes"] = "true"
-        if significant_changes_only:
-            params["significant_changes_only"] = "true"
+            params["no_attributes"] = "1"
+        params["significant_changes_only"] = (
+            "1" if significant_changes_only else "0"
+        )
+        if skip_initial_state:
+            params["skip_initial_state"] = "1"
 
         resp = self._get(f"/api/history/period/{start_str}", params=params)
         endpoint = "/api/history/period"

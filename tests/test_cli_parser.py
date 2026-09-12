@@ -204,6 +204,19 @@ def test_invalid_last_days_exits_with_code_two(tmp_path, monkeypatch, capsys, va
     assert "--last-days must be 1 or greater" in capsys.readouterr().err
 
 
+def test_invalid_date_argument_is_echoed_for_diagnosis(tmp_path, monkeypatch, capsys):
+    marker = "not-a-date"
+    monkeypatch.setenv("HA_URL", "http://home-assistant.invalid")
+    monkeypatch.setenv("HA_TOKEN", "synthetic-test-token")
+    monkeypatch.setenv("HHE_EXPORT_OUTPUT_DIR", str(tmp_path / "output"))
+
+    assert cli.main(["export", "--date", marker]) == 2
+    captured = capsys.readouterr()
+    assert marker not in captured.out
+    assert marker in captured.err
+    assert "Unrecognised date argument" in captured.err
+
+
 # ── --format ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(

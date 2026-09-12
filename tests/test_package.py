@@ -13,15 +13,18 @@ SUITE_INPUTS = (
     ".gitattributes",
     ".gitignore",
     ".github/workflows/release.yml",
+    ".github/workflows/publish.yml",
+    ".github/workflows/test-publish.yml",
     ".github/workflows/tests.yml",
     "tools/refresh_golden.py",
+    "tools/privacy_audit.py",
 )
 
 
 def test_version_constants_are_consistent():
     assert __version__ == "1.4.0"
     assert __version__ == SCRIPT_VERSION
-    assert SCHEMA_VERSION == "1.3"
+    assert SCHEMA_VERSION == "1.4"
 
 
 def manifest_covers(manifest: str, relative_path: str) -> bool:

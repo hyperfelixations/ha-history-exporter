@@ -11,7 +11,8 @@ from ha_history_exporter import cli, ha_client
 from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.errors import AuthError
 from ha_history_exporter.settings import Format
-from tests.helpers import FakeCliClient
+from tests.helpers import FakeCliClient, state_row
+from tests.test_manifest import valid_data
 
 
 def write_config(tmp_path: Path) -> Path:
@@ -116,7 +117,7 @@ def test_main_returns_two_for_missing_config(capsys):
     assert "Config file not found" in capsys.readouterr().err
 
 
-def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch):
+def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch, capsys):
     path = write_config(tmp_path)
     text = path.read_text(encoding="utf-8").replace(
         "timezone: Europe/Berlin", "timezone: Invalid/Timezone"
@@ -125,6 +126,7 @@ def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
 
     assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 2
+    assert "Invalid/Timezone" in capsys.readouterr().err
     assert not (tmp_path / "output" / "logs").exists()
 
 
@@ -257,7 +259,7 @@ def test_main_short_circuits_existing_day_before_client(
     )
     export.mkdir(parents=True)
     (export / "2026-07-28.manifest.json").write_text(
-        json.dumps({"status": "ok", "state_object_count": 1}),
+        json.dumps(valid_data("1.3")),
         encoding="utf-8",
     )
 
@@ -331,7 +333,7 @@ def test_main_applies_all_cli_overrides(tmp_path, monkeypatch):
     ],
 )
 def test_main_handles_top_level_failures(
-    tmp_path, monkeypatch, error, expected_code
+    tmp_path, monkeypatch, capsys, caplog, error, expected_code
 ):
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
@@ -351,6 +353,19 @@ def test_main_handles_top_level_failures(
         )
         == expected_code
     )
+    captured = capsys.readouterr()
+    if isinstance(error, RuntimeError):
+        assert str(error) not in captured.err
+        assert "Unexpected internal error" in captured.err
+        error_record = next(
+            record
+            for record in caplog.records
+            if "Unexpected internal error" in record.getMessage()
+        )
+        assert " at ha_history_exporter.cli.commands.export:run:" in (
+            error_record.getMessage()
+        )
+        assert str(error) not in error_record.getMessage()
 
 
 def test_main_runs_without_any_configuration_file(tmp_path, monkeypatch):
@@ -385,6 +400,7 @@ def test_main_reports_the_resolved_output_directory(tmp_path, monkeypatch, caplo
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "Output directory:" in messages
     assert str(path) in messages
+    assert "Checking the Home Assistant API at http://home-assistant.invalid" in messages
 
 
 def test_main_names_the_log_file_and_the_configuration_in_the_summary(
@@ -466,6 +482,7 @@ def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
         {"entity_id": "sensor.known", "state": "1", "attributes": {}},
         {"entity_id": "sensor.mystery", "state": "unknown", "attributes": {}},
     ]
+    FakeCliClient.history_payload = [[state_row("sensor.known")]]
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
     assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0

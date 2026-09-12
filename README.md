@@ -85,8 +85,9 @@ pipx inject ha-history-exporter pyarrow
 pip install "ha-history-exporter[parquet]"
 ```
 
-Requires Python 3.10 or newer. Linux, macOS, and Windows are supported and
-tested.
+Requires Python 3.10 or newer. The release test matrix covers Linux and Windows
+on Python 3.10 and 3.13. macOS uses the same Python interfaces but is not yet
+part of the continuous test matrix.
 
 ### From a clone
 
@@ -225,11 +226,12 @@ existing setup does not have to change.
 | `history_request.minimal_response` | `false` | Ask HA for a reduced payload |
 | `history_request.no_attributes` | `false` | Ask HA to omit attributes |
 | `history_request.significant_changes_only` | `false` | Ask HA for significant changes only |
+| `history_request.skip_initial_state` | `true` | Omit the synthetic state at the window start |
 | `entities.include_unknown` | `true` | Request history for `unknown` entities |
 | `entities.include_unavailable` | `true` | Request history for `unavailable` entities |
 | `entities.exclude_domains` | `[]` | Entity domains to skip |
 | `entities.exclude_patterns` | `[]` | Glob patterns of entity IDs to skip |
-| `recorder.purge_keep_days` | unset | Warn about days older than this |
+| `recorder.purge_keep_days` | unset | Block new exports at the known Recorder boundary |
 | `storage.temp_dir` | platform temp | Working directory during a run |
 | `storage.locked_file_retries` | `5` | Retries when another program locks an output file |
 | `storage.locked_file_retry_sleep` | `2.0` | Seconds between those retries |
@@ -243,9 +245,17 @@ roughly 1400 entities. If your Home Assistant runs on modest hardware and feels
 sluggish during an export, lower `requests.batch_size` and raise
 `requests.sleep_between_requests`.
 
-The three `history_request` options ask Home Assistant to send *less*. They are
-off by default, so an export is complete unless you deliberately choose
-otherwise; turn one on only if you know you want the smaller result.
+The default profile sends `significant_changes_only=0` explicitly and requests
+every Recorder state row strictly inside the day. `skip_initial_state=true`
+omits Home Assistant's synthetic carry-in state at the exact start boundary;
+set it to `false` only when that context row is useful to you.
+
+`minimal_response`, `no_attributes`, and `significant_changes_only` all request
+less information. Minimal responses omit attribute snapshots and other fields
+from reduced follow-up rows and may remove repeated equal states. HHE restores
+a consistent row structure and entity identity, but it never invents omitted
+values: unavailable attributes are stored as `null`. The selected fidelity is
+recorded in every schema 1.4 manifest.
 
 ## Credentials and security
 
@@ -260,6 +270,10 @@ otherwise; turn one on only if you know you want the smaller result.
   written into `config.yaml` by hand is refused with an explanation.
 - `HHE_TOKEN` (or `HA_TOKEN`) in the environment takes precedence over the
   stored token, which keeps CI and one-off shells free of any file.
+- A token is never accepted as a command-line value. Use the hidden prompt with
+  `hhe config set homeassistant.token`, or pipe an intentional stdin source with
+  `Get-Content <token-file> | hhe config set homeassistant.token --stdin` on
+  PowerShell.
 - Failed API responses are reported by status code and endpoint only; response
   bodies are never logged or stored, because they can contain private data.
 
@@ -269,7 +283,7 @@ otherwise; turn one on only if you know you want the smaller result.
 hhe [--version] [--help]
 hhe export  [selection] [output] [tuning]
 hhe init    [--force] [--non-interactive --url … --output-dir … --format … --timezone …]
-hhe config  get KEY | set KEY [VALUE] | unset KEY | list [--origin] | path | edit
+hhe config  get KEY | set KEY [VALUE] [--stdin] | unset KEY | list [--origin] | path | edit
 hhe doctor  [--offline] [--config FILE]
 ```
 
@@ -343,8 +357,9 @@ replaces the files. Nothing else reaches into an unfinished day: a range or
     ha_history_export_<time>.log
 ```
 
-Each JSONL line holds the state object as Home Assistant returned it, plus one
-added field:
+Each JSONL line holds one validated canonical history record. Home Assistant
+timestamps are normalized to UTC, missing fields are represented explicitly,
+unknown top-level API fields are retained, and HHE adds `local_offset`:
 
 ```json
 {"entity_id": "sensor.kitchen_temperature", "state": "21.5",
@@ -354,13 +369,14 @@ added field:
  "local_offset": "+02:00"}
 ```
 
-Timestamps are UTC, exactly as the API returns them. `local_offset` is computed
-per row from `last_changed`, so on a daylight-saving transition day the rows
-before and after the change carry different offsets and local time can be
-reconstructed without consulting anything else.
+`local_offset` is computed per row from the event time in `last_updated`, so on
+a daylight-saving transition day the rows before and after the change carry
+the correct offsets even when `last_changed` is older.
 
-Parquet stores the same records with real `timestamp[us, UTC]` columns and
-attributes as a JSON string, which is what DuckDB and Pandas want:
+CSV stores attributes in `attributes_json`; Parquet uses required
+`timestamp[us, UTC]` columns and the same JSON representation. Both formats
+preserve unknown top-level API fields in `extra_json`, and all enabled formats
+must produce the same logical digest before any file is published.
 
 ```sql
 SELECT entity_id, state, last_changed
@@ -371,15 +387,17 @@ ORDER BY last_changed;
 
 ### Manifests and resuming
 
-Every exported day gets a manifest recording status, timing, entity counts,
-row counts, request counts, and any failed batches. `status` is one of:
+Every exported day gets a schema 1.4 manifest recording status, timing, entity
+and row counts, request options, capture fidelity, Retention assessment, safe
+failure codes, and per-artifact filename, byte size, SHA-256, row count, and
+logical digest. `status` is one of:
 
 | Status | Meaning |
 |---|---|
 | `ok` | The day was captured completely |
 | `partial` | The day was captured while it was still running |
 | `failed` | The run reached the day but could not finish it |
-| `pending` | Written when the day starts; replaced when it ends |
+| `pending` | Incomplete in-memory or legacy state; never a successful day |
 
 A manifest with `status: ok` is the single durable record that the day was
 captured: you may move, archive, or delete the exported files afterwards, and
@@ -387,11 +405,17 @@ HHE will still skip that day instead of asking Home Assistant again. Only
 `--force` overrides that. Every other status means the day is not done, so a
 later run exports it again.
 
+Legacy schema 1.1–1.3 manifests remain readable and an existing legacy
+`status: ok` remains a completed day. Malformed, unknown, or contradictory
+manifests fail closed and are not overwritten, including with `--force`.
+
 ### One run at a time
 
 A run holds a lock on its output directory and works in its own temporary
-directory, so two runs cannot interfere. Files become visible only after they
-have been written completely and validated.
+directory, so two runs cannot interfere. All requested formats are written and
+validated first. A crash-recoverable day transaction then publishes the
+artifacts and the manifest last; a failed force-export restores the previous
+generation byte-for-byte.
 
 ## Troubleshooting
 
@@ -424,9 +448,16 @@ closest valid key; `hhe config list` shows all of them.
 Wait for the other run. If none is running, the message names the lock file to
 remove.
 
-**A day exports as empty**
-The Recorder has already purged it. Set `recorder.purge_keep_days` to your Home
-Assistant `purge_keep_days` value and HHE will warn before fetching.
+**`Recorder retention blocks one or more requested days.`**
+Set `recorder.purge_keep_days` to the value used by your Home Assistant
+Recorder. HHE refuses a new export when a requested local day touches or
+exceeds that known boundary; `--force` does not bypass it. Existing successful
+legacy manifests are still skipped without being reclassified.
+
+**`Empty history ... cannot be verified without Recorder retention.`**
+With unknown retention an empty response could mean either a genuinely quiet
+day or purged data, so HHE publishes neither daily artifacts nor `status: ok`.
+Within a configured safe retention window, an empty day is valid.
 
 ## Automating daily exports
 

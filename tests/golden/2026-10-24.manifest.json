@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "status": "ok",
   "source": "home_assistant_rest_history",
   "date": "2026-10-24",
@@ -23,12 +23,46 @@
   "history_request_options": {
     "minimal_response": false,
     "no_attributes": false,
-    "significant_changes_only": false
+    "significant_changes_only": false,
+    "skip_initial_state": true
+  },
+  "capture_profile": {
+    "response": "full",
+    "attributes": "full",
+    "state_changes": "all",
+    "initial_state": "omitted"
+  },
+  "retention": {
+    "status": "known_safe",
+    "purge_keep_days": 14
   },
   "output_files": {
     "jsonl": "2026-10-24.jsonl",
     "csv": "2026-10-24.csv",
     "parquet": "2026-10-24.parquet"
+  },
+  "artifacts": {
+    "jsonl": {
+      "filename": "2026-10-24.jsonl",
+      "size_bytes": 1461,
+      "sha256": "ea0ce87c36401c29e7610fb349d141515c6a7c80c47a842d08c8efda4ce1cc2b",
+      "row_count": 5,
+      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+    },
+    "csv": {
+      "filename": "2026-10-24.csv",
+      "size_bytes": 1110,
+      "sha256": "54f361a500e2c6ee297efb62e680e692d4917507242cc0f680b6348e8db1cd57",
+      "row_count": 5,
+      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+    },
+    "parquet": {
+      "filename": "2026-10-24.parquet",
+      "size_bytes": 2910,
+      "sha256": "ad703bf1357ffef66842923356ef8c30e00b245612794b0aaa037944b53a543a",
+      "row_count": 5,
+      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+    }
   },
   "zero_history_entities": [
     "sensor.never_recorded"
@@ -36,5 +70,6 @@
   "failed_batches": [],
   "skipped_reason": null,
   "error": null,
+  "error_code": null,
   "script_version": null
 }

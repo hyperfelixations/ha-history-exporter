@@ -10,18 +10,21 @@ it as a partial day:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import List
 from zoneinfo import ZoneInfo
 
-from .errors import ExportError, Remedy
+from . import manifest as mf
+from .errors import ConfigError, Remedy
 from .time_utils import (
+    format_iso,
     is_day_complete,
     iter_days,
     latest_complete_day,
+    local_day_bounds,
+    to_utc,
     today_local,
 )
 
@@ -139,6 +142,7 @@ def build_plan(
     cfg,  # Config
     force: bool = False,
     partial_day: date | None = None,
+    now: date | None = None,
 ) -> ExportPlan:
     """Build an export plan for the given date range.
 
@@ -151,8 +155,8 @@ def build_plan(
         partial_day:     The still running day the caller asked for by name.
                          Any other incomplete day is skipped as before.
     """
-    today = today_local(tz)
-    latest = latest_complete_day(tz)
+    today = now or today_local(tz)
+    latest = today - timedelta(days=1) if now is not None else latest_complete_day(tz)
 
     plan = ExportPlan(
         requested_start=requested_start,
@@ -161,8 +165,10 @@ def build_plan(
         latest_complete=latest,
     )
 
+    retention_blocked: list[date] = []
     for day in iter_days(requested_start, requested_end):
-        if not is_day_complete(day, tz):
+        complete = day < today if now is not None else is_day_complete(day, tz)
+        if not complete:
             if day == partial_day:
                 plan.decisions.append(
                     DayDecision(
@@ -184,16 +190,41 @@ def build_plan(
             )
             continue
 
-        if not force:
-            existing = _check_existing(day, cfg)
-            if existing:
-                plan.decisions.append(
-                    DayDecision(day=day, action=SKIP_EXISTING, reason=existing)
-                )
-                logger.info("Day %s: skipping - %s", day, existing)
-                continue
+        existing = _check_existing(day, cfg, tz)
+        if existing and not force:
+            plan.decisions.append(
+                DayDecision(day=day, action=SKIP_EXISTING, reason=existing)
+            )
+            logger.info("Day %s: skipping - %s", day, existing)
+            continue
+
+        keep_days = cfg.recorder.purge_keep_days
+        if keep_days is not None and (today - day).days >= keep_days:
+            retention_blocked.append(day)
+            continue
 
         plan.decisions.append(DayDecision(day=day, action=EXPORT))
+
+    if retention_blocked:
+        dates = ", ".join(str(day) for day in retention_blocked)
+        raise ConfigError(
+            "Recorder retention blocks one or more requested days.",
+            details=(
+                f"These days touch or exceed the configured retention boundary: "
+                f"{dates}. HHE will not publish a potentially incomplete capture."
+            ),
+            remedies=(
+                Remedy(
+                    "Choose complete days wholly inside the Recorder retention window."
+                ),
+            ),
+        )
+
+    if cfg.recorder.purge_keep_days is None and plan.days_to_export:
+        logger.warning(
+            "Recorder retention is not configured. A non-empty validated response "
+            "may be exported, but an empty response cannot be verified and will fail."
+        )
 
     logger.info(
         "Export plan: %d day(s) to export (%d partial), %d skip (existing), "
@@ -206,56 +237,28 @@ def build_plan(
     return plan
 
 
-def _check_existing(day: date, cfg) -> str | None:
+def _check_existing(
+    day: date, cfg, tz: ZoneInfo | None = None
+) -> str | None:
     """Return a reason if this day has a successful manifest, else ``None``.
 
     The manifest is the durable source of truth for resume decisions. Export
     artifacts may have been archived or moved after a successful run.
 
-    Three distinct answers, never collapsed into one: the manifest is absent
-    (export the day), unreadable (stop — treating it as absent would overwrite
-    a finished day), or malformed (warn and export). See internal dev doc,
-    Wiederanlauf.
+    A missing manifest means export. Every other manifest is parsed through the
+    versioned fail-closed contract before either skip or force is considered.
     """
-    manifest_path = cfg.layout.day_file(day, "manifest.json")
-
-    try:
-        with manifest_path.open("r", encoding="utf-8") as f:
-            m = json.load(f)
-    except (FileNotFoundError, NotADirectoryError):
+    timezone = tz or ZoneInfo(cfg.export.timezone)
+    start, end = local_day_bounds(day, timezone)
+    loaded = mf.load_existing(
+        day=day,
+        tz_name=cfg.export.timezone,
+        start_local=format_iso(start),
+        end_local=format_iso(end),
+        start_utc=format_iso(to_utc(start)),
+        end_utc=format_iso(to_utc(end)),
+        cfg=cfg,
+    )
+    if loaded is None or loaded.status != "ok":
         return None
-    except json.JSONDecodeError as exc:
-        logger.warning(
-            "Day %s: manifest %s is not valid JSON (%s); exporting the day again.",
-            day,
-            manifest_path,
-            exc,
-        )
-        return None
-    except OSError as exc:
-        raise ExportError(
-            f"Cannot read the manifest for {day}: {exc.strerror or exc}",
-            details=(
-                "The manifest records whether this day was already captured. "
-                "Without it HHE cannot tell a finished day from a missing one, "
-                "and exporting again would overwrite the existing files."
-            ),
-            remedies=(
-                Remedy(
-                    "Check the permissions on the export directory, then run again:",
-                    "hhe doctor",
-                ),
-            ),
-            context={"day": str(day), "output_dir": str(manifest_path)},
-        ) from exc
-
-    if not isinstance(m, dict):
-        logger.warning(
-            "Day %s: manifest %s does not contain an object; exporting the day again.",
-            day,
-            manifest_path,
-        )
-        return None
-    if m.get("status") != "ok":
-        return None
-    return f"manifest.json status=ok, {m.get('state_object_count', '?')} state objects"
+    return f"manifest.json status=ok, {loaded.state_object_count} state objects"

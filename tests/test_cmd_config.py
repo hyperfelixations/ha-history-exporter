@@ -153,12 +153,12 @@ def test_set_does_not_bake_environment_values_into_the_user_file(
     assert "  max_retries: 9" not in text
 
 
-def test_set_stores_the_token_in_the_credentials_file_only(capsys):
-    assert cli.main(["config", "set", "homeassistant.token", SYNTHETIC_TOKEN]) == 0
-    out = capsys.readouterr().out
+def test_set_rejects_a_positional_token_before_it_reaches_shell_history(capsys):
+    assert cli.main(["config", "set", "homeassistant.token", SYNTHETIC_TOKEN]) == 2
+    captured = capsys.readouterr()
 
-    assert SYNTHETIC_TOKEN not in out
-    assert secrets.read_token() == SYNTHETIC_TOKEN
+    assert SYNTHETIC_TOKEN not in captured.err
+    assert secrets.read_token() is None
     assert not paths.user_config_file().exists()
 
 
@@ -174,7 +174,7 @@ def test_set_reads_a_piped_token_without_echoing_it(monkeypatch, capsys):
 
     monkeypatch.setattr("sys.stdin", PipedStdin)
 
-    assert cli.main(["config", "set", "homeassistant.token"]) == 0
+    assert cli.main(["config", "set", "homeassistant.token", "--stdin"]) == 0
     assert SYNTHETIC_TOKEN not in capsys.readouterr().out
     assert secrets.read_token() == SYNTHETIC_TOKEN
 
@@ -197,6 +197,27 @@ def test_set_prompts_for_the_token_without_echo(monkeypatch, capsys):
     assert cli.main(["config", "set", "homeassistant.token"]) == 0
     assert prompts and "hidden" in prompts[0]
     assert secrets.read_token() == SYNTHETIC_TOKEN
+
+
+def test_set_requires_explicit_stdin_mode_for_a_piped_token(monkeypatch, capsys):
+    class PipedStdin:
+        @staticmethod
+        def isatty() -> bool:
+            return False
+
+        @staticmethod
+        def read() -> str:
+            raise AssertionError("stdin must not be read without --stdin")
+
+    monkeypatch.setattr("sys.stdin", PipedStdin)
+
+    assert cli.main(["config", "set", "homeassistant.token"]) == 2
+    assert "--stdin" in capsys.readouterr().err
+
+
+def test_stdin_mode_is_rejected_for_non_secret_values(capsys):
+    assert cli.main(["config", "set", "export.timezone", "--stdin"]) == 2
+    assert "only supported for secret" in capsys.readouterr().err
 
 
 def test_set_rejects_an_empty_token(monkeypatch, capsys):

@@ -21,27 +21,35 @@ import contextlib
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Callable, List
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
 from . import writers
-from .errors import AuthError, ConfigError, ExportError, Remedy
+from .errors import (
+    AuthError,
+    ConfigError,
+    ExportError,
+    Remedy,
+    safe_error_record,
+)
 from .ha_client import HomeAssistantClient
+from .history_records import iter_normalized_history
 from .planner import ExportPlan
+from .runtime.transaction import DayTransaction
 from .runtime.workspace import Workspace, open_workspace
 from .settings import Config, Format
 from .settings.model import FORMAT_ORDER
 from .time_utils import (
     format_iso,
     local_day_bounds,
-    local_offset_str,
     partial_day_bounds,
     to_utc,
 )
-from .validators import validate_csv, validate_jsonl, validate_parquet
+from .validators import ArtifactMetadata, validate_export_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -174,21 +182,18 @@ def _run_days(
             format_iso(end_dt),
         )
 
-        # Warn if this day is likely outside Recorder retention.
-        if cfg.recorder.purge_keep_days is not None:
-            today = datetime.now(tz).date()
-            days_ago = (today - day).days
-            if days_ago > cfg.recorder.purge_keep_days:
-                logger.warning(
-                    "Day %s is %d days ago - likely outside Recorder retention "
-                    "(%d days). Only raw REST history is queried; no Long-Term-Statistics.",
-                    day_str,
-                    days_ago,
-                    cfg.recorder.purge_keep_days,
-                )
-
-        # Load or create the manifest.
-        m = mf.load_or_create(
+        existing_manifest = mf.load_existing(
+            day=day,
+            tz_name=cfg.export.timezone,
+            start_local=format_iso(start_dt),
+            end_local=format_iso(end_dt),
+            start_utc=format_iso(to_utc(start_dt)),
+            end_utc=format_iso(to_utc(end_dt)),
+            cfg=cfg,
+        )
+        # Create a new attempt from the active request. The previous manifest
+        # stays untouched until the whole new generation commits.
+        m = mf.create(
             day=day,
             tz_name=cfg.export.timezone,
             start_local=format_iso(start_dt),
@@ -204,12 +209,23 @@ def _run_days(
             "minimal_response": cfg.history_request.minimal_response,
             "no_attributes": cfg.history_request.no_attributes,
             "significant_changes_only": cfg.history_request.significant_changes_only,
+            "skip_initial_state": cfg.history_request.skip_initial_state,
+        }
+        m.capture_profile = mf.capture_profile(cfg.history_request)
+        m.retention = {
+            "status": (
+                "partial_current"
+                if is_partial
+                else "known_safe"
+                if cfg.recorder.purge_keep_days is not None
+                else "unknown"
+            ),
+            "purge_keep_days": cfg.recorder.purge_keep_days,
         }
         m.mark_started(tz)
-        mf.save(m, cfg, cfg.storage.locked_file_retries, cfg.storage.locked_file_retry_sleep)
 
         try:
-            _export_day(
+            finalized = _export_day(
                 cfg=cfg,
                 day=day,
                 day_str=day_str,
@@ -223,6 +239,23 @@ def _run_days(
                 sleep=sleep,
             )
             m.mark_finished(tz, status="partial" if is_partial else "ok")
+            manifest_temp = workspace.work_dir / f"{day_str}.manifest.json"
+            mf.write_file(m, manifest_temp)
+            DayTransaction(
+                workspace=workspace,
+                day=day_str,
+                artifacts=[
+                    (
+                        finalized.prepared[fmt],
+                        cfg.layout.day_file(day, fmt.value),
+                    )
+                    for fmt in FORMAT_ORDER
+                    if fmt in finalized.prepared
+                ],
+                manifest=(manifest_temp, cfg.layout.day_file(day, "manifest.json")),
+                locked_file_retries=cfg.storage.locked_file_retries,
+                locked_file_retry_sleep=cfg.storage.locked_file_retry_sleep,
+            ).commit()
             logger.info(
                 "Day %s done - %d state objects, %d/%d entities had history.",
                 day_str,
@@ -234,20 +267,36 @@ def _run_days(
         except AuthError as exc:
             logger.error("Day %s aborted due to an authentication error.", day_str)
             m.mark_finished(tz, status="failed")
-            m.error = str(exc)
+            error = safe_error_record(exc)
+            m.error_code = error.code
+            m.error = error.summary
+            m.output_files = {fmt.value: None for fmt in FORMAT_ORDER}
+            m.artifacts = {fmt.value: None for fmt in FORMAT_ORDER}
+            if existing_manifest is None:
+                mf.save(
+                    m,
+                    cfg,
+                    cfg.storage.locked_file_retries,
+                    cfg.storage.locked_file_retry_sleep,
+                )
             raise  # fatal for the whole run
         except Exception as exc:
-            logger.error("Day %s failed: %s", day_str, exc, exc_info=True)
+            error = safe_error_record(exc)
+            logger.error("Day %s failed (%s).", day_str, type(exc).__name__)
             m.mark_finished(tz, status="failed")
-            m.error = str(exc)
+            m.error_code = error.code
+            m.error = error.summary
+            m.output_files = {fmt.value: None for fmt in FORMAT_ORDER}
+            m.artifacts = {fmt.value: None for fmt in FORMAT_ORDER}
+            if existing_manifest is None:
+                mf.save(
+                    m,
+                    cfg,
+                    cfg.storage.locked_file_retries,
+                    cfg.storage.locked_file_retry_sleep,
+                )
             any_error = True
         finally:
-            mf.save(
-                m,
-                cfg,
-                cfg.storage.locked_file_retries,
-                cfg.storage.locked_file_retry_sleep,
-            )
             _append_run_log(cfg, day_str, m)
 
         if day_idx < len(days) - 1:
@@ -274,7 +323,7 @@ def _export_day(
     tz: ZoneInfo,
     workspace: Workspace,
     sleep: Callable[[float], None] = time.sleep,
-) -> None:
+) -> _FinalizedDay:
     """Fetch one day, validate it, and publish the requested formats."""
     work_dir = workspace.work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -305,7 +354,7 @@ def _export_day(
             f"{len(fetched.failed_batches)} batch(es) failed for {day_str}.",
             details=(
                 "The day was not written. Every failed batch is recorded in "
-                "the day manifest with the entities it covered."
+                "the day manifest with its position and entity count."
             ),
             remedies=(
                 Remedy(
@@ -316,12 +365,31 @@ def _export_day(
             context={"day": day_str},
         )
 
-    written = _finalize_day(
+    if fetched.state_count == 0 and cfg.recorder.purge_keep_days is None:
+        raise ExportError(
+            f"Empty history for {day_str} cannot be verified without Recorder retention.",
+            details=(
+                "The response may mean there were no changes, or that Recorder data "
+                "has already been purged. No daily artifact was published as complete."
+            ),
+            remedies=(
+                Remedy(
+                    "Configure the Home Assistant Recorder retention used by this instance:",
+                    "hhe config set recorder.purge_keep_days 14",
+                ),
+            ),
+            context={"day": day_str},
+        )
+
+    finalized = _finalize_day(
         cfg=cfg,
         day=day,
         temp=temp,
         expected_rows=fetched.state_count,
-        workspace=workspace,
+        requested_entity_ids=entity_ids,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        tz=tz,
     )
 
     zero_history = sorted(set(entity_ids) - fetched.entities_with_history)
@@ -329,7 +397,15 @@ def _export_day(
     manifest.entity_count_with_history = len(fetched.entities_with_history)
     manifest.entity_count_zero_history = len(zero_history)
     manifest.zero_history_entities = zero_history
-    manifest.output_files = {fmt.value: written.get(fmt) for fmt in FORMAT_ORDER}
+    manifest.output_files = {
+        fmt.value: finalized.written.get(fmt) for fmt in FORMAT_ORDER
+    }
+    manifest.artifacts = {
+        fmt.value: asdict(finalized.artifacts[fmt])
+        if cfg.wants(fmt)
+        else None
+        for fmt in FORMAT_ORDER
+    }
 
     if zero_history:
         logger.debug(
@@ -338,7 +414,7 @@ def _export_day(
             len(zero_history),
         )
 
-    logger.info("  Written: %s", ", ".join(written.values()))
+    return finalized
 
 
 @dataclass
@@ -349,6 +425,15 @@ class _FetchedDay:
     entities_with_history: set = field(default_factory=set)
     failed_batches: list = field(default_factory=list)
     retried: int = 0
+
+
+@dataclass
+class _FinalizedDay:
+    """Validated artifacts and the formats published from them."""
+
+    written: dict[Format, str]
+    prepared: dict[Format, Path]
+    artifacts: dict[Format, ArtifactMetadata]
 
 
 def _fetch_day_rows(
@@ -399,6 +484,7 @@ def _fetch_day_rows(
                     minimal_response=cfg.history_request.minimal_response,
                     no_attributes=cfg.history_request.no_attributes,
                     significant_changes_only=cfg.history_request.significant_changes_only,
+                    skip_initial_state=cfg.history_request.skip_initial_state,
                 )
                 result.retried += client.total_retries - retries_before
                 manifest.request_count += 1
@@ -407,9 +493,20 @@ def _fetch_day_rows(
                 manifest.failed_request_count += 1
                 raise
             except Exception as exc:
-                logger.error("  Batch %d failed: %s", batch_idx, exc)
+                error = safe_error_record(
+                    exc,
+                    unexpected_summary="Unexpected error while fetching this batch.",
+                )
+                logger.error(
+                    "  Batch %d failed (%s).", batch_idx, type(exc).__name__
+                )
                 result.failed_batches.append(
-                    {"batch_index": batch_idx, "entities": batch, "error": str(exc)}
+                    {
+                        "batch_index": batch_idx,
+                        "entity_count": len(batch),
+                        "error_code": error.code,
+                        "error": error.summary,
+                    }
                 )
                 manifest.failed_request_count += 1
                 # Continue with remaining batches - day will be marked failed at end.
@@ -417,23 +514,24 @@ def _fetch_day_rows(
                     sleep(cfg.requests.sleep_between_requests)
                 continue
 
-            rows = writers.flatten_payload(payload)
-
-            # local_offset is computed per row from last_changed, so a DST
-            # transition day carries the correct offset for each timestamp.
-            for row in rows:
-                enriched = {
-                    **row,
-                    "local_offset": local_offset_str(row.get("last_changed"), tz),
-                }
+            rows = iter_normalized_history(
+                payload,
+                requested_entity_ids=batch,
+                start=start_dt,
+                end=end_dt,
+                settings=cfg.history_request,
+                local_timezone=tz,
+            )
+            batch_state_count = 0
+            for record in rows:
+                enriched = record.as_json_dict()
                 jw.write(enriched)
                 if cw is not None:
                     cw.write(enriched)
-                eid = row.get("entity_id")
-                if eid:
-                    result.entities_with_history.add(eid)
+                result.entities_with_history.add(record.entity_id)
+                batch_state_count += 1
 
-            result.state_count += len(rows)
+            result.state_count += batch_state_count
 
             if batch_idx < total_batches:
                 sleep(cfg.requests.sleep_between_requests)
@@ -446,18 +544,17 @@ def _finalize_day(
     day: date,
     temp: dict,
     expected_rows: int,
-    workspace: Workspace,
-) -> dict:
+    requested_entity_ids: List[str],
+    start_dt: datetime,
+    end_dt: datetime,
+    tz: ZoneInfo,
+) -> _FinalizedDay:
     """Validate, derive, and publish; return the file name per written format.
 
     Parquet is derived from the already validated JSONL, so it can only ever
     contain data that passed its own check first. Nothing reaches a final path
     before every local validation has passed.
     """
-    validate_jsonl(temp[Format.JSONL], expected_rows)
-    if cfg.wants(Format.CSV):
-        validate_csv(temp[Format.CSV], expected_rows)
-
     if cfg.wants(Format.PARQUET):
         logger.info("  Converting JSONL -> Parquet ...")
         writers.convert_jsonl_to_parquet(
@@ -466,22 +563,34 @@ def _finalize_day(
             row_group_size=PARQUET_ROW_GROUP_SIZE,
             compression=PARQUET_COMPRESSION,
         )
-        validate_parquet(temp[Format.PARQUET], expected_rows)
+    validation_paths = {Format.JSONL: temp[Format.JSONL]}
+    validation_paths.update(
+        {fmt: temp[fmt] for fmt in FORMAT_ORDER if cfg.wants(fmt)}
+    )
+    artifacts = validate_export_artifacts(
+        validation_paths,
+        expected_rows=expected_rows,
+        requested_entity_ids=requested_entity_ids,
+        start=start_dt,
+        end=end_dt,
+        settings=cfg.history_request,
+        local_timezone=tz,
+    )
 
-    written: dict = {}
+    written: dict[Format, str] = {}
+    prepared = {}
     for fmt in FORMAT_ORDER:
         if not cfg.wants(fmt):
             temp[fmt].unlink(missing_ok=True)
             continue
         final = cfg.layout.day_file(day, fmt.value)
-        workspace.promote(
-            temp[fmt],
-            final,
-            cfg.storage.locked_file_retries,
-            cfg.storage.locked_file_retry_sleep,
-        )
+        prepared[fmt] = temp[fmt]
         written[fmt] = final.name
-    return written
+    return _FinalizedDay(
+        written=written,
+        prepared=prepared,
+        artifacts=artifacts,
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -509,4 +618,6 @@ def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
-        logger.warning("Could not append to export_runs.jsonl: %s", exc)
+        logger.warning(
+            "Could not append to export_runs.jsonl (%s).", type(exc).__name__
+        )

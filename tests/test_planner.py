@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import json
-import logging
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from ha_history_exporter import planner
-from ha_history_exporter.errors import ExportError
+from ha_history_exporter import manifest, planner
+from ha_history_exporter.errors import ConfigError, ExportError
+from ha_history_exporter.settings import RecorderSettings
 from tests.helpers import make_config
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -17,21 +17,45 @@ DAY = date(2026, 7, 28)
 
 
 def write_manifest(cfg, *, status="ok", output_files=None):
-    path = cfg.layout.day_file(DAY, "manifest.json")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "date": str(DAY),
-                "status": status,
-                "state_object_count": 4,
-                "output_files": output_files
-                or {"jsonl": f"{DAY}.jsonl", "csv": None, "parquet": None},
-            }
-        ),
-        encoding="utf-8",
+    item = manifest.create(
+        DAY,
+        "Europe/Berlin",
+        "2026-07-28T00:00:00+02:00",
+        "2026-07-29T00:00:00+02:00",
+        "2026-07-27T22:00:00+00:00",
+        "2026-07-28T22:00:00+00:00",
+        cfg,
     )
-    return path
+    item.status = status
+    item.state_object_count = 4
+    item.entity_count_requested = 1
+    item.entity_count_with_history = 1
+    selected = output_files or {
+        "jsonl": f"{DAY}.jsonl",
+        "csv": None,
+        "parquet": None,
+    }
+    if status == "ok":
+        item.output_files = selected
+        item.artifacts = {
+            name: (
+                {
+                    "filename": filename,
+                    "size_bytes": 100,
+                    "sha256": "a" * 64,
+                    "row_count": 4,
+                    "logical_sha256": "b" * 64,
+                }
+                if filename is not None
+                else None
+            )
+            for name, filename in selected.items()
+        }
+    elif status == "failed":
+        item.error = "Synthetic export failure."
+        item.error_code = "export_failed"
+    manifest.save(item, cfg, 0, 0)
+    return cfg.layout.day_file(DAY, "manifest.json")
 
 
 def patch_calendar(monkeypatch):
@@ -97,18 +121,90 @@ def test_non_ok_manifest_does_not_skip(tmp_path, status):
     assert planner._check_existing(DAY, cfg) is None
 
 
-def test_invalid_manifest_warns_and_does_not_skip(tmp_path, caplog):
-    """A broken manifest is a statement about the run, not about readability."""
+def test_invalid_manifest_stops_instead_of_re_exporting(tmp_path):
     cfg = make_config(tmp_path)
     path = cfg.layout.day_file(DAY, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{broken", encoding="utf-8")
     cfg.layout.day_file(DAY, "jsonl").write_text("{}\n", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING):
-        assert planner._check_existing(DAY, cfg) is None
+    with pytest.raises(ExportError, match="valid JSON"):
+        planner._check_existing(DAY, cfg)
 
-    assert str(path) in caplog.text
+
+def test_force_does_not_bypass_an_invalid_manifest(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    patch_calendar(monkeypatch)
+    path = cfg.layout.day_file(DAY, "manifest.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(ExportError, match="valid JSON"):
+        planner.build_plan(DAY, DAY, BERLIN, cfg, force=True)
+
+
+def test_known_retention_blocks_days_that_touch_or_exceed_the_boundary(tmp_path):
+    cfg = make_config(tmp_path, purge_keep_days=14)
+
+    inside = planner.build_plan(
+        date(2026, 7, 17),
+        date(2026, 7, 17),
+        BERLIN,
+        cfg,
+        now=date(2026, 7, 30),
+    )
+    assert inside.days_to_export == [date(2026, 7, 17)]
+
+    with pytest.raises(ConfigError, match="Recorder retention"):
+        planner.build_plan(
+            date(2026, 7, 16),
+            date(2026, 7, 16),
+            BERLIN,
+            cfg,
+            now=date(2026, 7, 30),
+        )
+
+
+def test_existing_ok_manifest_outside_retention_still_skips_without_force(
+    tmp_path,
+):
+    cfg = make_config(tmp_path, purge_keep_days=14)
+    write_manifest(cfg)
+
+    plan = planner.build_plan(
+        DAY,
+        DAY,
+        BERLIN,
+        cfg,
+        now=date(2026, 8, 20),
+    )
+
+    assert plan.days_skipped_existing == [DAY]
+    with pytest.raises(ConfigError, match="Recorder retention"):
+        planner.build_plan(
+            DAY,
+            DAY,
+            BERLIN,
+            cfg,
+            force=True,
+            now=date(2026, 8, 20),
+        )
+
+
+def test_unknown_retention_warns_but_allows_a_new_export(tmp_path, caplog):
+    cfg = replace(make_config(tmp_path), recorder=RecorderSettings())
+
+    with caplog.at_level("WARNING"):
+        plan = planner.build_plan(
+            DAY,
+            DAY,
+            BERLIN,
+            cfg,
+            now=date(2026, 8, 20),
+        )
+
+    assert plan.days_to_export == [DAY]
+    assert "retention is not configured" in caplog.text
 
 
 def test_an_unreadable_manifest_stops_the_run_instead_of_re_exporting(

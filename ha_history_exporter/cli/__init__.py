@@ -49,14 +49,28 @@ def main(argv: List[str] | None = None) -> int:
         _log_if_configured(logger.info, "Interrupted by user.")
         return 130
     except Exception as exc:
-        _log_if_configured(logger.exception, "Unexpected error: %s", exc)
+        location = _safe_exception_location(exc)
+        if location is None:
+            _log_if_configured(
+                logger.error,
+                "Unexpected internal error (%s).",
+                type(exc).__name__,
+            )
+        else:
+            _log_if_configured(
+                logger.error,
+                "Unexpected internal error (%s) at %s.",
+                type(exc).__name__,
+                location,
+            )
         render_error(
             HHEError(
-                f"Unexpected error: {exc}",
+                "Unexpected internal error.",
                 details=(
                     "This is either a defect in HHE or an unhandled "
-                    "environment condition. When a log file was already open, "
-                    "it contains the full traceback."
+                    "environment condition. Arbitrary exception text and "
+                    "tracebacks are deliberately not written to the terminal "
+                    "or log because they may contain private data."
                 ),
                 remedies=(
                     Remedy(
@@ -67,6 +81,22 @@ def main(argv: List[str] | None = None) -> int:
             )
         )
         return 1
+
+
+def _safe_exception_location(exc: BaseException) -> str | None:
+    """Return the deepest package frame without exposing filesystem paths."""
+    location = None
+    traceback = exc.__traceback__
+    while traceback is not None:
+        frame = traceback.tb_frame
+        module = frame.f_globals.get("__name__")
+        if isinstance(module, str) and (
+            module == "ha_history_exporter"
+            or module.startswith("ha_history_exporter.")
+        ):
+            location = f"{module}:{frame.f_code.co_name}:{traceback.tb_lineno}"
+        traceback = traceback.tb_next
+    return location
 
 
 def _log_if_configured(

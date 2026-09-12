@@ -78,6 +78,7 @@ class HistoryRequestSettings:
     minimal_response: bool = False
     no_attributes: bool = False
     significant_changes_only: bool = False
+    skip_initial_state: bool = True
 
 
 @dataclass(frozen=True)

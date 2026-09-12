@@ -1,0 +1,129 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    name: Verify the published release and its assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --disable-pip-version-check twine
+      - name: Validate tag, target, version, assets, and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          TARGET_COMMITISH: ${{ github.event.release.target_commitish }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
+          tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          target_commit="$(git rev-parse "$TARGET_COMMITISH^{commit}")"
+          [[ "$tag_commit" == "$target_commit" ]]
+          version="${RELEASE_TAG#v}"
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          [[ "$package_version" == "$version" ]]
+          mkdir verified-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.whl' --pattern '*.tar.gz' --pattern checksums.txt \
+            --dir verified-assets
+          cd verified-assets
+          [[ "$(find . -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1 ]]
+          [[ "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1 ]]
+          [[ "$(wc -l < checksums.txt)" -eq 2 ]]
+          awk '{ if ($2 ~ /[\\\/]/ || $2 !~ /\.(whl|tar\.gz)$/) exit 1 }' checksums.txt
+          sha256sum --check --strict checksums.txt
+          [[ -f "ha_history_exporter-$version-py3-none-any.whl" ]]
+          [[ -f "ha_history_exporter-$version.tar.gz" ]]
+          python -m twine check *.whl *.tar.gz
+          python - "$version" <<'PY'
+          import sys
+          import tarfile
+          import zipfile
+          from email.parser import BytesParser
+          from pathlib import Path
+
+          expected_version = sys.argv[1]
+          archives = sorted(Path.cwd().glob("ha_history_exporter-*"))
+          assert len(archives) == 2
+
+          for archive in archives:
+              if archive.suffix == ".whl":
+                  with zipfile.ZipFile(archive) as package:
+                      names = [
+                          name
+                          for name in package.namelist()
+                          if ".dist-info/" in name and name.endswith("/METADATA")
+                      ]
+                      assert len(names) == 1
+                      payload = package.read(names[0])
+              else:
+                  with tarfile.open(archive, "r:gz") as package:
+                      members = [
+                          member
+                          for member in package.getmembers()
+                          if member.isfile()
+                          and member.name.endswith("/PKG-INFO")
+                          and member.name.count("/") == 1
+                      ]
+                      assert len(members) == 1
+                      handle = package.extractfile(members[0])
+                      assert handle is not None
+                      payload = handle.read()
+
+              metadata = BytesParser().parsebytes(payload)
+              assert metadata["Name"] == "ha-history-exporter"
+              assert metadata["Version"] == expected_version
+          PY
+      - name: Audit the release history and distributions for private data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/privacy_audit.py --repository . --history \
+            --artifact verified-assets/*.whl \
+            --artifact verified-assets/*.tar.gz
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: verified-pypi-distributions
+          path: |
+            verified-assets/*.whl
+            verified-assets/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish verified distributions
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: verified-pypi-distributions
+          path: dist
+      - name: Upload through Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          print-hash: true

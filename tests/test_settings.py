@@ -17,10 +17,12 @@ from ha_history_exporter.errors import ConfigError, CredentialsError
 from ha_history_exporter.settings import (
     Config,
     Format,
+    HistoryRequestSettings,
     paths,
     resolve,
     schema,
     secrets,
+    sources,
 )
 from ha_history_exporter.settings.schema import KeyStatus
 
@@ -84,6 +86,13 @@ def test_request_defaults_follow_the_sizing_proven_in_production():
     requests = Config().requests
     assert requests.batch_size == 15
     assert requests.sleep_between_requests == 0.7
+
+
+def test_history_defaults_capture_only_rows_inside_the_requested_window():
+    defaults = HistoryRequestSettings()
+
+    assert defaults.significant_changes_only is False
+    assert defaults.skip_initial_state is True
 
 
 def test_default_output_directory_is_in_the_home_directory():
@@ -378,7 +387,9 @@ def test_invalid_yaml_is_reported_with_the_file(isolated_user_environment):
     path = user_config(isolated_user_environment, "requests:\n  - [\n")
     with pytest.raises(ConfigError) as exc:
         resolve(environ=SYNTHETIC_ENV)
-    assert str(path) in exc.value.summary
+    assert path.name in exc.value.summary
+    assert "line " in exc.value.summary
+    assert "[" not in exc.value.summary
 
 
 def test_top_level_scalar_configuration_is_rejected(isolated_user_environment):
@@ -446,6 +457,19 @@ def test_invalid_values_are_rejected_per_key(key_path, value, message):
         schema.BY_PATH[key_path].coerce(value)
 
 
+def test_scalar_conversion_errors_identify_the_invalid_value():
+    marker = "not-an-integer"
+
+    with pytest.raises(ConfigError) as caught:
+        sources.parse_scalar(
+            schema.BY_PATH["requests.batch_size"],
+            marker,
+            "env:HHE_REQUEST_BATCH_SIZE",
+        )
+
+    assert marker in caught.value.summary
+
+
 def test_optional_integer_accepts_null():
     assert schema.BY_PATH["recorder.purge_keep_days"].coerce(None) is None
 
@@ -503,6 +527,45 @@ def test_the_legacy_names_win_when_both_are_set():
 def test_a_trailing_slash_is_stripped_from_the_url():
     environ = {**SYNTHETIC_ENV, "HA_URL": "http://home-assistant.invalid/"}
     assert resolve(environ=environ).config.homeassistant.url.endswith("invalid")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://home-assistant.invalid",
+        "http://" + "user:password@" + "home-assistant.invalid",
+        "http://home-assistant.invalid/subpath",
+        "http://home-assistant.invalid/?" + "token=synthetic-private-marker",
+        "http://home-assistant.invalid/#fragment",
+        "home-assistant.invalid",
+        "http://",
+    ],
+)
+def test_invalid_home_assistant_urls_are_rejected_without_echoing_them(url):
+    with pytest.raises(ConfigError) as exc:
+        resolve(environ={"HA_URL": url, "HA_TOKEN": "synthetic-test-token"})
+
+    rendered = " ".join(
+        [exc.value.summary, exc.value.details or "", *exc.value.context.values()]
+    )
+    if url != "http://":
+        assert url not in rendered
+    assert "synthetic-private-marker" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://home-assistant.invalid:8123", "http://home-assistant.invalid:8123"),
+        ("https://192.0.2.10/", "https://192.0.2.10"),
+        ("http://[2001:db8::1]:8123/", "http://[2001:db8::1]:8123"),
+    ],
+)
+def test_valid_home_assistant_base_urls_are_normalized(url, expected):
+    settings = resolve(
+        environ={"HA_URL": url, "HA_TOKEN": "synthetic-test-token"}
+    )
+    assert settings.config.homeassistant.url == expected
 
 
 def test_url_falls_back_to_the_configuration_file(isolated_user_environment):

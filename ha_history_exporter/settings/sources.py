@@ -117,7 +117,7 @@ def file_entries(path: Path) -> dict[str, Entry]:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(
-            f"Cannot read configuration file {path}: {exc}",
+            f"Cannot read configuration file {path.name}.",
             context={"config_file": str(path)},
         ) from exc
 
@@ -125,9 +125,15 @@ def file_entries(path: Path) -> dict[str, Entry]:
         data = yaml.safe_load(text) or {}
         node = yaml.compose(text)
     except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        line = f" at line {mark.line + 1}" if mark is not None else ""
         raise ConfigError(
-            f"Invalid YAML in {path}: {exc}",
-            details="The configuration file exists but could not be parsed as YAML.",
+            f"Invalid YAML in {path.name}{line}.",
+            details=(
+                "The configuration file exists but could not be parsed. Parser "
+                "snippets are deliberately not shown because they may contain "
+                "private values."
+            ),
             context={"config_file": str(path)},
         ) from exc
 

@@ -96,12 +96,16 @@ def test_atomic_replace_retries_permission_error(tmp_path, monkeypatch):
             "2026-07-28T10:00:00.123456+02:00",
             datetime(2026, 7, 28, 8, 0, 0, 123456, tzinfo=timezone.utc),
         ),
-        ("not-a-time", None),
-        (None, None),
     ],
 )
 def test_parse_ts_utc(value, expected):
     assert writers._parse_ts_utc(value) == expected
+
+
+@pytest.mark.parametrize("value", ["not-a-time", None, "2026-07-28T10:00:00"])
+def test_parse_ts_utc_rejects_invalid_or_naive_values(value):
+    with pytest.raises(ValidationError):
+        writers._parse_ts_utc(value)
 
 
 def test_parquet_schema_is_stable():
@@ -114,8 +118,13 @@ def test_parquet_schema_is_stable():
         "last_updated",
         "attributes_json",
         "local_offset",
+        "extra_json",
     ]
     assert not schema.field("entity_id").nullable
+    assert not schema.field("state").nullable
+    assert not schema.field("last_changed").nullable
+    assert not schema.field("last_updated").nullable
+    assert not schema.field("local_offset").nullable
     assert str(schema.field("last_changed").type) == "timestamp[us, tz=UTC]"
 
 
@@ -126,6 +135,7 @@ def test_convert_jsonl_to_parquet_preserves_logical_values(tmp_path):
         {
             **state_row("sensor.one", "1"),
             "local_offset": "+02:00",
+            "context": {"id": "synthetic-context"},
         },
         {
             **state_row(
@@ -155,9 +165,12 @@ def test_convert_jsonl_to_parquet_preserves_logical_values(tmp_path):
         "friendly_name": "Zwei"
     }
     assert records[0]["last_changed"].tzinfo is not None
+    assert json.loads(records[0]["extra_json"]) == {
+        "context": {"id": "synthetic-context"}
+    }
 
 
-def test_convert_jsonl_to_parquet_turns_invalid_timestamp_into_null(tmp_path):
+def test_convert_jsonl_to_parquet_rejects_invalid_timestamp(tmp_path):
     src = tmp_path / "source.jsonl"
     dst = tmp_path / "output.parquet"
     row = {
@@ -166,11 +179,10 @@ def test_convert_jsonl_to_parquet_turns_invalid_timestamp_into_null(tmp_path):
     }
     src.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
-    writers.convert_jsonl_to_parquet(src, dst)
+    with pytest.raises(ValidationError, match="last_changed"):
+        writers.convert_jsonl_to_parquet(src, dst)
 
-    record = pq.read_table(dst).to_pylist()[0]
-    assert record["last_changed"] is None
-    assert record["last_updated"] is None
+    assert not dst.exists()
 
 
 def test_convert_jsonl_to_parquet_requires_source(tmp_path):

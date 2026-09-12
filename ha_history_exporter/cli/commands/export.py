@@ -66,7 +66,7 @@ def run(args: argparse.Namespace) -> int:
         tz = ZoneInfo(cfg.export.timezone)
     except Exception as exc:
         raise ConfigError(
-            f"Invalid timezone '{cfg.export.timezone}': {exc}",
+            f"Invalid timezone '{cfg.export.timezone}'.",
             details=(
                 "export.timezone must be an IANA time zone name, "
                 "for example Europe/Berlin, UTC, or America/New_York."
@@ -148,7 +148,7 @@ def run(args: argparse.Namespace) -> int:
         backoff_seconds=cfg.requests.backoff,
     ) as client:
 
-        logger.info("Checking HA API at %s ...", cfg.homeassistant.url)
+        logger.info("Checking the Home Assistant API at %s ...", cfg.homeassistant.url)
         client.check_api()
 
         logger.info("Fetching entity list from /api/states ...")

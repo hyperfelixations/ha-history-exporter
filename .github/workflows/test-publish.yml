@@ -1,0 +1,125 @@
+name: Publish to TestPyPI
+
+run-name: TestPyPI v${{ inputs.version }} from ${{ inputs.expected_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact unused test version, for example 1.4.0rc1"
+        required: true
+        type: string
+      expected_sha:
+        description: "Full 40-character commit SHA approved for this rehearsal"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testpypi
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate TestPyPI request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate owner, branch, SHA, and version
+        shell: bash
+        env:
+          ACTUAL_SHA: ${{ github.sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          SELECTED_REF: ${{ github.ref }}
+          TRIGGERING_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          expected_sha="$(echo "$EXPECTED_SHA" | xargs | tr '[:upper:]' '[:lower:]')"
+          [[ "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
+          [[ "$SELECTED_REF" == "refs/heads/main" ]]
+          [[ "$expected_sha" =~ ^[0-9a-f]{40}$ && "$expected_sha" == "$ACTUAL_SHA" ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          [[ "$package_version" == "$RELEASE_VERSION" ]]
+
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.13"]
+    env:
+      HA_URL: ""
+      HA_TOKEN: ""
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
+      - run: |
+          python -m ruff check .
+          python -m mypy
+
+  build:
+    name: Build TestPyPI distributions
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --disable-pip-version-check build twine
+      - run: |
+          python -m build --outdir dist
+          python -m twine check dist/*
+          python tools/privacy_audit.py --repository . \
+            --artifact dist/*.whl --artifact dist/*.tar.gz
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: testpypi-distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: testpypi-distributions
+          path: dist
+      - name: Upload through Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          print-hash: true
