@@ -58,8 +58,8 @@
     },
     "parquet": {
       "filename": "2026-10-25.parquet",
-      "size_bytes": 2812,
-      "sha256": "33a2c262c38a2e420aaacc79570917b50ba05255ecc45ca5b695f31297c17891",
+      "size_bytes": null,
+      "sha256": null,
       "row_count": 4,
       "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
     }

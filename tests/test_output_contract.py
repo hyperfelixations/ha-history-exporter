@@ -2,9 +2,11 @@
 
 Everything this module asserts must survive every refactoring: the directory
 layout, the file names, the byte content of JSONL and CSV, the Parquet schema
-and values, the manifest field set, and the run log. Home Assistant is
-represented by an in-memory substitute, so the whole contract is reproducible
-without a network.
+and values, the manifest field set, artifact integrity, and the run log. Home
+Assistant is represented by an in-memory substitute, so the whole contract is
+reproducible without a network. Parquet's physical encoding may vary across
+supported pyarrow versions; its semantics and its manifest metadata for the
+file produced by the current run remain fully verified.
 
 The export is driven through :func:`exporter.run_export` rather than through the
 command line, so that a change to the command grammar or to configuration key
@@ -18,6 +20,7 @@ approved, and inspect the resulting diff line by line.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import date, datetime
@@ -294,11 +297,17 @@ def day_file(output: Path, day: date, suffix: str) -> Path:
 # ── normalisation helpers ─────────────────────────────────────────────────────
 
 def stable_manifest(path: Path) -> dict[str, Any]:
-    """Manifest content with the run-dependent values blanked, keys kept."""
+    """Manifest content with run- or encoder-dependent values blanked."""
     data = json.loads(path.read_text(encoding="utf-8"))
     for field in VOLATILE_MANIFEST_FIELDS:
         assert field in data, f"manifest lost the field {field}"
         data[field] = None
+
+    parquet = data["artifacts"]["parquet"]
+    assert parquet is not None, "golden export lost its Parquet artifact"
+    for field in ("size_bytes", "sha256"):
+        assert field in parquet, f"Parquet artifact lost the field {field}"
+        parquet[field] = None
     return data
 
 
@@ -350,6 +359,34 @@ def read_golden_json(name: str) -> Any:
 
 
 # ── the golden comparisons ────────────────────────────────────────────────────
+
+def test_stable_manifest_ignores_only_parquet_physical_encoding_metadata(
+    produced: Path, tmp_path: Path
+):
+    source = json.loads(
+        day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8")
+    )
+    changed = json.loads(json.dumps(source))
+    changed["artifacts"]["parquet"]["size_bytes"] += 1
+    changed["artifacts"]["parquet"]["sha256"] = "0" * 64
+
+    source_path = tmp_path / "source.manifest.json"
+    changed_path = tmp_path / "changed.manifest.json"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    changed_path.write_text(json.dumps(changed), encoding="utf-8")
+
+    assert stable_manifest(source_path) == stable_manifest(changed_path)
+
+    changed["artifacts"]["parquet"]["logical_sha256"] = "1" * 64
+    changed_path.write_text(json.dumps(changed), encoding="utf-8")
+    assert stable_manifest(source_path) != stable_manifest(changed_path)
+
+    changed["artifacts"]["parquet"]["logical_sha256"] = source["artifacts"][
+        "parquet"
+    ]["logical_sha256"]
+    changed["artifacts"]["jsonl"]["sha256"] = "2" * 64
+    changed_path.write_text(json.dumps(changed), encoding="utf-8")
+    assert stable_manifest(source_path) != stable_manifest(changed_path)
 
 @pytest.mark.parametrize("day", [NORMAL_DAY, DST_DAY], ids=["normal-day", "dst-day"])
 def test_jsonl_bytes_match_the_golden_fixture(produced: Path, day: date):
@@ -403,6 +440,23 @@ def test_parquet_profile_matches_the_golden_fixture(produced: Path, day: date):
 def test_manifest_matches_the_golden_fixture(produced: Path, day: date):
     manifest = stable_manifest(day_file(produced, day, "manifest.json"))
     assert manifest == read_golden_json(f"{day}.manifest.json")
+
+
+@pytest.mark.parametrize("day", [NORMAL_DAY, DST_DAY], ids=["normal-day", "dst-day"])
+def test_manifest_physical_metadata_matches_the_produced_artifacts(
+    produced: Path, day: date
+):
+    manifest = json.loads(
+        day_file(produced, day, "manifest.json").read_text(encoding="utf-8")
+    )
+    for suffix in ("jsonl", "csv", "parquet"):
+        artifact_path = day_file(produced, day, suffix)
+        metadata = manifest["artifacts"][suffix]
+        assert metadata["filename"] == artifact_path.name
+        assert metadata["size_bytes"] == artifact_path.stat().st_size
+        assert metadata["sha256"] == hashlib.sha256(
+            artifact_path.read_bytes()
+        ).hexdigest()
 
 
 def test_run_log_matches_the_golden_fixture(produced: Path):
