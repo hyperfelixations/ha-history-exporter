@@ -303,11 +303,12 @@ def stable_manifest(path: Path) -> dict[str, Any]:
         assert field in data, f"manifest lost the field {field}"
         data[field] = None
 
-    parquet = data["artifacts"]["parquet"]
-    assert parquet is not None, "golden export lost its Parquet artifact"
-    for field in ("size_bytes", "sha256"):
-        assert field in parquet, f"Parquet artifact lost the field {field}"
-        parquet[field] = None
+    for artifact_name in ("jsonl", "parquet"):
+        artifact = data["artifacts"][artifact_name]
+        assert artifact is not None, f"golden export lost its {artifact_name} artifact"
+        for field in ("size_bytes", "sha256"):
+            assert field in artifact, f"{artifact_name} artifact lost the field {field}"
+            artifact[field] = None
     return data
 
 
@@ -360,15 +361,17 @@ def read_golden_json(name: str) -> Any:
 
 # ── the golden comparisons ────────────────────────────────────────────────────
 
-def test_stable_manifest_ignores_only_parquet_physical_encoding_metadata(
+def test_stable_manifest_ignores_only_platform_dependent_physical_metadata(
     produced: Path, tmp_path: Path
 ):
     source = json.loads(
         day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8")
     )
     changed = json.loads(json.dumps(source))
+    changed["artifacts"]["jsonl"]["size_bytes"] += 1
+    changed["artifacts"]["jsonl"]["sha256"] = "0" * 64
     changed["artifacts"]["parquet"]["size_bytes"] += 1
-    changed["artifacts"]["parquet"]["sha256"] = "0" * 64
+    changed["artifacts"]["parquet"]["sha256"] = "1" * 64
 
     source_path = tmp_path / "source.manifest.json"
     changed_path = tmp_path / "changed.manifest.json"
@@ -377,14 +380,14 @@ def test_stable_manifest_ignores_only_parquet_physical_encoding_metadata(
 
     assert stable_manifest(source_path) == stable_manifest(changed_path)
 
-    changed["artifacts"]["parquet"]["logical_sha256"] = "1" * 64
+    changed["artifacts"]["parquet"]["logical_sha256"] = "2" * 64
     changed_path.write_text(json.dumps(changed), encoding="utf-8")
     assert stable_manifest(source_path) != stable_manifest(changed_path)
 
     changed["artifacts"]["parquet"]["logical_sha256"] = source["artifacts"][
         "parquet"
     ]["logical_sha256"]
-    changed["artifacts"]["jsonl"]["sha256"] = "2" * 64
+    changed["artifacts"]["csv"]["sha256"] = "3" * 64
     changed_path.write_text(json.dumps(changed), encoding="utf-8")
     assert stable_manifest(source_path) != stable_manifest(changed_path)
 

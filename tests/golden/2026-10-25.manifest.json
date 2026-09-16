@@ -44,8 +44,8 @@
   "artifacts": {
     "jsonl": {
       "filename": "2026-10-25.jsonl",
-      "size_bytes": 1167,
-      "sha256": "6e196e8c325992c273d5c003e7b1d743b003b0935a7ff10f472ecd1bdb15f306",
+      "size_bytes": null,
+      "sha256": null,
       "row_count": 4,
       "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
     },
