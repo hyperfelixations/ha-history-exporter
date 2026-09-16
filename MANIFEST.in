@@ -1,10 +1,10 @@
-# Files the source distribution needs beyond the package itself: the pinned
-# dependency lists, the repository files the test suite reads, and the
+# Files the source distribution needs beyond the package itself: the
+# development dependency list, the repository files the test suite reads, and the
 # complete test suite, so an sdist can be verified on its own.
 include LICENSE
 include README.md
+include CONTRIBUTING.md
 include MANIFEST.in
-include requirements.txt
 include requirements-dev.txt
 include .gitattributes
 include .gitignore

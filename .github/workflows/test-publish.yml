@@ -46,7 +46,7 @@ jobs:
           [[ "$SELECTED_REF" == "refs/heads/main" ]]
           [[ "$expected_sha" =~ ^[0-9a-f]{40}$ && "$expected_sha" == "$ACTUAL_SHA" ]]
           [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
-          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' src/ha_history_exporter/__init__.py)"
           [[ "$package_version" == "$RELEASE_VERSION" ]]
 
   test:
@@ -71,7 +71,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
-      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check ".[parquet]"
       - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
       - run: |
           python -m ruff check .

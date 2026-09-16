@@ -39,7 +39,7 @@ jobs:
           target_commit="$(git rev-parse "$TARGET_COMMITISH^{commit}")"
           [[ "$tag_commit" == "$target_commit" ]]
           version="${RELEASE_TAG#v}"
-          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' src/ha_history_exporter/__init__.py)"
           [[ "$package_version" == "$version" ]]
           mkdir verified-assets
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \

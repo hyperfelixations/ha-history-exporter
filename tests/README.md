@@ -30,5 +30,6 @@ instance.
 
 ```powershell
 python -m pip install -r requirements-dev.txt
+python -m pip install -e ".[parquet]"
 python -m pytest --cov=ha_history_exporter --cov-report=term-missing
 ```

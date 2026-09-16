@@ -77,7 +77,7 @@ jobs:
               ;;
             *) exit 1 ;;
           esac
-          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' ha_history_exporter/__init__.py)"
+          package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' src/ha_history_exporter/__init__.py)"
           [[ "$package_version" == "$version" ]]
           tag="v$version"
           ! git show-ref --verify --quiet "refs/tags/$tag"
@@ -108,7 +108,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
-      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check ".[parquet]"
       - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
       - run: |
           python -m ruff check .

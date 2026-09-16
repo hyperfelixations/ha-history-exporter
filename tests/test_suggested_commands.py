@@ -18,7 +18,7 @@ import pytest
 from ha_history_exporter.cli.parser import build_parser
 from ha_history_exporter.settings import schema
 
-PACKAGE = Path(__file__).parents[1] / "ha_history_exporter"
+PACKAGE = Path(__file__).parents[1] / "src" / "ha_history_exporter"
 
 #: How a suggestion may name the program.
 PROGRAMS = ("hhe", "ha-history-exporter", "python -m ha_history_exporter")

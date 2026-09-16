@@ -44,13 +44,12 @@ Repository = "https://github.com/hyperfelixations/ha-history-exporter"
 Issues = "https://github.com/hyperfelixations/ha-history-exporter/issues"
 
 [tool.setuptools]
-packages = [
-  "ha_history_exporter",
-  "ha_history_exporter.cli",
-  "ha_history_exporter.cli.commands",
-  "ha_history_exporter.runtime",
-  "ha_history_exporter.settings",
-]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ha_history_exporter*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 ha_history_exporter = ["py.typed"]
@@ -78,7 +77,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.10"
-files = ["ha_history_exporter"]
+files = ["src/ha_history_exporter"]
 warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = true
@@ -103,6 +102,7 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--disable-socket",
+  "--import-mode=importlib",
 ]
 testpaths = ["tests"]
 

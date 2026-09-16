@@ -152,7 +152,7 @@ def test_runtime_output_stays_ascii():
     non_ascii = re.compile(r"[^\x00-\x7f]")
     offenders = []
 
-    for path in sorted((ROOT / "ha_history_exporter").rglob("*.py")):
+    for path in sorted((ROOT / "src" / "ha_history_exporter").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         docstrings = {
             doc

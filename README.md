@@ -98,8 +98,8 @@ pip install .
 hhe export
 ```
 
-`python -m ha_history_exporter export` works from a checkout without installing
-anything, as long as the dependencies are present.
+The project uses a `src` layout, so install it before running either console
+command or `python -m ha_history_exporter` from a clone.
 
 ## Quick start
 
@@ -483,25 +483,8 @@ so it cannot block waiting for an answer nobody is there to give.
 
 ## Development
 
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest --cov=ha_history_exporter --cov-report=term-missing
-python -m ruff check .
-python -m mypy
-python -m build
-```
-
-The test suite is fully isolated: network sockets are disabled during pytest
-runs, `HA_URL`/`HA_TOKEN` are removed before every test, the user configuration
-directory and the working directory are redirected into temporary paths, and
-Home Assistant is always represented by an in-memory substitute. The suite
-cannot reach a real instance. The same suite runs on Linux and Windows against
-Python 3.10 and 3.13 in GitHub Actions, together with lint, type check, and a
-package build.
-
-What an export produces is pinned byte-for-byte against golden fixtures in
-`tests/golden/`. If a change alters them, that is the change asking to be
-looked at: review the diff, then regenerate with `python tools/refresh_golden.py`.
+Development setup, required quality checks, test isolation, and golden-fixture
+review are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
