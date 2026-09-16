@@ -156,6 +156,19 @@ def test_release_paths_privacy_scan_history_and_distributions():
         assert "--artifact" in commands
 
 
+def test_every_distribution_path_installs_and_smoke_tests_the_wheel():
+    jobs = [
+        load(TESTS)["jobs"]["packaging"],
+        load(RELEASE)["jobs"]["build"],
+        load(TEST_PUBLISH)["jobs"]["build"],
+        load(PUBLISH)["jobs"]["verify-release"],
+    ]
+
+    for job in jobs:
+        commands = " ".join(step.get("run", "") for step in steps(job))
+        assert "tools/verify_wheel.py" in commands
+
+
 def test_only_actual_upload_jobs_receive_oidc():
     for path in workflow_files():
         for name, job in load(path)["jobs"].items():

@@ -18,6 +18,7 @@ SUITE_INPUTS = (
     ".github/workflows/tests.yml",
     "tools/refresh_golden.py",
     "tools/privacy_audit.py",
+    "tools/verify_wheel.py",
 )
 
 

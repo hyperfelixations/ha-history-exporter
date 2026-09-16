@@ -101,6 +101,9 @@ jobs:
       - name: Check distribution metadata
         run: python -m twine check dist/*
 
+      - name: Install and smoke-test the wheel
+        run: python tools/verify_wheel.py dist
+
       - name: Audit distributions for private data
         run: >-
           python tools/privacy_audit.py --repository .

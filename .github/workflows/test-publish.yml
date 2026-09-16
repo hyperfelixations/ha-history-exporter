@@ -95,6 +95,7 @@ jobs:
       - run: |
           python -m build --outdir dist
           python -m twine check dist/*
+          python tools/verify_wheel.py dist
           python tools/privacy_audit.py --repository . \
             --artifact dist/*.whl --artifact dist/*.tar.gz
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5

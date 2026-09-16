@@ -54,6 +54,9 @@ jobs:
           [[ -f "ha_history_exporter-$version-py3-none-any.whl" ]]
           [[ -f "ha_history_exporter-$version.tar.gz" ]]
           python -m twine check *.whl *.tar.gz
+          cd ..
+          python tools/verify_wheel.py verified-assets
+          cd verified-assets
           python - "$version" <<'PY'
           import sys
           import tarfile

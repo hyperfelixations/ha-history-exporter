@@ -135,6 +135,7 @@ jobs:
           set -euo pipefail
           python -m build --outdir "$DIST_DIR"
           python -m twine check "$DIST_DIR"/*
+          python tools/verify_wheel.py "$DIST_DIR"
           python tools/privacy_audit.py --repository . \
             --artifact "$DIST_DIR"/*.whl --artifact "$DIST_DIR"/*.tar.gz
           cd "$DIST_DIR"
