@@ -27,7 +27,7 @@ def _replace_file(src: Path, dst: Path, retries: int, retry_sleep: float) -> Non
 
 
 def _fsync_file(path: Path) -> None:
-    with path.open("rb") as handle:
+    with path.open("rb+") as handle:
         os.fsync(handle.fileno())
 
 

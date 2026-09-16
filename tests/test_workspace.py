@@ -1,4 +1,4 @@
-"""Tests for run isolation: working directories, locking, and promotion."""
+"""Tests for run isolation, working directories, and output locking."""
 
 from __future__ import annotations
 
@@ -144,47 +144,6 @@ def test_cleanup_only_touches_run_directories(tmp_path):
 
 def test_cleanup_on_a_missing_root_is_harmless(tmp_path):
     assert ws.cleanup_stale(tmp_path / "absent") == 0
-
-
-# ── promotion ─────────────────────────────────────────────────────────────────
-
-def test_promote_moves_the_file_to_its_final_path(tmp_path):
-    cfg = config(tmp_path)
-    workspace = ws.open_workspace(cfg)
-    try:
-        source = workspace.work_dir / "2026-07-28.jsonl"
-        source.write_text("payload", encoding="utf-8")
-        target = cfg.layout.day_file("2026-07-28", "jsonl")
-
-        workspace.promote(source, target, 0, 0)
-
-        assert target.read_text(encoding="utf-8") == "payload"
-        assert not source.exists()
-    finally:
-        workspace.close()
-
-
-def test_promote_stages_on_the_target_filesystem_when_devices_differ(
-    tmp_path, monkeypatch
-):
-    """A cross-device move is copied into staging first, then replaced."""
-    cfg = config(tmp_path)
-    workspace = ws.open_workspace(cfg)
-    try:
-        monkeypatch.setattr(ws, "same_filesystem", lambda a, b: False)
-        source = workspace.work_dir / "2026-07-28.jsonl"
-        source.write_text("payload", encoding="utf-8")
-        target = cfg.layout.day_file("2026-07-28", "jsonl")
-
-        workspace.promote(source, target, 0, 0)
-
-        assert target.read_text(encoding="utf-8") == "payload"
-        assert not source.exists()
-        assert workspace.staging_dir.parent.name == ws.STAGING_DIRNAME
-    finally:
-        workspace.close()
-
-    assert not (Path(cfg.export.output_dir) / ws.STAGING_DIRNAME).exists()
 
 
 def test_staging_directory_lives_outside_the_daily_export_tree(tmp_path):

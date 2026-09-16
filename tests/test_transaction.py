@@ -51,6 +51,40 @@ def test_transaction_promotes_the_manifest_last_and_cleans_its_journal(
         workspace.close()
 
 
+def test_transaction_stages_on_the_output_filesystem_when_devices_differ(
+    tmp_path, monkeypatch
+):
+    cfg = make_config(tmp_path)
+    workspace = open_workspace(cfg)
+    artifact, artifact_target, manifest, manifest_target = prepare_files(workspace)
+    copied: list[tuple[Path, Path]] = []
+    original_copy = transaction.shutil.copy2
+
+    def record_copy(source, destination):
+        copied.append((source, destination))
+        return original_copy(source, destination)
+
+    monkeypatch.setattr(transaction, "same_filesystem", lambda source, target: False)
+    monkeypatch.setattr(transaction.shutil, "copy2", record_copy)
+    try:
+        DayTransaction(
+            workspace=workspace,
+            day="2026-07-28",
+            artifacts=[(artifact, artifact_target)],
+            manifest=(manifest, manifest_target),
+        ).commit()
+
+        assert [source for source, _ in copied] == [artifact, manifest]
+        assert all(destination.parent == workspace.staging_dir for _, destination in copied)
+        assert artifact_target.read_bytes() == b"new artifact"
+        assert manifest_target.read_bytes() == b"new manifest"
+        assert not artifact.exists()
+        assert not manifest.exists()
+        assert not transaction.journal_root(workspace.output_dir).exists()
+    finally:
+        workspace.close()
+
+
 def test_failed_force_transaction_restores_the_previous_generation_byte_exactly(
     tmp_path, monkeypatch
 ):

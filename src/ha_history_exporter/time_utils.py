@@ -7,8 +7,8 @@ DST-transition days (23 h or 25 h) are handled automatically by zoneinfo.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from datetime import date, datetime, timedelta
-from typing import Iterator
 from zoneinfo import ZoneInfo
 
 _UTC = ZoneInfo("UTC")

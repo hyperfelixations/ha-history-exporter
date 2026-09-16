@@ -1,10 +1,12 @@
-"""Streaming file writers for JSONL and CSV output, plus Parquet post-processing.
+"""Prepare and validate JSONL, CSV, and Parquet artifacts in a run workspace.
 
 Write pattern for JSONL / CSV:
-  1. Open a temporary file in temp_dir, outside the output directory.
+  1. Open a file in the run-isolated working directory.
   2. Stream state objects line by line as they arrive from each batch.
-  3. After all batches: validate, then atomic-replace to the final path.
-     os.replace() is used; on PermissionError (a file lock) we retry.
+  3. Flush and close the prepared artifact for validation.
+
+This module does not publish a completed day. The day transaction owns atomic
+publication, manifest-last visibility, rollback, and crash recovery.
 
 Parquet post-processing (convert_jsonl_to_parquet):
   Reads the already-validated JSONL temp file and converts it to Parquet.
@@ -23,7 +25,8 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import ClassVar, TextIO
+from types import TracebackType
+from typing import Any, ClassVar, TextIO
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,7 @@ _CANONICAL_ROW_FIELDS = frozenset(
 # ── JSONL streaming writer ────────────────────────────────────────────────────
 
 class JsonlWriter:
-    """Context manager that streams state objects to a JSONL temp file.
+    """Context manager that streams state objects to a prepared JSONL artifact.
 
     Usage::
 
@@ -70,7 +73,12 @@ class JsonlWriter:
         self._f.write("\n")
         self._count += 1
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self._f:
             self._f.flush()
             self._f.close()
@@ -84,7 +92,7 @@ class JsonlWriter:
 # ── CSV streaming writer ──────────────────────────────────────────────────────
 
 class CsvWriter:
-    """Context manager that streams state objects to a CSV temp file.
+    """Context manager that streams state objects to a prepared CSV artifact.
 
     Schema: entity_id, state, last_changed, last_updated, attributes_json
 
@@ -133,7 +141,12 @@ class CsvWriter:
         )
         self._count += 1
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self._f:
             self._f.flush()
             self._f.close()
@@ -200,7 +213,7 @@ def flatten_payload(payload: list) -> list[dict]:
 
 # ── Parquet post-processing ───────────────────────────────────────────────────
 
-def _parquet_schema():
+def _parquet_schema() -> Any:
     """Return the fixed pyarrow schema for HA history state objects.
 
     Schema design notes:
@@ -265,8 +278,8 @@ def convert_jsonl_to_parquet(
     schema evolution does not discard data or add dynamic columns.
 
     Args:
-        src:            Path to the validated JSONL temp file (local temp dir).
-        dst:            Destination path for the Parquet temp file (local temp dir).
+        src:            Path to the validated JSONL workspace artifact.
+        dst:            Destination path for the prepared Parquet workspace artifact.
         row_group_size: Rows per Parquet row group.  DuckDB can parallelise
                         across row groups, so ≥100 k is recommended.
         compression:    Parquet compression codec.  'snappy' is the default:

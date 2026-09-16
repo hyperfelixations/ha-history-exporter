@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Any, Callable, List
+from typing import Any
 
 import requests
 
@@ -189,7 +189,7 @@ class HomeAssistantClient:
             raise HAAPIError("Unexpected response contract from /api/.")
         logger.info("HA API is reachable at %s.", self._base)
 
-    def get_states(self) -> List[dict]:
+    def get_states(self) -> list[dict]:
         """Return all current entity states from /api/states."""
         logger.debug("GET /api/states ...")
         resp = self._get("/api/states")
@@ -207,12 +207,12 @@ class HomeAssistantClient:
         self,
         start_dt: datetime,
         end_dt: datetime,
-        entity_ids: List[str],
+        entity_ids: list[str],
         minimal_response: bool = False,
         no_attributes: bool = False,
         significant_changes_only: bool = False,
         skip_initial_state: bool = True,
-    ) -> List[List[dict]]:
+    ) -> list[list[dict]]:
         """Fetch history for a batch of entities over a time range.
 
         The response is a list-of-lists:

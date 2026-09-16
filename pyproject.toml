@@ -66,9 +66,6 @@ extend-exclude = [".venv", "dist", "build"]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
 ignore = [
   "S101",     # assert is the idiom the test suite is built on
-  "UP006",    # typing.List/Dict spellings stay until the codebase moves as a whole
-  "UP007",    # same for Optional/Union
-  "UP035",
   "RUF002",   # en dashes and other typography in prose are intentional
 ]
 
@@ -82,18 +79,8 @@ warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = true
 no_implicit_optional = true
-disallow_untyped_defs = false
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-  "ha_history_exporter.cli.*",
-  "ha_history_exporter.errors",
-  "ha_history_exporter.layout",
-  "ha_history_exporter.runtime.*",
-  "ha_history_exporter.settings.*",
-]
 disallow_untyped_defs = true
+ignore_missing_imports = true
 strict_equality = true
 
 [tool.pytest.ini_options]

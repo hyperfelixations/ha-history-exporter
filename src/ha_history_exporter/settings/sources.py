@@ -7,9 +7,10 @@ objects. The resolver merges them by precedence and keeps the origin so
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 

@@ -7,13 +7,13 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 
 from . import __version__ as SCRIPT_VERSION
 from .errors import ExportError, Remedy
-from .settings.model import FORMAT_ORDER, HistoryRequestSettings, RequestSettings
+from .settings.model import FORMAT_ORDER, Config, HistoryRequestSettings, RequestSettings
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class DayManifest:
 
     _started_ts: float | None = field(default=None, repr=False, compare=False)
 
-    def mark_started(self, tz) -> None:
+    def mark_started(self, tz: tzinfo) -> None:
         from .time_utils import format_iso
 
         self.export_started_at = format_iso(datetime.now(tz))
@@ -124,7 +124,7 @@ class DayManifest:
         self.error = None
         self.error_code = None
 
-    def mark_finished(self, tz, status: str = "ok") -> None:
+    def mark_finished(self, tz: tzinfo, status: str = "ok") -> None:
         from .time_utils import format_iso
 
         self.export_finished_at = format_iso(datetime.now(tz))
@@ -432,7 +432,7 @@ def create(
     end_local: str,
     start_utc: str,
     end_utc: str,
-    cfg,
+    cfg: Config,
 ) -> DayManifest:
     """Build a fresh schema 1.4 manifest from the active request."""
     settings = cfg.history_request
@@ -474,7 +474,7 @@ def load_existing(
     end_local: str,
     start_utc: str,
     end_utc: str,
-    cfg,
+    cfg: Config,
 ) -> DayManifest | None:
     """Load and validate an existing manifest, returning ``None`` if absent."""
     path = cfg.layout.day_file(day, "manifest.json")
@@ -514,7 +514,7 @@ def load_or_create(
     end_local: str,
     start_utc: str,
     end_utc: str,
-    cfg,
+    cfg: Config,
 ) -> DayManifest:
     """Load a valid existing manifest, or build a fresh schema 1.4 one."""
     existing = load_existing(
@@ -563,7 +563,7 @@ def write_file(manifest: DayManifest, path: Path) -> None:
 
 def save(
     manifest: DayManifest,
-    cfg,
+    cfg: Config,
     locked_file_retries: int = 5,
     locked_file_retry_sleep: float = 2.0,
 ) -> None:

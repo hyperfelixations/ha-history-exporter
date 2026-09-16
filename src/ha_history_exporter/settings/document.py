@@ -12,8 +12,9 @@ user file, so everything here works on the file's own keys only.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 

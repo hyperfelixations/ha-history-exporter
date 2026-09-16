@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Callable, List, Optional  # noqa: F401 - Optional is part of main()'s signature
+from collections.abc import Callable
 from zoneinfo import ZoneInfo  # re-exported: callers build timezones from here
 
 from ..errors import HHEError, Remedy
@@ -34,7 +34,7 @@ _HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
 }
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     handler = _HANDLERS[args.command]
     logger = logging.getLogger(__name__)

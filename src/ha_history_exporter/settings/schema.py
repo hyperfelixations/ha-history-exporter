@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import difflib
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from ..errors import ConfigError, Remedy
 from . import paths

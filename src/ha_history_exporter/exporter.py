@@ -4,15 +4,17 @@ One run owns one working directory and one lock on the output directory; see
 :mod:`ha_history_exporter.runtime.workspace`. For each day in the export plan:
   1. Stream state objects from HA history into the working directory, line by
      line — no in-memory accumulation.
-  2. After all batches: validate, convert to Parquet if requested, validate
-     again, then promote the enabled formats to their final paths.
-  3. Write / update the day manifest.
-  4. Append a line to the run log (metadata/export_runs.jsonl).
+  2. Derive requested formats from JSONL and validate every prepared artifact.
+  3. Prepare the successful manifest in the working directory.
+  4. Publish all artifacts and the manifest as one crash-recoverable day
+     transaction, making the manifest visible last.
+  5. Append a line to the run log (metadata/export_runs.jsonl).
 
 Recovery:
   - An interrupted run leaves its working directory behind; a later run removes
     it once it is older than the staleness threshold.
-  - The manifest then has status != "ok", so the day is exported again.
+  - An interrupted publication is rolled back before a new run starts, so an
+    earlier successful day generation remains byte-for-byte intact.
 """
 
 from __future__ import annotations
@@ -21,10 +23,11 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Callable, List
+from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
@@ -53,6 +56,8 @@ from .validators import ArtifactMetadata, validate_export_artifacts
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 #: Physical Parquet layout. Part of the frozen output contract: a fixture small
 #: enough to fit one row group cannot show a change here, so it is pinned by
 #: name. See internal dev doc, Ausgabedateien.
@@ -63,7 +68,7 @@ PARQUET_COMPRESSION = "snappy"
 def run_export(
     cfg: Config,
     plan: ExportPlan,
-    entity_ids: List[str],
+    entity_ids: list[str],
     entity_count_total: int,
     client: HomeAssistantClient,
     tz: ZoneInfo,
@@ -153,9 +158,9 @@ def run_export(
 
 def _run_days(
     cfg: Config,
-    days: List[date],
+    days: list[date],
     partial_days: frozenset[date],
-    entity_ids: List[str],
+    entity_ids: list[str],
     entity_count_total: int,
     client: HomeAssistantClient,
     tz: ZoneInfo,
@@ -317,7 +322,7 @@ def _export_day(
     day_str: str,
     start_dt: datetime,
     end_dt: datetime,
-    entity_ids: List[str],
+    entity_ids: list[str],
     client: HomeAssistantClient,
     manifest: mf.DayManifest,
     tz: ZoneInfo,
@@ -441,7 +446,7 @@ def _fetch_day_rows(
     temp: dict,
     start_dt: datetime,
     end_dt: datetime,
-    entity_ids: List[str],
+    entity_ids: list[str],
     client: HomeAssistantClient,
     manifest: mf.DayManifest,
     tz: ZoneInfo,
@@ -544,7 +549,7 @@ def _finalize_day(
     day: date,
     temp: dict,
     expected_rows: int,
-    requested_entity_ids: List[str],
+    requested_entity_ids: list[str],
     start_dt: datetime,
     end_dt: datetime,
     tz: ZoneInfo,
@@ -595,7 +600,7 @@ def _finalize_day(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _chunks(lst: list, n: int):
+def _chunks(lst: list[T], n: int) -> Iterator[list[T]]:
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
 

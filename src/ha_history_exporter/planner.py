@@ -13,11 +13,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
 from .errors import ConfigError, Remedy
+from .settings import Config
 from .time_utils import (
     format_iso,
     is_day_complete,
@@ -51,10 +51,10 @@ class ExportPlan:
     requested_end: date
     today: date
     latest_complete: date
-    decisions: List[DayDecision] = field(default_factory=list)
+    decisions: list[DayDecision] = field(default_factory=list)
 
     @property
-    def days_to_export(self) -> List[date]:
+    def days_to_export(self) -> list[date]:
         """Every day that will be fetched, complete or partial."""
         return [
             d.day
@@ -63,16 +63,16 @@ class ExportPlan:
         ]
 
     @property
-    def partial_days(self) -> List[date]:
+    def partial_days(self) -> list[date]:
         """Days fetched only up to now, and therefore not finished."""
         return [d.day for d in self.decisions if d.action == EXPORT_PARTIAL]
 
     @property
-    def days_skipped_existing(self) -> List[date]:
+    def days_skipped_existing(self) -> list[date]:
         return [d.day for d in self.decisions if d.action == SKIP_EXISTING]
 
     @property
-    def days_skipped_incomplete(self) -> List[date]:
+    def days_skipped_incomplete(self) -> list[date]:
         return [d.day for d in self.decisions if d.action == SKIP_INCOMPLETE]
 
     def print_summary(
@@ -139,7 +139,7 @@ def build_plan(
     requested_start: date,
     requested_end: date,
     tz: ZoneInfo,
-    cfg,  # Config
+    cfg: Config,
     force: bool = False,
     partial_day: date | None = None,
     now: date | None = None,
@@ -237,9 +237,7 @@ def build_plan(
     return plan
 
 
-def _check_existing(
-    day: date, cfg, tz: ZoneInfo | None = None
-) -> str | None:
+def _check_existing(day: date, cfg: Config, tz: ZoneInfo | None = None) -> str | None:
     """Return a reason if this day has a successful manifest, else ``None``.
 
     The manifest is the durable source of truth for resume decisions. Export

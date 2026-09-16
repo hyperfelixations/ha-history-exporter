@@ -1,10 +1,10 @@
-"""Run-isolated working directories, locking, and final promotion.
+"""Run-isolated working directories and output locking.
 
 Every run owns one working directory under the temporary root and, when the
 temporary root sits on a different filesystem than the output, one staging
-directory next to the output. A parallel run therefore cannot delete another
-run's files, and the last step before a file becomes visible is always an
-``os.replace`` within a single filesystem, which is atomic.
+directory next to the output. Publication and crash recovery belong to
+:mod:`ha_history_exporter.runtime.transaction`; this module owns only workspace
+lifecycle, filesystem detection, stale cleanup, and the per-output lock.
 
 See internal dev doc, section "Laufzeit-Workspace".
 """
@@ -58,33 +58,6 @@ class Workspace:
     @property
     def staging_dir(self) -> Path:
         return self.output_dir / STAGING_DIRNAME / self.run_id
-
-    def promote(
-        self,
-        src: Path,
-        dst: Path,
-        locked_file_retries: int = 5,
-        locked_file_retry_sleep: float = 2.0,
-    ) -> None:
-        """Make a validated file visible at *dst*.
-
-        When the working directory and the destination share a filesystem the
-        file is replaced directly. Otherwise it is copied into the staging
-        directory next to the destination first, so the visible step stays a
-        same-filesystem replace.
-        """
-        from ..writers import atomic_replace
-
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if same_filesystem(src.parent, dst.parent):
-            atomic_replace(src, dst, locked_file_retries, locked_file_retry_sleep)
-            return
-
-        self.staging_dir.mkdir(parents=True, exist_ok=True)
-        staged = self.staging_dir / src.name
-        shutil.copy2(src, staged)
-        atomic_replace(staged, dst, locked_file_retries, locked_file_retry_sleep)
-        src.unlink(missing_ok=True)
 
     def close(self) -> None:
         """Remove this run's directories and release the lock."""

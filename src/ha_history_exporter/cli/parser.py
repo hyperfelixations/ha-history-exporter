@@ -9,7 +9,7 @@ the person writing it and the person reading it later.
 from __future__ import annotations
 
 import argparse
-from typing import Sequence
+from collections.abc import Sequence
 
 from .. import __version__
 from ..settings import schema

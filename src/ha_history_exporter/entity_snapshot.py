@@ -12,7 +12,6 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import List
 from zoneinfo import ZoneInfo
 
 from .time_utils import format_iso
@@ -20,7 +19,7 @@ from .time_utils import format_iso
 logger = logging.getLogger(__name__)
 
 
-def build_snapshot(states: List[dict], tz: ZoneInfo) -> dict:
+def build_snapshot(states: list[dict], tz: ZoneInfo) -> dict:
     """Build a snapshot dict from the raw /api/states response."""
     now = datetime.now(tz)
     entities = []
@@ -54,11 +53,11 @@ def build_snapshot(states: List[dict], tz: ZoneInfo) -> dict:
 
 
 def extract_entity_ids(
-    states: List[dict],
+    states: list[dict],
     *,
     include_unknown: bool = True,
     include_unavailable: bool = True,
-) -> List[str]:
+) -> list[str]:
     """Return a sorted list of entity_ids to request history for.
 
     Entities whose current state is `unknown` or `unavailable` are included by
@@ -86,10 +85,10 @@ def extract_entity_ids(
 
 
 def apply_optional_excludes(
-    entity_ids: List[str],
+    entity_ids: list[str],
     exclude_domains: Sequence[str],
     exclude_patterns: Sequence[str],
-) -> tuple[List[str], int]:
+) -> tuple[list[str], int]:
     """Apply optional domain and glob excludes.  Exclude always wins.
 
     Returns:
