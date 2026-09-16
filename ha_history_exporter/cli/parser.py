@@ -12,6 +12,7 @@ import argparse
 from typing import Sequence
 
 from .. import __version__
+from ..settings import schema
 
 COMMANDS = ("export", "init", "config", "doctor")
 
@@ -152,10 +153,23 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
         "--format", metavar="LIST",
         help="Complete set of output formats: jsonl, csv, parquet, or none.",
     )
-    p.add_argument("--timezone", metavar="TZ",
-                   help="Override timezone (default: Europe/Berlin).")
-    p.add_argument("--batch-size", type=int, metavar="N",
-                   help="Entities per history request (default: 5).")
+    p.add_argument(
+        "--timezone",
+        metavar="TZ",
+        help=(
+            "Override timezone "
+            f"(default: {schema.default_value(schema.BY_PATH['export.timezone'])})."
+        ),
+    )
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        metavar="N",
+        help=(
+            "Entities per history request "
+            f"(default: {schema.default_value(schema.BY_PATH['requests.batch_size'])})."
+        ),
+    )
     p.add_argument("--sleep-between-requests", type=float, metavar="S",
                    help="Seconds between batch requests.")
     p.add_argument("--sleep-between-days", type=float, metavar="S",
@@ -164,9 +178,13 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
                    help="HTTP request timeout in seconds.")
     p.add_argument("--max-retries", type=int, metavar="N",
                    help="Max retries on transient errors.")
-    p.add_argument("--log-level", metavar="LEVEL",
-                   choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                   help="Log level (default: INFO).")
+    p.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Log level (default: %(default)s).",
+    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

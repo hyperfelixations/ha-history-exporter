@@ -1,4 +1,4 @@
-"""Tests for the command grammar, the legacy shim, and range selection."""
+"""Tests for the command grammar, defaults, and range selection."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ha_history_exporter import __version__, cli
 from ha_history_exporter.cli import parser
 from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.errors import UsageError
-from ha_history_exporter.settings import Format
+from ha_history_exporter.settings import Format, schema
 from ha_history_exporter.time_utils import last_n_complete_days, today_local
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -69,6 +69,31 @@ def test_an_unknown_command_lists_the_known_ones(capsys):
 @pytest.mark.parametrize("command", ["export", "init", "config", "doctor"])
 def test_every_command_is_reachable(command):
     assert command in parser.COMMANDS
+
+
+@pytest.mark.parametrize(
+    ("option", "key"),
+    [
+        ("--timezone", "export.timezone"),
+        ("--batch-size", "requests.batch_size"),
+    ],
+)
+def test_export_help_uses_configuration_schema_defaults(option, key, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["export", "--help"])
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    default = schema.default_value(schema.BY_PATH[key])
+    assert option in help_text
+    assert f"(default: {default})" in help_text
+
+
+def test_export_help_does_not_claim_the_retired_batch_default(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["export", "--help"])
+
+    assert "(default: 5)" not in capsys.readouterr().out
 
 
 def test_export_without_a_day_selection_takes_the_latest_complete_day():
