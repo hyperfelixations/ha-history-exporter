@@ -320,12 +320,9 @@ def test_successful_manifest_skips_when_artifacts_were_archived(tmp_path):
     assert planner._check_existing(DAY, cfg) is not None
 
 
-@pytest.mark.known_bug
-@pytest.mark.xfail(
-    strict=True,
-    reason="planner has no derive action for a newly requested missing format",
-)
-def test_newly_requested_format_plans_local_derivation(tmp_path, monkeypatch):
+def test_newly_requested_format_does_not_recapture_a_successful_day(
+    tmp_path, monkeypatch
+):
     cfg = make_config(tmp_path, jsonl=True, csv=True, parquet=True)
     patch_calendar(monkeypatch)
     write_manifest(
@@ -341,4 +338,6 @@ def test_newly_requested_format_plans_local_derivation(tmp_path, monkeypatch):
 
     plan = planner.build_plan(DAY, DAY, BERLIN, cfg, force=False)
 
-    assert plan.decisions[0].action == "derive"
+    assert plan.decisions[0].action == "skip_existing"
+    assert plan.days_to_export == []
+    assert plan.days_skipped_existing == [DAY]

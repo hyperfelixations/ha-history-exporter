@@ -22,12 +22,9 @@ instance.
   snapshots, writers, and validators
 - HTTP contract tests with synthetic responses and exceptions
 - Export and CLI integration tests with synthetic clients and temporary output
-- A strict expected-failure test for the remaining confirmed product defect
-
-Known defects use `xfail(strict=True)`. They keep the normal suite green while
-remaining executable specifications. If a defect unexpectedly stops
-reproducing, pytest reports an XPASS and fails the suite until the expectation
-is reviewed.
+- Green contract tests for the currently supported planner behavior. A newly
+  requested local format never triggers an implicit Home Assistant recapture;
+  explicit local format derivation remains a future feature.
 
 ## Run locally
 

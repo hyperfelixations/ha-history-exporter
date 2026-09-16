@@ -105,10 +105,6 @@ addopts = [
   "--disable-socket",
 ]
 testpaths = ["tests"]
-xfail_strict = true
-markers = [
-  "known_bug: executable specification for a confirmed product defect",
-]
 
 [tool.coverage.run]
 branch = true
