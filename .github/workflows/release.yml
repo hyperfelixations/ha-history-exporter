@@ -114,6 +114,7 @@ jobs:
       - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
       - run: |
           python -m ruff check .
+          python -m ruff format --check .
           python -m mypy
 
   build:

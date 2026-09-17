@@ -185,14 +185,36 @@ def test_beta_versions_must_be_pep440_normalised():
 # ── action pinning ────────────────────────────────────────────────────────────
 
 
-def test_every_release_action_is_pinned_to_a_commit_sha():
-    """A moving tag in the release path would be an unreviewed code change."""
+def test_every_action_is_pinned_to_a_commit_sha():
+    """A moving action tag in any workflow would be an unreviewed code change."""
     jobs = {
         f"{path.name}:{name}": job
-        for path in (RELEASE, PUBLISH, TEST_PUBLISH)
+        for path in workflow_files()
         for name, job in load(path)["jobs"].items()
     }
     used = [step["uses"] for job in jobs.values() for step in steps(job) if "uses" in step]
     assert used
     for reference in used:
         assert SHA_PIN.match(reference), reference
+
+
+def test_checkout_never_persists_credentials():
+    for path in workflow_files():
+        for name, job in load(path)["jobs"].items():
+            for step in steps(job):
+                if step.get("uses", "").startswith("actions/checkout@"):
+                    assert step.get("with", {}).get("persist-credentials") is False, (
+                        f"{path.name}:{name} persists GitHub credentials"
+                    )
+
+
+def test_every_source_validation_path_checks_formatting():
+    jobs = [
+        load(TESTS)["jobs"]["static"],
+        load(RELEASE)["jobs"]["test"],
+        load(TEST_PUBLISH)["jobs"]["test"],
+    ]
+
+    for job in jobs:
+        commands = " ".join(step.get("run", "") for step in steps(job))
+        assert "python -m ruff format --check ." in commands
