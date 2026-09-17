@@ -25,7 +25,6 @@ $ hhe export
 - [Output](#output)
 - [Troubleshooting](#troubleshooting)
 - [Automating daily exports](#automating-daily-exports)
-- [Development](#development)
 - [License](#license)
 
 ## Why
@@ -480,11 +479,6 @@ Arguments: export --last-days 2
 The stored `credentials.yaml` means the scheduled task needs no environment
 variables and no token in a script file. An export run never asks a question,
 so it cannot block waiting for an answer nobody is there to give.
-
-## Development
-
-Development setup, required quality checks, test isolation, and golden-fixture
-review are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
