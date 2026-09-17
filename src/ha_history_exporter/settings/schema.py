@@ -64,6 +64,7 @@ class KeyStatus(str, Enum):
 
 # ── value checks ──────────────────────────────────────────────────────────────
 
+
 def _fail(field_name: str, message: str, *, details: str | None = None) -> ConfigError:
     return ConfigError(
         f"{field_name} {message}",
@@ -116,15 +117,12 @@ def non_negative_number_list(value: Any, field_name: str) -> tuple[float, ...]:
     if not isinstance(value, (list, tuple)):
         raise _fail(field_name, "must be a list of numbers.")
     return tuple(
-        non_negative_number(item, f"{field_name}[{index}]")
-        for index, item in enumerate(value)
+        non_negative_number(item, f"{field_name}[{index}]") for index, item in enumerate(value)
     )
 
 
 def string_list(value: Any, field_name: str) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)) or any(
-        not isinstance(item, str) for item in value
-    ):
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) for item in value):
         raise _fail(field_name, "must be a list of strings.")
     return tuple(value)
 
@@ -171,10 +169,7 @@ def format_set(value: Any, field_name: str) -> frozenset[Format]:
             raise _fail(
                 field_name,
                 "cannot combine 'none' with another format.",
-                details=(
-                    "'none' means snapshot-only: no history request and no "
-                    "daily manifest."
-                ),
+                details=("'none' means snapshot-only: no history request and no daily manifest."),
             )
         return frozenset()
 
@@ -196,6 +191,7 @@ def _valid_formats() -> str:
 
 
 # ── registry ──────────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class Key:

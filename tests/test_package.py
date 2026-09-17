@@ -40,7 +40,7 @@ def manifest_covers(manifest: str, relative_path: str) -> bool:
             directory = parts[1].replace("\\", "/").rstrip("/")
             prefix = f"{directory}/"
             if relative_path.startswith(prefix):
-                name = relative_path[len(prefix):]
+                name = relative_path[len(prefix) :]
                 if any(fnmatch(name, pattern) for pattern in parts[2:]):
                     return True
     return False

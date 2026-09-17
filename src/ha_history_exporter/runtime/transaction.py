@@ -209,12 +209,17 @@ def _validate_journal(data: Any) -> dict[str, Any]:
     if not isinstance(data["entries"], list) or not data["entries"]:
         raise ExportError("An export transaction journal has no files.")
     for entry in data["entries"]:
-        if not isinstance(entry, dict) or set(entry) != {
-            "staged",
-            "final",
-            "backup",
-            "had_original",
-        } or not isinstance(entry["had_original"], bool):
+        if (
+            not isinstance(entry, dict)
+            or set(entry)
+            != {
+                "staged",
+                "final",
+                "backup",
+                "had_original",
+            }
+            or not isinstance(entry["had_original"], bool)
+        ):
             raise ExportError("An export transaction journal entry is malformed.")
     return data
 

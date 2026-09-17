@@ -58,10 +58,7 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
     assert parquet_path.exists()
     assert manifest_path.exists()
 
-    jsonl_rows = [
-        json.loads(line)
-        for line in jsonl_path.read_text(encoding="utf-8").splitlines()
-    ]
+    jsonl_rows = [json.loads(line) for line in jsonl_path.read_text(encoding="utf-8").splitlines()]
     assert [row["entity_id"] for row in jsonl_rows] == [
         "sensor.one",
         "sensor.two",
@@ -79,10 +76,10 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
         "state",
         "last_changed",
         "last_updated",
-            "attributes_json",
-            "local_offset",
-            "extra_json",
-        ]
+        "attributes_json",
+        "local_offset",
+        "extra_json",
+    ]
 
     day_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert day_manifest["status"] == "ok"
@@ -100,10 +97,7 @@ def test_run_export_writes_and_validates_all_formats(tmp_path):
     }
 
     run_log = cfg.layout.metadata_dir / "export_runs.jsonl"
-    entries = [
-        json.loads(line)
-        for line in run_log.read_text(encoding="utf-8").splitlines()
-    ]
+    entries = [json.loads(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
     assert entries[-1]["day"] == str(DAY)
     assert entries[-1]["status"] == "ok"
 
@@ -126,9 +120,7 @@ def test_run_export_handles_empty_history(tmp_path):
     with cfg.layout.day_file(DAY, "csv").open("r", encoding="utf-8", newline="") as handle:
         assert len(list(csv.reader(handle))) == 1
     assert pq.read_metadata(cfg.layout.day_file(DAY, "parquet")).num_rows == 0
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["state_object_count"] == 0
     assert day_manifest["zero_history_entities"] == [
         "sensor.one",
@@ -163,9 +155,7 @@ def test_empty_history_with_unknown_retention_is_not_published_as_ok(tmp_path):
     assert not cfg.layout.day_file(DAY, "jsonl").exists()
     assert not cfg.layout.day_file(DAY, "csv").exists()
     assert not cfg.layout.day_file(DAY, "parquet").exists()
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["status"] == "failed"
     assert day_manifest["retention"]["status"] == "unknown"
 
@@ -241,9 +231,7 @@ def test_failed_batch_marks_manifest_failed_and_keeps_final_files_absent(tmp_pat
     assert result == 1
     assert len(client.calls) == 2
     assert not cfg.layout.day_file(DAY, "jsonl").exists()
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["status"] == "failed"
     assert day_manifest["failed_request_count"] == 1
     assert day_manifest["failed_batches"][0] == {
@@ -259,32 +247,37 @@ def test_failed_force_export_preserves_the_previous_generation_byte_for_byte(tmp
     cfg = make_config(tmp_path, jsonl=True, csv=True, parquet=True)
     plan = make_export_plan(DAY)
     paths = [
-        cfg.layout.day_file(DAY, suffix)
-        for suffix in ("jsonl", "csv", "parquet", "manifest.json")
+        cfg.layout.day_file(DAY, suffix) for suffix in ("jsonl", "csv", "parquet", "manifest.json")
     ]
 
-    assert exporter.run_export(
-        cfg,
-        plan,
-        ["sensor.one"],
-        1,
-        FakeHomeAssistantClient([[[state_row("sensor.one")]]]),
-        BERLIN,
-    ) == 0
+    assert (
+        exporter.run_export(
+            cfg,
+            plan,
+            ["sensor.one"],
+            1,
+            FakeHomeAssistantClient([[[state_row("sensor.one")]]]),
+            BERLIN,
+        )
+        == 0
+    )
     before = {path: path.read_bytes() for path in paths}
 
     invalid = state_row(
         "sensor.one",
         timestamp="2026-07-30T00:00:00+00:00",
     )
-    assert exporter.run_export(
-        cfg,
-        plan,
-        ["sensor.one"],
-        1,
-        FakeHomeAssistantClient([[[invalid]]]),
-        BERLIN,
-    ) == 1
+    assert (
+        exporter.run_export(
+            cfg,
+            plan,
+            ["sensor.one"],
+            1,
+            FakeHomeAssistantClient([[[invalid]]]),
+            BERLIN,
+        )
+        == 1
+    )
 
     assert {path: path.read_bytes() for path in paths} == before
 
@@ -357,9 +350,7 @@ def test_auth_error_aborts_day_and_propagates_immediately(tmp_path):
         )
 
     assert len(client.calls) == 1
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["status"] == "failed"
     assert day_manifest["failed_request_count"] == 1
     assert "synthetic authentication failure" in day_manifest["error"]
@@ -370,9 +361,7 @@ def test_auth_error_aborts_day_and_propagates_immediately(tmp_path):
     [(True, False), (False, True)],
     ids=["csv-only", "parquet-only"],
 )
-def test_non_jsonl_exports_do_not_leave_final_jsonl(
-    tmp_path, csv_enabled, parquet_enabled
-):
+def test_non_jsonl_exports_do_not_leave_final_jsonl(tmp_path, csv_enabled, parquet_enabled):
     cfg = make_config(
         tmp_path,
         jsonl=False,
@@ -398,9 +387,7 @@ def test_non_jsonl_exports_do_not_leave_final_jsonl(
     assert not cfg.layout.day_file(DAY, "jsonl").exists()
     assert not (cfg.resolved_temp_dir / f"{DAY}.jsonl.tmp").exists()
 
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["status"] == "ok"
     assert day_manifest["output_files"]["jsonl"] is None
 
@@ -451,12 +438,9 @@ def test_export_respects_every_valid_format_combination(
     for suffix, is_enabled in enabled.items():
         assert cfg.layout.day_file(DAY, suffix).exists() is is_enabled
 
-    day_manifest = json.loads(
-        cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    day_manifest = json.loads(cfg.layout.day_file(DAY, "manifest.json").read_text(encoding="utf-8"))
     assert day_manifest["output_files"] == {
-        suffix: f"{DAY}.{suffix}" if is_enabled else None
-        for suffix, is_enabled in enabled.items()
+        suffix: f"{DAY}.{suffix}" if is_enabled else None for suffix, is_enabled in enabled.items()
     }
 
 

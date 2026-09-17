@@ -91,17 +91,14 @@ def _safe_exception_location(exc: BaseException) -> str | None:
         frame = traceback.tb_frame
         module = frame.f_globals.get("__name__")
         if isinstance(module, str) and (
-            module == "ha_history_exporter"
-            or module.startswith("ha_history_exporter.")
+            module == "ha_history_exporter" or module.startswith("ha_history_exporter.")
         ):
             location = f"{module}:{frame.f_code.co_name}:{traceback.tb_lineno}"
         traceback = traceback.tb_next
     return location
 
 
-def _log_if_configured(
-    log: Callable[..., None], message: str, *args: object
-) -> None:
+def _log_if_configured(log: Callable[..., None], message: str, *args: object) -> None:
     """Log only once logging is set up.
 
     A failure before the log file exists would otherwise reach the terminal

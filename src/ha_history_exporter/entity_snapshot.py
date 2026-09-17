@@ -38,9 +38,7 @@ def build_snapshot(states: list[dict], tz: ZoneInfo) -> dict:
     entities.sort(key=lambda e: e["entity_id"])
 
     unknown_count = sum(1 for e in entities if e["state_at_snapshot"] == "unknown")
-    unavailable_count = sum(
-        1 for e in entities if e["state_at_snapshot"] == "unavailable"
-    )
+    unavailable_count = sum(1 for e in entities if e["state_at_snapshot"] == "unavailable")
 
     return {
         "created_at": format_iso(now),
@@ -110,9 +108,7 @@ def apply_optional_excludes(
     return result, excluded
 
 
-def save_snapshot(
-    snapshot: dict, metadata_dir: Path, run_id: str | None = None
-) -> Path:
+def save_snapshot(snapshot: dict, metadata_dir: Path, run_id: str | None = None) -> Path:
     """Write the entity snapshot to metadata_dir/entity_snapshot_<ts>[_<run>].json.
 
     Two runs within the same second would otherwise share a filename; the run
@@ -130,9 +126,8 @@ def save_snapshot(
         json.dump(snapshot, f, indent=2, ensure_ascii=False)
 
     from .writers import atomic_replace
+
     atomic_replace(tmp, path)
 
-    logger.info(
-        "Entity snapshot saved: %s (%d entities).", filename, snapshot["entity_count"]
-    )
+    logger.info("Entity snapshot saved: %s (%d entities).", filename, snapshot["entity_count"])
     return path

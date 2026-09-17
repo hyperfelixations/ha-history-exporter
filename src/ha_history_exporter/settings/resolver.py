@@ -155,9 +155,7 @@ def _build_config(values: Mapping[str, Any]) -> Config:
         history_request=HistoryRequestSettings(
             minimal_response=values["history_request.minimal_response"],
             no_attributes=values["history_request.no_attributes"],
-            significant_changes_only=values[
-                "history_request.significant_changes_only"
-            ],
+            significant_changes_only=values["history_request.significant_changes_only"],
             skip_initial_state=values["history_request.skip_initial_state"],
         ),
         entities=EntitySettings(
@@ -313,8 +311,7 @@ def _missing_config_file(path: Path) -> ConfigError:
     return ConfigError(
         f"Config file not found: {path}",
         details=(
-            "HHE was asked to read this configuration file, but no file exists "
-            "at that location."
+            "HHE was asked to read this configuration file, but no file exists at that location."
         ),
         remedies=(
             Remedy("Create the user configuration with the guided setup:", "hhe init"),

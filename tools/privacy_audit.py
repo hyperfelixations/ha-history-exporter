@@ -43,9 +43,7 @@ WINDOWS_USER_PATH = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s]+", re.IGNORE
 POSIX_USER_PATH = re.compile(r"/(?:home|Users)/([^/\s]+)")
 JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b")
 BEARER = re.compile(r"\bBearer\s+[A-Za-z0-9._~-]{20,}\b", re.IGNORECASE)
-KNOWN_TOKEN = re.compile(
-    r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|pypi-[A-Za-z0-9_-]{40,})\b"
-)
+KNOWN_TOKEN = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|pypi-[A-Za-z0-9_-]{40,})\b")
 SECRET_QUERY_KEYS = frozenset(
     {"access_token", "api_key", "apikey", "auth", "password", "secret", "signature", "token"}
 )
@@ -88,11 +86,7 @@ def scan_text(text: str, location: str, denylist: tuple[str, ...] = ()) -> set[F
             continue
         if parsed.username is not None or parsed.password is not None:
             findings.add(Finding(location, "url_userinfo"))
-        query_keys = {
-            item.split("=", 1)[0].lower()
-            for item in parsed.query.split("&")
-            if item
-        }
+        query_keys = {item.split("=", 1)[0].lower() for item in parsed.query.split("&") if item}
         if query_keys & SECRET_QUERY_KEYS:
             findings.add(Finding(location, "secret_url_query"))
         if host:
@@ -133,9 +127,7 @@ def scan_paths(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]:
         candidates = list(root.rglob("*"))
     for path in sorted(candidates):
         relative = path.relative_to(root)
-        if not path.is_file() or any(
-            part in EXCLUDED_PARTS for part in relative.parts
-        ):
+        if not path.is_file() or any(part in EXCLUDED_PARTS for part in relative.parts):
             continue
         if path.suffix.lower() not in TEXT_SUFFIXES:
             continue

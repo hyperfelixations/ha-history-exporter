@@ -120,10 +120,7 @@ def parse_date_arg(s: str, tz: ZoneInfo) -> date:
         return today_local(tz)
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
         return date.fromisoformat(s)
-    raise ValueError(
-        f"Unrecognised date argument: '{s}'. "
-        "Use YYYY-MM-DD, 'yesterday', or 'today'."
-    )
+    raise ValueError(f"Unrecognised date argument: '{s}'. Use YYYY-MM-DD, 'yesterday', or 'today'.")
 
 
 def format_iso(dt: datetime) -> str:

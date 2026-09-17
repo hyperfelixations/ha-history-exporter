@@ -30,6 +30,7 @@ def configured(tmp_path):
 
 # ── offline ───────────────────────────────────────────────────────────────────
 
+
 def test_doctor_passes_a_complete_offline_configuration(configured, capsys):
     assert cli.main(["doctor", "--offline"]) == 0
     out = capsys.readouterr().out
@@ -59,9 +60,7 @@ def test_doctor_reports_an_invalid_timezone(configured, capsys):
     assert "[fail] timezone" in capsys.readouterr().out
 
 
-def test_doctor_reports_an_unwritable_output_directory(
-    configured, monkeypatch, capsys
-):
+def test_doctor_reports_an_unwritable_output_directory(configured, monkeypatch, capsys):
     from pathlib import Path
 
     original = Path.mkdir
@@ -137,6 +136,7 @@ def test_doctor_reports_a_broken_configuration_file(tmp_path, capsys):
 
 # ── online ────────────────────────────────────────────────────────────────────
 
+
 def test_doctor_contacts_home_assistant(configured, monkeypatch, capsys):
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
@@ -153,9 +153,7 @@ def test_doctor_contacts_home_assistant(configured, monkeypatch, capsys):
         HAConnectionError("Failed to reach /api/ after 1 attempt(s)."),
     ],
 )
-def test_doctor_reports_a_failing_home_assistant(
-    configured, monkeypatch, capsys, error
-):
+def test_doctor_reports_a_failing_home_assistant(configured, monkeypatch, capsys, error):
     FakeCliClient.check_error = error
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 

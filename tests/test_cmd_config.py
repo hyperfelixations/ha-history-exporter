@@ -17,6 +17,7 @@ def read_user_config() -> str:
 
 # ── get and list ──────────────────────────────────────────────────────────────
 
+
 def test_get_prints_only_the_value(capsys):
     assert cli.main(["config", "get", "export.formats"]) == 0
     assert capsys.readouterr().out == "jsonl\n"
@@ -74,6 +75,7 @@ def test_path_reports_every_location(capsys):
 
 
 # ── set and unset ─────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     ("key", "raw", "expected"),
@@ -139,9 +141,7 @@ def test_set_requires_a_value_for_normal_keys(capsys):
     assert "A value is required" in capsys.readouterr().err
 
 
-def test_set_does_not_bake_environment_values_into_the_user_file(
-    monkeypatch, capsys
-):
+def test_set_does_not_bake_environment_values_into_the_user_file(monkeypatch, capsys):
     """Only the key being set may land in the user file."""
     monkeypatch.setenv("HHE_REQUESTS_MAX_RETRIES", "9")
 
@@ -267,12 +267,12 @@ def test_writes_refuse_an_explicit_config_file(tmp_path, capsys):
 
 # ── edit ──────────────────────────────────────────────────────────────────────
 
+
 def test_edit_creates_validates_and_reports_the_file(monkeypatch, tmp_path, capsys):
     marker = tmp_path / "editor-ran"
     script = tmp_path / "editor.py"
     script.write_text(
-        "import sys, pathlib\n"
-        f"pathlib.Path(r'{marker}').write_text('ran', encoding='utf-8')\n",
+        f"import sys, pathlib\npathlib.Path(r'{marker}').write_text('ran', encoding='utf-8')\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("EDITOR", f"{__import__('sys').executable} {script}")
@@ -308,9 +308,7 @@ def test_edit_without_an_editor_explains_how_to_set_one(monkeypatch, capsys):
     assert "No editor configured" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(
-    not hasattr(__import__("os"), "startfile"), reason="Windows only"
-)
+@pytest.mark.skipif(not hasattr(__import__("os"), "startfile"), reason="Windows only")
 def test_edit_falls_back_to_the_windows_default_editor(monkeypatch, capsys):
     import os
 
@@ -325,6 +323,7 @@ def test_edit_falls_back_to_the_windows_default_editor(monkeypatch, capsys):
 
 
 # ── document rendering ────────────────────────────────────────────────────────
+
 
 def test_rendered_document_round_trips():
     values = {

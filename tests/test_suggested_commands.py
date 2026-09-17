@@ -36,10 +36,7 @@ def suggested_commands() -> list[tuple[str, str]]:
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
             text = node.value.strip()
-            if not any(
-                text == program or text.startswith(f"{program} ")
-                for program in PROGRAMS
-            ):
+            if not any(text == program or text.startswith(f"{program} ") for program in PROGRAMS):
                 continue
             found.append((f"{path.name}:{node.lineno}", text))
     return found
@@ -59,15 +56,9 @@ def descend(tokens: list[str]) -> tuple[list[str], set[str], list[str]]:
     rest = list(tokens)
 
     while True:
-        options.update(
-            option for action in parser._actions for option in action.option_strings
-        )
+        options.update(option for action in parser._actions for option in action.option_strings)
         action = next(
-            (
-                item
-                for item in parser._actions
-                if isinstance(item, argparse._SubParsersAction)
-            ),
+            (item for item in parser._actions if isinstance(item, argparse._SubParsersAction)),
             None,
         )
         if action is None or not rest or rest[0] not in action.choices:
@@ -104,9 +95,7 @@ def test_a_suggested_command_is_one_hhe_accepts(where, command):
     for token in rest:
         if token.startswith("--"):
             option = token.split("=", 1)[0]
-            assert option in known_options, (
-                f"{where}: {' '.join(path)} has no {option}"
-            )
+            assert option in known_options, f"{where}: {' '.join(path)} has no {option}"
 
     names_a_key = (
         path[:2] in (["config", "get"], ["config", "set"], ["config", "unset"])

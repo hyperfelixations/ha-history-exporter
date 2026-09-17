@@ -60,9 +60,7 @@ def write_manifest(cfg, *, status="ok", output_files=None):
 
 def patch_calendar(monkeypatch):
     monkeypatch.setattr(planner, "today_local", lambda tz: date(2026, 7, 30))
-    monkeypatch.setattr(
-        planner, "latest_complete_day", lambda tz: date(2026, 7, 29)
-    )
+    monkeypatch.setattr(planner, "latest_complete_day", lambda tz: date(2026, 7, 29))
     monkeypatch.setattr(
         planner,
         "is_day_complete",
@@ -207,9 +205,7 @@ def test_unknown_retention_warns_but_allows_a_new_export(tmp_path, caplog):
     assert "retention is not configured" in caplog.text
 
 
-def test_an_unreadable_manifest_stops_the_run_instead_of_re_exporting(
-    tmp_path, monkeypatch
-):
+def test_an_unreadable_manifest_stops_the_run_instead_of_re_exporting(tmp_path, monkeypatch):
     """The manifest is the only durable record that a day was captured.
 
     Treating an unreadable one as "not exported" would silently overwrite a
@@ -304,9 +300,7 @@ def test_print_summary_names_where_the_run_writes_and_what_configured_it(capsys)
 
 
 def test_print_summary_stays_usable_without_the_optional_context(capsys):
-    make_plan().print_summary(
-        entity_count=5, unknown_count=1, unavailable_count=2, batch_size=2
-    )
+    make_plan().print_summary(entity_count=5, unknown_count=1, unavailable_count=2, batch_size=2)
 
     output = capsys.readouterr().out
     assert "Output" not in output
@@ -320,9 +314,7 @@ def test_successful_manifest_skips_when_artifacts_were_archived(tmp_path):
     assert planner._check_existing(DAY, cfg) is not None
 
 
-def test_newly_requested_format_does_not_recapture_a_successful_day(
-    tmp_path, monkeypatch
-):
+def test_newly_requested_format_does_not_recapture_a_successful_day(tmp_path, monkeypatch):
     cfg = make_config(tmp_path, jsonl=True, csv=True, parquet=True)
     patch_calendar(monkeypatch)
     write_manifest(

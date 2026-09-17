@@ -36,15 +36,11 @@ class Result:
 
 def run(args: argparse.Namespace) -> int:
     results: list[Result] = []
-    results.append(
-        Result(OK, "HHE version", f"{__version__} on Python {_python_version()}")
-    )
+    results.append(Result(OK, "HHE version", f"{__version__} on Python {_python_version()}"))
 
     settings = None
     try:
-        settings = resolve(
-            explicit_config=getattr(args, "config", None), require_credentials=False
-        )
+        settings = resolve(explicit_config=getattr(args, "config", None), require_credentials=False)
         files = str(settings.config_file or "")
         results.append(
             Result(
@@ -55,9 +51,7 @@ def run(args: argparse.Namespace) -> int:
             )
         )
     except HHEError as exc:
-        results.append(
-            Result(FAIL, "configuration", exc.summary, _first_command(exc))
-        )
+        results.append(Result(FAIL, "configuration", exc.summary, _first_command(exc)))
         _print(results)
         return 1
 
@@ -72,15 +66,14 @@ def run(args: argparse.Namespace) -> int:
     if not args.offline:
         results.extend(_check_home_assistant(settings))
     else:
-        results.append(
-            Result(OK, "home assistant", "skipped (--offline)")
-        )
+        results.append(Result(OK, "home assistant", "skipped (--offline)"))
 
     _print(results)
     return 1 if any(item.status == FAIL for item in results) else 0
 
 
 # ── individual checks ─────────────────────────────────────────────────────────
+
 
 def _check_timezone(cfg: Config) -> list[Result]:
     name = cfg.export.timezone
@@ -285,15 +278,14 @@ def _check_home_assistant(settings: ResolvedSettings) -> list[Result]:
             client.check_api()
             states = client.get_states()
     except HHEError as exc:
-        return [
-            Result(FAIL, "home assistant", exc.summary, _first_command(exc))
-        ]
+        return [Result(FAIL, "home assistant", exc.summary, _first_command(exc))]
     return [
         Result(OK, "home assistant", f"reachable, {len(states)} entities"),
     ]
 
 
 # ── output ────────────────────────────────────────────────────────────────────
+
 
 def _print(results: list[Result]) -> None:
     width = max(len(item.label) for item in results)

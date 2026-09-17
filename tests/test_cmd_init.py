@@ -37,14 +37,15 @@ def token(monkeypatch, value: str = SYNTHETIC_TOKEN) -> None:
 
 # ── interactive ───────────────────────────────────────────────────────────────
 
+
 def test_init_writes_both_files(monkeypatch, tmp_path, capsys, fake_client):
     output = tmp_path / "exports"
     prompts = answers(
         monkeypatch,
         "http://home-assistant.invalid:8123",  # url
-        str(output),                           # output directory
-        "jsonl,csv",                           # formats
-        "UTC",                                 # timezone
+        str(output),  # output directory
+        "jsonl,csv",  # formats
+        "UTC",  # timezone
     )
     token(monkeypatch)
 
@@ -78,9 +79,7 @@ def test_init_accepts_the_offered_defaults(monkeypatch, capsys, fake_client):
     assert values["export.formats"] == ["jsonl"]
 
 
-def test_init_reports_a_failed_connection_and_can_abort(
-    monkeypatch, capsys, fake_client
-):
+def test_init_reports_a_failed_connection_and_can_abort(monkeypatch, capsys, fake_client):
     FakeCliClient.check_error = AuthError("synthetic auth failure")
     answers(monkeypatch, "http://home-assistant.invalid", "n")
     token(monkeypatch)
@@ -97,10 +96,10 @@ def test_init_can_save_despite_a_failed_connection(monkeypatch, capsys, fake_cli
     answers(
         monkeypatch,
         "http://home-assistant.invalid",  # url
-        "y",                              # save anyway
-        "",                               # output dir
-        "",                               # formats
-        "",                               # timezone
+        "y",  # save anyway
+        "",  # output dir
+        "",  # formats
+        "",  # timezone
     )
     token(monkeypatch)
 
@@ -108,9 +107,7 @@ def test_init_can_save_despite_a_failed_connection(monkeypatch, capsys, fake_cli
     assert secrets.read_token() == SYNTHETIC_TOKEN
 
 
-def test_init_refuses_to_overwrite_without_confirmation(
-    monkeypatch, capsys, fake_client
-):
+def test_init_refuses_to_overwrite_without_confirmation(monkeypatch, capsys, fake_client):
     document.write_user_values({"export.formats": ["csv"]})
     answers(monkeypatch, "n")
 
@@ -128,9 +125,7 @@ def test_init_force_overwrites_without_asking(monkeypatch, capsys, fake_client):
     assert document.read_user_values()["export.formats"] == ["jsonl"]
 
 
-def test_init_keeps_an_existing_token_on_empty_input(
-    monkeypatch, capsys, fake_client
-):
+def test_init_keeps_an_existing_token_on_empty_input(monkeypatch, capsys, fake_client):
     secrets.write_token("synthetic-previous-token")
     answers(monkeypatch, "http://home-assistant.invalid", "", "", "")
     token(monkeypatch, "")
@@ -174,6 +169,7 @@ def test_init_warns_when_parquet_lacks_pyarrow(monkeypatch, capsys, fake_client)
 
 
 # ── non-interactive ───────────────────────────────────────────────────────────
+
 
 def test_init_non_interactive_uses_options_and_the_environment(
     monkeypatch, tmp_path, capsys, fake_client
@@ -223,10 +219,5 @@ def test_init_non_interactive_requires_a_url(monkeypatch, capsys, fake_client):
 def test_init_non_interactive_refuses_to_overwrite(monkeypatch, capsys, fake_client):
     document.write_user_values({"export.formats": ["csv"]})
 
-    assert (
-        cli.main(
-            ["init", "--non-interactive", "--url", "http://home-assistant.invalid"]
-        )
-        == 2
-    )
+    assert cli.main(["init", "--non-interactive", "--url", "http://home-assistant.invalid"]) == 2
     assert "already exists" in capsys.readouterr().err

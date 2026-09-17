@@ -20,9 +20,7 @@ def prepare_files(workspace, day="2026-07-28"):
     return artifact, artifact_target, manifest, manifest_target
 
 
-def test_transaction_promotes_the_manifest_last_and_cleans_its_journal(
-    tmp_path, monkeypatch
-):
+def test_transaction_promotes_the_manifest_last_and_cleans_its_journal(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     workspace = open_workspace(cfg)
     artifact, artifact_target, manifest, manifest_target = prepare_files(workspace)
@@ -51,9 +49,7 @@ def test_transaction_promotes_the_manifest_last_and_cleans_its_journal(
         workspace.close()
 
 
-def test_transaction_stages_on_the_output_filesystem_when_devices_differ(
-    tmp_path, monkeypatch
-):
+def test_transaction_stages_on_the_output_filesystem_when_devices_differ(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     workspace = open_workspace(cfg)
     artifact, artifact_target, manifest, manifest_target = prepare_files(workspace)
@@ -153,9 +149,7 @@ def test_recovery_rolls_back_an_interrupted_commit(tmp_path, monkeypatch):
         workspace.close()
 
 
-def test_failed_first_generation_leaves_no_visible_partial_artifact(
-    tmp_path, monkeypatch
-):
+def test_failed_first_generation_leaves_no_visible_partial_artifact(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     workspace = open_workspace(cfg)
     artifact, artifact_target, manifest, manifest_target = prepare_files(workspace)
@@ -285,9 +279,7 @@ def test_recovery_restores_old_generation_after_one_of_two_artifacts_was_promote
         workspace.close()
 
 
-def test_recovery_keeps_new_generation_after_committed_journal_was_persisted(
-    tmp_path, monkeypatch
-):
+def test_recovery_keeps_new_generation_after_committed_journal_was_persisted(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     workspace = open_workspace(cfg)
     artifact, artifact_target, manifest, manifest_target = prepare_files(workspace)

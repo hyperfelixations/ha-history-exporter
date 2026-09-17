@@ -33,9 +33,7 @@ def capture_profile(settings: HistoryRequestSettings) -> dict[str, str]:
             if settings.minimal_response
             else "full"
         ),
-        "state_changes": (
-            "significant_only" if settings.significant_changes_only else "all"
-        ),
+        "state_changes": ("significant_only" if settings.significant_changes_only else "all"),
         "initial_state": "omitted" if settings.skip_initial_state else "included",
     }
 
@@ -136,9 +134,7 @@ class DayManifest:
 _PUBLIC_FIELDS = frozenset(
     name for name in DayManifest.__dataclass_fields__ if not name.startswith("_")
 )
-_V14_ONLY_FIELDS = frozenset(
-    {"capture_profile", "retention", "artifacts", "error_code"}
-)
+_V14_ONLY_FIELDS = frozenset({"capture_profile", "retention", "artifacts", "error_code"})
 _LEGACY_FIELDS = _PUBLIC_FIELDS - _V14_ONLY_FIELDS
 _COUNT_FIELDS = (
     "entity_count_current",
@@ -160,9 +156,7 @@ def _invalid(day: date, reason: str) -> ExportError:
             "HHE will not overwrite or trust an inconsistent manifest. The "
             "existing export remains untouched, including when --force is used."
         ),
-        remedies=(
-            Remedy("Inspect the manifest and restore or remove it deliberately."),
-        ),
+        remedies=(Remedy("Inspect the manifest and restore or remove it deliberately."),),
         context={"day": str(day)},
     )
 
@@ -226,9 +220,7 @@ def _validate_options(options: Any, schema_version: str, day: date) -> None:
 
 def _validate_v14(data: dict[str, Any], day: date) -> None:
     profile = data["capture_profile"]
-    expected_profile = capture_profile(
-        HistoryRequestSettings(**data["history_request_options"])
-    )
+    expected_profile = capture_profile(HistoryRequestSettings(**data["history_request_options"]))
     if profile != expected_profile:
         raise _invalid(day, "capture_profile contradicts history_request_options")
 
@@ -390,9 +382,7 @@ def _validate_data(
             _aware_datetime(data[name], name, expected_day)
     duration = data["duration_seconds"]
     if duration is not None and (
-        isinstance(duration, bool)
-        or not isinstance(duration, (int, float))
-        or duration < 0
+        isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0
     ):
         raise _invalid(expected_day, "duration_seconds must be non-negative or null")
     for name in _COUNT_FIELDS:
@@ -457,11 +447,7 @@ def create(
             # ``create`` is reached for complete days only after the planner's
             # retention gate. Partial-day callers replace this with
             # ``partial_current`` before publication.
-            "status": (
-                "known_safe"
-                if cfg.recorder.purge_keep_days is not None
-                else "unknown"
-            ),
+            "status": ("known_safe" if cfg.recorder.purge_keep_days is not None else "unknown"),
             "purge_keep_days": cfg.recorder.purge_keep_days,
         },
     )

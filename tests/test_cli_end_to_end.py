@@ -59,6 +59,7 @@ def day_dir(root: Path) -> Path:
 
 # ── output layout and formats ─────────────────────────────────────────────────
 
+
 def test_output_layout_is_unchanged(tmp_path, monkeypatch):
     path = write_config(tmp_path, formats=ALL_FORMATS)
     set_synthetic_env(monkeypatch)
@@ -86,9 +87,7 @@ def test_snapshot_only_contract_is_unchanged(tmp_path, monkeypatch):
     assert list((tmp_path / "output" / "metadata").glob("entity_snapshot_*.json"))
 
 
-def test_successful_manifest_prevents_a_second_home_assistant_call(
-    tmp_path, monkeypatch
-):
+def test_successful_manifest_prevents_a_second_home_assistant_call(tmp_path, monkeypatch):
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
@@ -101,6 +100,7 @@ def test_successful_manifest_prevents_a_second_home_assistant_call(
 
 
 # ── exit codes ────────────────────────────────────────────────────────────────
+
 
 def _run_missing_config(tmp_path, monkeypatch) -> int:
     return cli.main(["export", "--config", str(tmp_path / "absent.yaml"), "--date", DAY])

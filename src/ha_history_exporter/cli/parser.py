@@ -38,9 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EPILOG,
     )
-    parser.add_argument(
-        "--version", "-V", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND")
     subcommands.required = True
 
@@ -75,30 +73,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check the installation and report how to fix problems.",
         description="Run every self-check and print concrete remedies.",
     )
-    doctor.add_argument("--config", metavar="FILE",
-                        help="Check exactly this configuration file.")
-    doctor.add_argument("--offline", action="store_true",
-                        help="Skip every check that contacts Home Assistant.")
+    doctor.add_argument("--config", metavar="FILE", help="Check exactly this configuration file.")
+    doctor.add_argument(
+        "--offline", action="store_true", help="Skip every check that contacts Home Assistant."
+    )
 
     return parser
 
 
 def add_init_arguments(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--force", action="store_true",
-                   help="Overwrite an existing configuration.")
-    p.add_argument("--non-interactive", action="store_true",
-                   help="Ask nothing; take every value from the options.")
+    p.add_argument("--force", action="store_true", help="Overwrite an existing configuration.")
+    p.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Ask nothing; take every value from the options.",
+    )
     p.add_argument("--url", metavar="URL", help="Home Assistant base URL.")
-    p.add_argument("--output-dir", metavar="DIR",
-                   help="Directory that receives exports, metadata, and logs.")
-    p.add_argument("--format", metavar="LIST",
-                   help="Comma-separated output formats: jsonl, csv, parquet, none.")
+    p.add_argument(
+        "--output-dir", metavar="DIR", help="Directory that receives exports, metadata, and logs."
+    )
+    p.add_argument(
+        "--format",
+        metavar="LIST",
+        help="Comma-separated output formats: jsonl, csv, parquet, none.",
+    )
     p.add_argument("--timezone", metavar="TZ", help="IANA time zone name.")
 
 
 def add_config_arguments(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--config", metavar="FILE",
-                   help="Read exactly this configuration file.")
+    p.add_argument("--config", metavar="FILE", help="Read exactly this configuration file.")
     actions = p.add_subparsers(dest="config_action", metavar="ACTION")
     actions.required = True
 
@@ -107,8 +110,9 @@ def add_config_arguments(p: argparse.ArgumentParser) -> None:
 
     set_ = actions.add_parser("set", help="Store a value in the user configuration.")
     set_.add_argument("key", metavar="KEY")
-    set_.add_argument("value", metavar="VALUE", nargs="?",
-                      help="Omit for a secret to be asked for without echo.")
+    set_.add_argument(
+        "value", metavar="VALUE", nargs="?", help="Omit for a secret to be asked for without echo."
+    )
     set_.add_argument(
         "--stdin",
         action="store_true",
@@ -119,8 +123,9 @@ def add_config_arguments(p: argparse.ArgumentParser) -> None:
     unset.add_argument("key", metavar="KEY")
 
     listing = actions.add_parser("list", help="Print every effective value.")
-    listing.add_argument("--origin", action="store_true",
-                         help="Also show where each value comes from.")
+    listing.add_argument(
+        "--origin", action="store_true", help="Also show where each value comes from."
+    )
 
     actions.add_parser("path", help="Print the files and directories in use.")
     actions.add_parser("edit", help="Open the user configuration in an editor.")
@@ -128,29 +133,37 @@ def add_config_arguments(p: argparse.ArgumentParser) -> None:
 
 def add_export_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
-        "--config", metavar="FILE",
+        "--config",
+        metavar="FILE",
         help="Read exactly this file instead of the user configuration.",
     )
 
     dates = p.add_mutually_exclusive_group()
-    dates.add_argument("--date", metavar="DATE",
-                       help="Single day: YYYY-MM-DD, 'yesterday', or 'today'.")
-    dates.add_argument("--start-date", metavar="DATE",
-                       help="Range start (requires --end-date).")
-    dates.add_argument("--last-days", type=int, metavar="N",
-                       help="The N most recent complete days, ending yesterday.")
-    p.add_argument("--end-date", metavar="DATE",
-                   help="Range end inclusive (required with --start-date).")
-
-    p.add_argument("--dry-run", action="store_true",
-                   help="Show plan without fetching history.")
-    p.add_argument("--force", action="store_true",
-                   help="Re-export days that already have a successful manifest.")
-
-    p.add_argument("--output-dir", metavar="DIR",
-                   help="Directory that receives this run's output.")
+    dates.add_argument(
+        "--date", metavar="DATE", help="Single day: YYYY-MM-DD, 'yesterday', or 'today'."
+    )
+    dates.add_argument("--start-date", metavar="DATE", help="Range start (requires --end-date).")
+    dates.add_argument(
+        "--last-days",
+        type=int,
+        metavar="N",
+        help="The N most recent complete days, ending yesterday.",
+    )
     p.add_argument(
-        "--format", metavar="LIST",
+        "--end-date", metavar="DATE", help="Range end inclusive (required with --start-date)."
+    )
+
+    p.add_argument("--dry-run", action="store_true", help="Show plan without fetching history.")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-export days that already have a successful manifest.",
+    )
+
+    p.add_argument("--output-dir", metavar="DIR", help="Directory that receives this run's output.")
+    p.add_argument(
+        "--format",
+        metavar="LIST",
         help="Complete set of output formats: jsonl, csv, parquet, or none.",
     )
     p.add_argument(
@@ -170,14 +183,12 @@ def add_export_arguments(p: argparse.ArgumentParser) -> None:
             f"(default: {schema.default_value(schema.BY_PATH['requests.batch_size'])})."
         ),
     )
-    p.add_argument("--sleep-between-requests", type=float, metavar="S",
-                   help="Seconds between batch requests.")
-    p.add_argument("--sleep-between-days", type=float, metavar="S",
-                   help="Seconds between days.")
-    p.add_argument("--timeout", type=int, metavar="S",
-                   help="HTTP request timeout in seconds.")
-    p.add_argument("--max-retries", type=int, metavar="N",
-                   help="Max retries on transient errors.")
+    p.add_argument(
+        "--sleep-between-requests", type=float, metavar="S", help="Seconds between batch requests."
+    )
+    p.add_argument("--sleep-between-days", type=float, metavar="S", help="Seconds between days.")
+    p.add_argument("--timeout", type=int, metavar="S", help="HTTP request timeout in seconds.")
+    p.add_argument("--max-retries", type=int, metavar="N", help="Max retries on transient errors.")
     p.add_argument(
         "--log-level",
         metavar="LEVEL",

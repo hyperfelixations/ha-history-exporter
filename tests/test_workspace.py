@@ -19,6 +19,7 @@ def config(root: Path):
 
 # ── run identity ──────────────────────────────────────────────────────────────
 
+
 def test_run_ids_are_unique_within_the_same_second():
     ids = {ws.new_run_id() for _ in range(50)}
     assert len(ids) == 50
@@ -52,6 +53,7 @@ def test_two_runs_on_different_outputs_do_not_interfere(tmp_path):
 
 
 # ── locking ───────────────────────────────────────────────────────────────────
+
 
 def test_second_run_on_the_same_output_is_refused(tmp_path):
     cfg = config(tmp_path)
@@ -104,6 +106,7 @@ def test_an_abandoned_lock_is_taken_over(tmp_path):
 
 
 # ── stale cleanup ─────────────────────────────────────────────────────────────
+
 
 def test_recent_run_directories_survive_cleanup(tmp_path):
     temp_root = tmp_path / "temp"

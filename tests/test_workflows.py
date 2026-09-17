@@ -44,6 +44,7 @@ def steps(job: dict) -> list[dict]:
 
 # ── all workflows ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
 def test_workflow_is_valid_yaml(path):
     assert isinstance(load(path), dict)
@@ -65,6 +66,7 @@ def test_no_workflow_stores_an_index_token(path):
 
 
 # ── release workflow ──────────────────────────────────────────────────────────
+
 
 def test_release_runs_only_on_manual_dispatch():
     triggers = load(RELEASE)[True]
@@ -95,9 +97,7 @@ def test_real_publish_job_uses_only_verified_release_assets():
     jobs = load(PUBLISH)["jobs"]
     assert set(jobs) == {"verify-release", "publish"}
     assert jobs["publish"]["needs"] == "verify-release"
-    commands = " ".join(
-        step.get("run", "") for step in steps(jobs["verify-release"])
-    )
+    commands = " ".join(step.get("run", "") for step in steps(jobs["verify-release"]))
     assert "gh release download" in commands
     assert "sha256sum --check" in commands
     assert "python -m twine check" in commands
@@ -109,9 +109,7 @@ def test_real_publish_job_never_builds_its_own_distributions():
     job = load(PUBLISH)["jobs"]["publish"]
     commands = " ".join(step.get("run", "") for step in steps(job))
     assert "python -m build" not in commands
-    assert any(
-        "download-artifact" in step.get("uses", "") for step in steps(job)
-    )
+    assert any("download-artifact" in step.get("uses", "") for step in steps(job))
 
 
 def test_real_publish_job_uses_the_official_action_and_environment():
@@ -127,27 +125,19 @@ def test_testpypi_is_manual_and_cannot_select_real_pypi():
     assert "publish_to" not in workflow[True]["workflow_dispatch"]["inputs"]
     job = workflow["jobs"]["publish"]
     assert job["environment"] == "testpypi"
-    upload = next(
-        step for step in steps(job) if "pypi-publish" in step.get("uses", "")
-    )
+    upload = next(step for step in steps(job) if "pypi-publish" in step.get("uses", ""))
     assert upload["with"]["repository-url"] == "https://test.pypi.org/legacy/"
 
 
 def test_release_paths_privacy_scan_history_and_distributions():
     release_jobs = load(RELEASE)["jobs"]
-    release_validate = " ".join(
-        step.get("run", "") for step in steps(release_jobs["validate"])
-    )
-    release_build = " ".join(
-        step.get("run", "") for step in steps(release_jobs["build"])
-    )
+    release_validate = " ".join(step.get("run", "") for step in steps(release_jobs["validate"]))
+    release_build = " ".join(step.get("run", "") for step in steps(release_jobs["build"]))
     publish_verify = " ".join(
-        step.get("run", "")
-        for step in steps(load(PUBLISH)["jobs"]["verify-release"])
+        step.get("run", "") for step in steps(load(PUBLISH)["jobs"]["verify-release"])
     )
     testpypi_build = " ".join(
-        step.get("run", "")
-        for step in steps(load(TEST_PUBLISH)["jobs"]["build"])
+        step.get("run", "") for step in steps(load(TEST_PUBLISH)["jobs"]["build"])
     )
 
     assert "tools/privacy_audit.py --repository . --history" in release_validate
@@ -194,6 +184,7 @@ def test_beta_versions_must_be_pep440_normalised():
 
 # ── action pinning ────────────────────────────────────────────────────────────
 
+
 def test_every_release_action_is_pinned_to_a_commit_sha():
     """A moving tag in the release path would be an unreviewed code change."""
     jobs = {
@@ -201,12 +192,7 @@ def test_every_release_action_is_pinned_to_a_commit_sha():
         for path in (RELEASE, PUBLISH, TEST_PUBLISH)
         for name, job in load(path)["jobs"].items()
     }
-    used = [
-        step["uses"]
-        for job in jobs.values()
-        for step in steps(job)
-        if "uses" in step
-    ]
+    used = [step["uses"] for job in jobs.values() for step in steps(job) if "uses" in step]
     assert used
     for reference in used:
         assert SHA_PIN.match(reference), reference

@@ -158,9 +158,7 @@ def test_valid_legacy_ok_manifests_remain_complete(tmp_path, schema_version):
             "output_files",
         ),
         (
-            lambda data: data["history_request_options"].update(
-                skip_initial_state="yes"
-            ),
+            lambda data: data["history_request_options"].update(skip_initial_state="yes"),
             "skip_initial_state",
         ),
         (lambda data: data.update(future_field=42), "unknown field"),
@@ -204,22 +202,16 @@ def test_manifest_contract_violations_fail_closed(tmp_path, mutation, message):
             "failed_batches entry",
         ),
         (
-            lambda data: data.update(
-                retention={"status": "known_safe", "purge_keep_days": None}
-            ),
+            lambda data: data.update(retention={"status": "known_safe", "purge_keep_days": None}),
             "known_safe retention",
         ),
         (
-            lambda data: data.update(
-                retention={"status": "unknown", "purge_keep_days": 14}
-            ),
+            lambda data: data.update(retention={"status": "unknown", "purge_keep_days": 14}),
             "unknown retention",
         ),
     ],
 )
-def test_manifest_1_4_cross_field_invariants_fail_closed(
-    tmp_path, mutation, message
-):
+def test_manifest_1_4_cross_field_invariants_fail_closed(tmp_path, mutation, message):
     cfg = make_config(tmp_path)
     data = deepcopy(valid_data())
     mutation(data)

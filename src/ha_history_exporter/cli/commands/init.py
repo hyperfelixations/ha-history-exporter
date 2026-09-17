@@ -70,17 +70,14 @@ def run(args: argparse.Namespace) -> int:
 
 # ── questions ─────────────────────────────────────────────────────────────────
 
-def _ask_url(
-    args: argparse.Namespace, current: ResolvedSettings, interactive: bool
-) -> str:
+
+def _ask_url(args: argparse.Namespace, current: ResolvedSettings, interactive: bool) -> str:
     if args.url:
         return validate_home_assistant_url(args.url)
     if not interactive:
         raise _missing("--url")
     default = current.config.homeassistant.url or DEFAULT_URL
-    return validate_home_assistant_url(
-        _ask(None, "Home Assistant URL", default, interactive)
-    )
+    return validate_home_assistant_url(_ask(None, "Home Assistant URL", default, interactive))
 
 
 def _ask_token(args: argparse.Namespace, interactive: bool) -> str:
@@ -104,10 +101,7 @@ def _ask_token(args: argparse.Namespace, interactive: bool) -> str:
         return token
     raise UsageError(
         "No access token was entered.",
-        details=(
-            "Create one in Home Assistant under Profile, Security, "
-            "Long-Lived Access Tokens."
-        ),
+        details=("Create one in Home Assistant under Profile, Security, Long-Lived Access Tokens."),
         remedies=(Remedy("Run the setup again:", "hhe init"),),
     )
 
@@ -128,12 +122,8 @@ def _ask_formats(
     return selection
 
 
-def _ask_timezone(
-    args: argparse.Namespace, current: ResolvedSettings, interactive: bool
-) -> str:
-    value = args.timezone or _ask(
-        None, "Timezone", current.config.export.timezone, interactive
-    )
+def _ask_timezone(args: argparse.Namespace, current: ResolvedSettings, interactive: bool) -> str:
+    value = args.timezone or _ask(None, "Timezone", current.config.export.timezone, interactive)
     try:
         ZoneInfo(value)
     except Exception as exc:
@@ -144,9 +134,7 @@ def _ask_timezone(
     return value
 
 
-def _verify(
-    url: str, token: str, current: ResolvedSettings, interactive: bool
-) -> None:
+def _verify(url: str, token: str, current: ResolvedSettings, interactive: bool) -> None:
     print(f"  -> Contacting {url} ...")
     try:
         with ha_client.HomeAssistantClient(
@@ -168,9 +156,8 @@ def _verify(
 
 # ── prompting ─────────────────────────────────────────────────────────────────
 
-def _ask(
-    explicit: str | None, label: str, default: str, interactive: bool
-) -> str:
+
+def _ask(explicit: str | None, label: str, default: str, interactive: bool) -> str:
     if explicit:
         return explicit
     if not interactive:

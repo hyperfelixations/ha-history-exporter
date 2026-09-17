@@ -56,11 +56,7 @@ class ExportPlan:
     @property
     def days_to_export(self) -> list[date]:
         """Every day that will be fetched, complete or partial."""
-        return [
-            d.day
-            for d in self.decisions
-            if d.action in (EXPORT, EXPORT_PARTIAL)
-        ]
+        return [d.day for d in self.decisions if d.action in (EXPORT, EXPORT_PARTIAL)]
 
     @property
     def partial_days(self) -> list[date]:
@@ -174,10 +170,7 @@ def build_plan(
                     DayDecision(
                         day=day,
                         action=EXPORT_PARTIAL,
-                        reason=(
-                            f"Day {day} was requested by name and is exported "
-                            "up to now."
-                        ),
+                        reason=(f"Day {day} was requested by name and is exported up to now."),
                     )
                 )
                 continue
@@ -192,9 +185,7 @@ def build_plan(
 
         existing = _check_existing(day, cfg, tz)
         if existing and not force:
-            plan.decisions.append(
-                DayDecision(day=day, action=SKIP_EXISTING, reason=existing)
-            )
+            plan.decisions.append(DayDecision(day=day, action=SKIP_EXISTING, reason=existing))
             logger.info("Day %s: skipping - %s", day, existing)
             continue
 
@@ -213,11 +204,7 @@ def build_plan(
                 f"These days touch or exceed the configured retention boundary: "
                 f"{dates}. HHE will not publish a potentially incomplete capture."
             ),
-            remedies=(
-                Remedy(
-                    "Choose complete days wholly inside the Recorder retention window."
-                ),
-            ),
+            remedies=(Remedy("Choose complete days wholly inside the Recorder retention window."),),
         )
 
     if cfg.recorder.purge_keep_days is None and plan.days_to_export:
@@ -227,8 +214,7 @@ def build_plan(
         )
 
     logger.info(
-        "Export plan: %d day(s) to export (%d partial), %d skip (existing), "
-        "%d skip (incomplete).",
+        "Export plan: %d day(s) to export (%d partial), %d skip (existing), %d skip (incomplete).",
         len(plan.days_to_export),
         len(plan.partial_days),
         len(plan.days_skipped_existing),

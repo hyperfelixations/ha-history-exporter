@@ -57,9 +57,7 @@ def run(args: argparse.Namespace) -> int:
     )
     cfg = settings.config
     config_source = (
-        str(settings.config_file)
-        if settings.config_file is not None
-        else "built-in defaults only"
+        str(settings.config_file) if settings.config_file is not None else "built-in defaults only"
     )
 
     try:
@@ -73,8 +71,7 @@ def run(args: argparse.Namespace) -> int:
             ),
             remedies=(
                 Remedy(
-                    "Correct the value in the configuration file, or override "
-                    "it for a single run:",
+                    "Correct the value in the configuration file, or override it for a single run:",
                     "hhe export --timezone Europe/Berlin --date yesterday",
                 ),
             ),
@@ -147,7 +144,6 @@ def run(args: argparse.Namespace) -> int:
         max_retries=cfg.requests.max_retries,
         backoff_seconds=cfg.requests.backoff,
     ) as client:
-
         logger.info("Checking the Home Assistant API at %s ...", cfg.homeassistant.url)
         client.check_api()
 
@@ -231,9 +227,7 @@ def run(args: argparse.Namespace) -> int:
         return exit_code
 
 
-def requested_partial_day(
-    args: argparse.Namespace, tz: ZoneInfo
-) -> date | None:
+def requested_partial_day(args: argparse.Namespace, tz: ZoneInfo) -> date | None:
     """The running day, when --date named it; otherwise None.
 
     Only a single-day selection can ask for today. A range or --last-days
@@ -248,6 +242,7 @@ def requested_partial_day(
 
 
 # ── argument translation ──────────────────────────────────────────────────────
+
 
 def parse_format_list(raw: str) -> frozenset[Format]:
     """Turn ``--format jsonl,parquet`` into the complete format set.
@@ -281,9 +276,7 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, object]:
         value = getattr(args, dest, None)
         if value is None:
             continue
-        overrides[key_path] = (
-            parse_format_list(value) if dest == "format" else value
-        )
+        overrides[key_path] = parse_format_list(value) if dest == "format" else value
     return overrides
 
 
@@ -306,9 +299,7 @@ def resolve_date_range(args: argparse.Namespace, tz: ZoneInfo) -> tuple[date, da
         start = parse_date_arg(args.start_date, tz)
         end = parse_date_arg(args.end_date, tz)
         if start > end:
-            raise ValueError(
-                f"--start-date ({start}) must not be after --end-date ({end})."
-            )
+            raise ValueError(f"--start-date ({start}) must not be after --end-date ({end}).")
         return start, end
 
     if args.end_date:

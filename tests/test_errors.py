@@ -96,9 +96,7 @@ def test_render_error_without_details_remedies_or_context():
 
 def test_render_error_wraps_long_details():
     stream = io.StringIO()
-    console.render_error(
-        HHEError("short", details="word " * 60), stream=stream
-    )
+    console.render_error(HHEError("short", details="word " * 60), stream=stream)
     body = [line for line in stream.getvalue().splitlines() if line.startswith("  ")]
     assert len(body) > 1
     assert all(len(line) <= console.WIDTH for line in body)

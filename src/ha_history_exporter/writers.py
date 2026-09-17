@@ -44,6 +44,7 @@ _CANONICAL_ROW_FIELDS = frozenset(
 
 # ── JSONL streaming writer ────────────────────────────────────────────────────
 
+
 class JsonlWriter:
     """Context manager that streams state objects to a prepared JSONL artifact.
 
@@ -91,6 +92,7 @@ class JsonlWriter:
 
 # ── CSV streaming writer ──────────────────────────────────────────────────────
 
+
 class CsvWriter:
     """Context manager that streams state objects to a prepared CSV artifact.
 
@@ -125,9 +127,7 @@ class CsvWriter:
 
     def write(self, row: dict) -> None:
         assert self._writer is not None, "CsvWriter must be used as a context manager"
-        extra = {
-            key: value for key, value in row.items() if key not in _CANONICAL_ROW_FIELDS
-        }
+        extra = {key: value for key, value in row.items() if key not in _CANONICAL_ROW_FIELDS}
         self._writer.writerow(
             {
                 "entity_id": row.get("entity_id", ""),
@@ -159,6 +159,7 @@ class CsvWriter:
 
 # ── Atomic finalisation ───────────────────────────────────────────────────────
 
+
 def atomic_replace(
     src: Path,
     dst: Path,
@@ -183,8 +184,7 @@ def atomic_replace(
             if attempt > locked_file_retries:
                 raise
             logger.warning(
-                "PermissionError replacing %s (file locked?) - "
-                "attempt %d/%d, sleeping %.1f s ...",
+                "PermissionError replacing %s (file locked?) - attempt %d/%d, sleeping %.1f s ...",
                 dst.name,
                 attempt,
                 locked_file_retries,
@@ -194,6 +194,7 @@ def atomic_replace(
 
 
 # ── History payload flattening ────────────────────────────────────────────────
+
 
 def flatten_payload(payload: list) -> list[dict]:
     """Flatten the HA history response (list-of-lists) to a flat iterable.
@@ -213,6 +214,7 @@ def flatten_payload(payload: list) -> list[dict]:
 
 # ── Parquet post-processing ───────────────────────────────────────────────────
 
+
 def _parquet_schema() -> Any:
     """Return the fixed pyarrow schema for HA history state objects.
 
@@ -228,15 +230,18 @@ def _parquet_schema() -> Any:
       making the fixed column schema depend on a particular Core version.
     """
     import pyarrow as pa
-    return pa.schema([
-        pa.field("entity_id",       pa.string(),                  nullable=False),
-        pa.field("state",           pa.string(),                  nullable=False),
-        pa.field("last_changed",    pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("last_updated",    pa.timestamp("us", tz="UTC"), nullable=False),
-        pa.field("attributes_json", pa.string(),                  nullable=True),
-        pa.field("local_offset",    pa.string(),                  nullable=False),
-        pa.field("extra_json",      pa.string(),                  nullable=True),
-    ])
+
+    return pa.schema(
+        [
+            pa.field("entity_id", pa.string(), nullable=False),
+            pa.field("state", pa.string(), nullable=False),
+            pa.field("last_changed", pa.timestamp("us", tz="UTC"), nullable=False),
+            pa.field("last_updated", pa.timestamp("us", tz="UTC"), nullable=False),
+            pa.field("attributes_json", pa.string(), nullable=True),
+            pa.field("local_offset", pa.string(), nullable=False),
+            pa.field("extra_json", pa.string(), nullable=True),
+        ]
+    )
 
 
 def _parse_ts_utc(ts_str: str | None) -> datetime:
@@ -297,12 +302,12 @@ def convert_jsonl_to_parquet(
         import pyarrow.parquet as pq
     except ImportError as exc:
         raise ImportError(
-            "pyarrow is required for Parquet output. "
-            "Install it with: pip install pyarrow>=15.0"
+            "pyarrow is required for Parquet output. Install it with: pip install pyarrow>=15.0"
         ) from exc
 
     if not src.exists():
         from .validators import ValidationError
+
         raise ValidationError(f"Source JSONL file does not exist: {src}")
 
     schema = _parquet_schema()
@@ -310,11 +315,11 @@ def convert_jsonl_to_parquet(
     total_rows = 0
 
     # Accumulator lists for the current row group batch.
-    buf_entity_ids:    list = []
-    buf_states:        list = []
-    buf_last_changed:  list = []
-    buf_last_updated:  list = []
-    buf_attributes:    list = []
+    buf_entity_ids: list = []
+    buf_states: list = []
+    buf_last_changed: list = []
+    buf_last_updated: list = []
+    buf_attributes: list = []
     buf_local_offsets: list = []
     buf_extras: list = []
 
@@ -323,13 +328,13 @@ def convert_jsonl_to_parquet(
             return
         table = pa.table(
             {
-                "entity_id":       pa.array(buf_entity_ids,    type=pa.string()),
-                "state":           pa.array(buf_states,         type=pa.string()),
-                "last_changed":    pa.array(buf_last_changed,   type=pa.timestamp("us", tz="UTC")),
-                "last_updated":    pa.array(buf_last_updated,   type=pa.timestamp("us", tz="UTC")),
-                "attributes_json": pa.array(buf_attributes,     type=pa.string()),
-                "local_offset":    pa.array(buf_local_offsets,  type=pa.string()),
-                "extra_json":      pa.array(buf_extras,         type=pa.string()),
+                "entity_id": pa.array(buf_entity_ids, type=pa.string()),
+                "state": pa.array(buf_states, type=pa.string()),
+                "last_changed": pa.array(buf_last_changed, type=pa.timestamp("us", tz="UTC")),
+                "last_updated": pa.array(buf_last_updated, type=pa.timestamp("us", tz="UTC")),
+                "attributes_json": pa.array(buf_attributes, type=pa.string()),
+                "local_offset": pa.array(buf_local_offsets, type=pa.string()),
+                "extra_json": pa.array(buf_extras, type=pa.string()),
             },
             schema=schema,
         )
@@ -351,9 +356,7 @@ def convert_jsonl_to_parquet(
                 buf_states.append(record.state)
                 buf_last_changed.append(record.last_changed)
                 buf_last_updated.append(record.last_updated)
-                buf_attributes.append(
-                    json.dumps(record.attributes, ensure_ascii=False)
-                )
+                buf_attributes.append(json.dumps(record.attributes, ensure_ascii=False))
                 buf_local_offsets.append(record.local_offset)
                 buf_extras.append(
                     json.dumps(record.extra, ensure_ascii=False) if record.extra else None

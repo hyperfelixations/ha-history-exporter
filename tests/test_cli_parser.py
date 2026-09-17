@@ -19,6 +19,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 
 # ── the command is part of every invocation ───────────────────────────────────
 
+
 def test_top_level_help_names_the_invoked_program(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["ha-history-exporter", "--help"])
     with pytest.raises(SystemExit) as exc:
@@ -132,9 +133,7 @@ def test_day_selections_stay_mutually_exclusive(argv):
 def test_date_words_work_in_every_date_option(word):
     """One translation of 'yesterday' and 'today', used by all three options."""
     tz = ZoneInfo("Europe/Berlin")
-    single = export_command.resolve_date_range(
-        cli.parse_args(["export", "--date", word]), tz
-    )
+    single = export_command.resolve_date_range(cli.parse_args(["export", "--date", word]), tz)
     ranged = export_command.resolve_date_range(
         cli.parse_args(["export", "--start-date", word, "--end-date", word]), tz
     )
@@ -143,15 +142,14 @@ def test_date_words_work_in_every_date_option(word):
 
 def test_a_range_may_end_at_yesterday():
     tz = ZoneInfo("Europe/Berlin")
-    args = cli.parse_args(
-        ["export", "--start-date", "2026-07-01", "--end-date", "yesterday"]
-    )
+    args = cli.parse_args(["export", "--start-date", "2026-07-01", "--end-date", "yesterday"])
     start, end = export_command.resolve_date_range(args, tz)
     assert start == date(2026, 7, 1)
     assert end == today_local(tz) - timedelta(days=1)
 
 
 # ── --last-days ───────────────────────────────────────────────────────────────
+
 
 def test_last_n_complete_days_ends_yesterday():
     today = today_local(BERLIN)
@@ -197,9 +195,7 @@ def test_resolve_date_range_still_supports_single_days_and_ranges():
         date(2026, 7, 28),
     )
 
-    ranged = cli.parse_args(
-        ["export", "--start-date", "2026-07-20", "--end-date", "2026-07-28"]
-    )
+    ranged = cli.parse_args(["export", "--start-date", "2026-07-20", "--end-date", "2026-07-28"])
     assert export_command.resolve_date_range(ranged, BERLIN) == (
         date(2026, 7, 20),
         date(2026, 7, 28),
@@ -243,6 +239,7 @@ def test_invalid_date_argument_is_echoed_for_diagnosis(tmp_path, monkeypatch, ca
 
 
 # ── --format ──────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -327,14 +324,13 @@ def test_format_switch_reaches_the_configuration(tmp_path, monkeypatch):
 
     monkeypatch.setattr(export_command, "run_export", fake_run_export)
 
-    assert (
-        cli.main(["export", "--date", "2026-07-28", "--format", "csv,parquet"]) == 0
-    )
+    assert cli.main(["export", "--date", "2026-07-28", "--format", "csv,parquet"]) == 0
 
     assert captured["cfg"].export.formats == frozenset({Format.CSV, Format.PARQUET})
 
 
 # ── logging ───────────────────────────────────────────────────────────────────
+
 
 def test_repeated_runs_do_not_stack_log_handlers(tmp_path, monkeypatch):
     import logging

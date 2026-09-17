@@ -36,9 +36,7 @@ def main() -> int:
             # everywhere.
             _write(
                 contract.GOLDEN / f"{day}.jsonl",
-                contract.day_file(output, day, "jsonl")
-                .read_bytes()
-                .replace(b"\r\n", b"\n"),
+                contract.day_file(output, day, "jsonl").read_bytes().replace(b"\r\n", b"\n"),
             )
             _write(
                 contract.GOLDEN / f"{day}.csv",
@@ -51,9 +49,7 @@ def main() -> int:
             )
             _dump(
                 contract.GOLDEN / f"{day}.manifest.json",
-                contract.stable_manifest(
-                    contract.day_file(output, day, "manifest.json")
-                ),
+                contract.stable_manifest(contract.day_file(output, day, "manifest.json")),
             )
 
         _dump(

@@ -46,15 +46,10 @@ def read_user_values(config_dir: Path | None = None) -> dict[str, Any]:
     path = user_config_path(config_dir)
     if not path.is_file():
         return {}
-    return {
-        key_path: entry.value
-        for key_path, entry in sources.file_entries(path).items()
-    }
+    return {key_path: entry.value for key_path, entry in sources.file_entries(path).items()}
 
 
-def write_user_values(
-    values: Mapping[str, Any], config_dir: Path | None = None
-) -> Path:
+def write_user_values(values: Mapping[str, Any], config_dir: Path | None = None) -> Path:
     """Regenerate the user configuration file from *values*."""
     path = user_config_path(config_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,12 +93,8 @@ def _scalar(key: schema.Key, value: Any) -> str:
     which would terminate the surrounding document; drop the markers and keep
     the value itself.
     """
-    dumped = yaml.safe_dump(
-        _plain(key, value), default_flow_style=True, allow_unicode=True
-    )
-    lines = [
-        line for line in dumped.splitlines() if line.strip() not in ("...", "---")
-    ]
+    dumped = yaml.safe_dump(_plain(key, value), default_flow_style=True, allow_unicode=True)
+    lines = [line for line in dumped.splitlines() if line.strip() not in ("...", "---")]
     return " ".join(line.strip() for line in lines).strip()
 
 
@@ -113,9 +104,7 @@ def _plain(key: schema.Key, value: Any) -> Any:
         if isinstance(value, (frozenset, set)):
             return [fmt.value for fmt in FORMAT_ORDER if fmt in value]
         if isinstance(value, str):
-            return [
-                part.strip() for part in value.split(",") if part.strip()
-            ]
+            return [part.strip() for part in value.split(",") if part.strip()]
         return [item.value if isinstance(item, Format) else item for item in value]
     if isinstance(value, tuple):
         return list(value)

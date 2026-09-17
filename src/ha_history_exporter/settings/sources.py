@@ -40,12 +40,11 @@ class Entry:
 
 
 def default_entries() -> dict[str, Entry]:
-    return {
-        key.path: Entry(schema.default_value(key), "default") for key in KEYS
-    }
+    return {key.path: Entry(schema.default_value(key), "default") for key in KEYS}
 
 
 # ── YAML files ────────────────────────────────────────────────────────────────
+
 
 def _key_lines(node: yaml.Node, prefix: str, lines: dict[str, int]) -> None:
     if not isinstance(node, yaml.MappingNode):
@@ -152,6 +151,7 @@ def file_entries(path: Path) -> dict[str, Entry]:
 
 # ── environment ───────────────────────────────────────────────────────────────
 
+
 def parse_scalar(key: Key, raw: str, source: str) -> Any:
     value = raw.strip()
     try:
@@ -193,26 +193,21 @@ def env_entries(environ: Mapping[str, str]) -> dict[str, Entry]:
     entries: dict[str, Entry] = {}
     for name, key in BY_ENV_VAR.items():
         if name in environ:
-            entries[key.path] = Entry(
-                parse_scalar(key, environ[name], name), f"env:{name}", name
-            )
+            entries[key.path] = Entry(parse_scalar(key, environ[name], name), f"env:{name}", name)
     for name, key_path in LEGACY_ENV_VARS.items():
         if name in environ:
             key = BY_PATH[key_path]
-            entries[key_path] = Entry(
-                parse_scalar(key, environ[name], name), f"env:{name}", name
-            )
+            entries[key_path] = Entry(parse_scalar(key, environ[name], name), f"env:{name}", name)
     return entries
 
 
 # ── command line ──────────────────────────────────────────────────────────────
+
 
 def cli_entries(overrides: Mapping[str, Any] | None) -> dict[str, Entry]:
     if not overrides:
         return {}
     unknown = sorted(set(overrides) - set(BY_PATH))
     if unknown:  # pragma: no cover - guards a programming error, not user input
-        raise ConfigError(
-            f"Unknown configuration key(s) from the command line: {unknown}."
-        )
+        raise ConfigError(f"Unknown configuration key(s) from the command line: {unknown}.")
     return {path: Entry(value, "cli") for path, value in overrides.items()}

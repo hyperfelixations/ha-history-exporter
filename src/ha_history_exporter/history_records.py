@@ -19,9 +19,7 @@ from zoneinfo import ZoneInfo
 from .errors import ValidationError
 from .settings.model import HistoryRequestSettings
 
-_WIRE_FIELDS = frozenset(
-    {"entity_id", "state", "last_changed", "last_updated", "attributes"}
-)
+_WIRE_FIELDS = frozenset({"entity_id", "state", "last_changed", "last_updated", "attributes"})
 _STORAGE_FIELDS = _WIRE_FIELDS | {"local_offset"}
 
 
@@ -74,9 +72,7 @@ def _parse_timestamp(value: Any, field_name: str, group: int, row: int) -> datet
             f"History group {group}, row {row}: {field_name} is not valid ISO 8601."
         ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValidationError(
-            f"History group {group}, row {row}: {field_name} needs a timezone."
-        )
+        raise ValidationError(f"History group {group}, row {row}: {field_name} needs a timezone.")
     return parsed.astimezone(timezone.utc)
 
 
@@ -115,12 +111,8 @@ def stored_record(
     state = row.get("state")
     if not isinstance(state, str):
         raise ValidationError(f"{location}: state must be a string.")
-    last_changed = _parse_timestamp(
-        row.get("last_changed"), "last_changed", 0, 0
-    )
-    last_updated = _parse_timestamp(
-        row.get("last_updated"), "last_updated", 0, 0
-    )
+    last_changed = _parse_timestamp(row.get("last_changed"), "last_changed", 0, 0)
+    last_updated = _parse_timestamp(row.get("last_updated"), "last_updated", 0, 0)
     if last_changed > last_updated:
         raise ValidationError(f"{location}: last_changed is after last_updated.")
     attributes = row.get("attributes")
@@ -187,27 +179,19 @@ def iter_normalized_history(
 
     for group_index, group in enumerate(payload, start=1):
         if not group:
-            raise ValidationError(
-                f"History group {group_index}: empty entity history group."
-            )
+            raise ValidationError(f"History group {group_index}: empty entity history group.")
         first = group[0]
         if not isinstance(first, Mapping):
-            raise ValidationError(
-                f"History group {group_index}, row 1 must be an object."
-            )
+            raise ValidationError(f"History group {group_index}, row 1 must be an object.")
         entity_id = first.get("entity_id")
         if not isinstance(entity_id, str) or not entity_id:
             raise ValidationError(
                 f"History group {group_index}: first row needs a non-empty entity_id."
             )
         if entity_id not in requested:
-            raise ValidationError(
-                f"History group {group_index}: entity was not requested."
-            )
+            raise ValidationError(f"History group {group_index}: entity was not requested.")
         if entity_id in seen_groups:
-            raise ValidationError(
-                f"History group {group_index}: duplicate entity history group."
-            )
+            raise ValidationError(f"History group {group_index}: duplicate entity history group.")
         seen_groups.add(entity_id)
 
         for row_index, row in enumerate(group, start=1):
@@ -217,11 +201,7 @@ def iter_normalized_history(
                 )
 
             explicit_entity = row.get("entity_id")
-            reduced = (
-                settings.minimal_response
-                and row_index > 1
-                and "last_updated" not in row
-            )
+            reduced = settings.minimal_response and row_index > 1 and "last_updated" not in row
             if explicit_entity is None:
                 if not reduced:
                     raise ValidationError(
@@ -236,8 +216,7 @@ def iter_normalized_history(
             state = row.get("state")
             if not isinstance(state, str):
                 raise ValidationError(
-                    f"History group {group_index}, row {row_index}: state must "
-                    "be a string."
+                    f"History group {group_index}, row {row_index}: state must be a string."
                 )
 
             last_changed = _parse_timestamp(
@@ -260,9 +239,7 @@ def iter_normalized_history(
                 )
 
             carry_in = (
-                not settings.skip_initial_state
-                and row_index == 1
-                and last_updated == start_utc
+                not settings.skip_initial_state and row_index == 1 and last_updated == start_utc
             )
             if not (start_utc < last_updated < end_utc or carry_in):
                 raise ValidationError(
@@ -277,9 +254,7 @@ def iter_normalized_history(
                         f"History group {group_index}, row {row_index}: attributes "
                         "must be an object."
                     )
-                attributes = (
-                    dict(raw_attributes) if isinstance(raw_attributes, Mapping) else None
-                )
+                attributes = dict(raw_attributes) if isinstance(raw_attributes, Mapping) else None
             elif settings.no_attributes:
                 attributes = None
             elif reduced:

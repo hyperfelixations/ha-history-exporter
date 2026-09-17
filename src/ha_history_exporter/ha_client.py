@@ -159,8 +159,7 @@ class HomeAssistantClient:
                 ),
                 Remedy(
                     "Raise the timeout or the retry count for one run:",
-                    "hhe export --timeout 300 --max-retries 5 "
-                    "--date yesterday",
+                    "hhe export --timeout 300 --max-retries 5 --date yesterday",
                 ),
             ),
             context={"url": self._base, "endpoint": path},
@@ -182,9 +181,7 @@ class HomeAssistantClient:
         resp = self._get("/api/")
         data = self._decode_json(resp, "/api/")
         if not isinstance(data, dict):
-            raise HAAPIError(
-                f"Expected object from /api/, got {type(data).__name__}"
-            )
+            raise HAAPIError(f"Expected object from /api/, got {type(data).__name__}")
         if data.get("message") != "API running.":
             raise HAAPIError("Unexpected response contract from /api/.")
         logger.info("HA API is reachable at %s.", self._base)
@@ -195,9 +192,7 @@ class HomeAssistantClient:
         resp = self._get("/api/states")
         data = self._decode_json(resp, "/api/states")
         if not isinstance(data, list):
-            raise HAAPIError(
-                f"Expected list from /api/states, got {type(data).__name__}"
-            )
+            raise HAAPIError(f"Expected list from /api/states, got {type(data).__name__}")
         if any(not isinstance(state, dict) for state in data):
             raise HAAPIError("Expected state objects from /api/states")
         logger.info("Received %d entity states from /api/states.", len(data))
@@ -231,9 +226,7 @@ class HomeAssistantClient:
             params["minimal_response"] = "1"
         if no_attributes:
             params["no_attributes"] = "1"
-        params["significant_changes_only"] = (
-            "1" if significant_changes_only else "0"
-        )
+        params["significant_changes_only"] = "1" if significant_changes_only else "0"
         if skip_initial_state:
             params["skip_initial_state"] = "1"
 
@@ -241,16 +234,10 @@ class HomeAssistantClient:
         endpoint = "/api/history/period"
         data = self._decode_json(resp, endpoint)
         if not isinstance(data, list):
-            raise HAAPIError(
-                f"Expected list from history endpoint, got {type(data).__name__}"
-            )
+            raise HAAPIError(f"Expected list from history endpoint, got {type(data).__name__}")
         if any(not isinstance(history, list) for history in data):
             raise HAAPIError("Expected entity history lists from history endpoint")
-        if any(
-            not isinstance(state, dict)
-            for history in data
-            for state in history
-        ):
+        if any(not isinstance(state, dict) for history in data for state in history):
             raise HAAPIError("Expected state objects in history endpoint response")
         return data
 

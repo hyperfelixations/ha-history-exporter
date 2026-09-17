@@ -110,9 +110,7 @@ def test_resolve_date_range_rejects_reversed_range():
 
 
 def test_main_returns_two_for_missing_config(capsys):
-    result = cli.main(
-        ["export", "--config", "does-not-exist.yaml", "--date", "2026-07-28"]
-    )
+    result = cli.main(["export", "--config", "does-not-exist.yaml", "--date", "2026-07-28"])
     assert result == 2
     assert "Config file not found" in capsys.readouterr().err
 
@@ -130,9 +128,7 @@ def test_main_returns_two_for_invalid_timezone(tmp_path, monkeypatch, capsys):
     assert not (tmp_path / "output" / "logs").exists()
 
 
-def test_main_rejects_invalid_numeric_override_before_client(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_rejects_invalid_numeric_override_before_client(tmp_path, monkeypatch, capsys):
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
 
@@ -159,13 +155,9 @@ def test_main_rejects_invalid_numeric_override_before_client(
     assert "requests.batch_size" in capsys.readouterr().err
 
 
-def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
-    tmp_path, monkeypatch
-):
+def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(tmp_path, monkeypatch):
     path = write_config(tmp_path)
-    text = path.read_text(encoding="utf-8").replace(
-        "formats: [jsonl]", "formats: []"
-    )
+    text = path.read_text(encoding="utf-8").replace("formats: [jsonl]", "formats: []")
     path.write_text(text, encoding="utf-8")
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
@@ -183,9 +175,7 @@ def test_main_snapshot_only_saves_entities_without_history_or_day_manifest(
     assert not (tmp_path / "output" / "exports").exists()
 
 
-def test_main_dry_run_uses_only_synthetic_client(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_dry_run_uses_only_synthetic_client(tmp_path, monkeypatch, capsys):
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
@@ -216,22 +206,13 @@ def test_main_full_export_with_fake_client(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    result = cli.main(
-        ["export", "--config", str(path), "--date", "2026-07-28"]
-    )
+    result = cli.main(["export", "--config", str(path), "--date", "2026-07-28"])
 
     assert result == 0
     instance = FakeCliClient.instances[0]
     assert len(instance.history_calls) == 1
     output = tmp_path / "output"
-    manifest_path = (
-        output
-        / "exports"
-        / "daily"
-        / "2026"
-        / "07"
-        / "2026-07-28.manifest.json"
-    )
+    manifest_path = output / "exports" / "daily" / "2026" / "07" / "2026-07-28.manifest.json"
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "ok"
 
 
@@ -241,22 +222,16 @@ def test_main_handles_authentication_failure(tmp_path, monkeypatch, capsys):
     FakeCliClient.check_error = AuthError("synthetic auth failure")
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    result = cli.main(
-        ["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"]
-    )
+    result = cli.main(["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"])
 
     assert result == 1
     assert "error: synthetic auth failure" in capsys.readouterr().err
 
 
-def test_main_short_circuits_existing_day_before_client(
-    tmp_path, monkeypatch
-):
+def test_main_short_circuits_existing_day_before_client(tmp_path, monkeypatch):
     path = write_config(tmp_path)
     set_synthetic_env(monkeypatch)
-    export = (
-        tmp_path / "output" / "exports" / "daily" / "2026" / "07"
-    )
+    export = tmp_path / "output" / "exports" / "daily" / "2026" / "07"
     export.mkdir(parents=True)
     (export / "2026-07-28.manifest.json").write_text(
         json.dumps(valid_data("1.3")),
@@ -362,9 +337,7 @@ def test_main_handles_top_level_failures(
             for record in caplog.records
             if "Unexpected internal error" in record.getMessage()
         )
-        assert " at ha_history_exporter.cli.commands.export:run:" in (
-            error_record.getMessage()
-        )
+        assert " at ha_history_exporter.cli.commands.export:run:" in (error_record.getMessage())
         assert str(error) not in error_record.getMessage()
 
 
@@ -379,13 +352,7 @@ def test_main_runs_without_any_configuration_file(tmp_path, monkeypatch):
 
     assert cli.main(["export", "--date", "2026-07-28"]) == 0
     assert (
-        tmp_path
-        / "output"
-        / "exports"
-        / "daily"
-        / "2026"
-        / "07"
-        / "2026-07-28.manifest.json"
+        tmp_path / "output" / "exports" / "daily" / "2026" / "07" / "2026-07-28.manifest.json"
     ).is_file()
 
 
@@ -410,12 +377,7 @@ def test_main_names_the_log_file_and_the_configuration_in_the_summary(
     set_synthetic_env(monkeypatch)
     monkeypatch.setattr(ha_client, "HomeAssistantClient", FakeCliClient)
 
-    assert (
-        cli.main(
-            ["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"]
-        )
-        == 0
-    )
+    assert cli.main(["export", "--config", str(path), "--date", "2026-07-28", "--dry-run"]) == 0
 
     output = capsys.readouterr().out
     assert "Output          :" in output
@@ -423,9 +385,7 @@ def test_main_names_the_log_file_and_the_configuration_in_the_summary(
     assert "Log file        :" in output
 
 
-def test_main_warns_when_no_configuration_file_was_found(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_warns_when_no_configuration_file_was_found(tmp_path, monkeypatch, capsys):
     """The incident this warning exists for: a silent fall back to defaults
     sends the export to a different directory, where every day looks missing.
     """
@@ -473,8 +433,7 @@ def test_cli_overrides_stay_empty_when_no_option_is_given():
 def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
     path = write_config(tmp_path)
     path.write_text(
-        path.read_text(encoding="utf-8")
-        + "entities:\n  include_unknown: false\n",
+        path.read_text(encoding="utf-8") + "entities:\n  include_unknown: false\n",
         encoding="utf-8",
     )
     set_synthetic_env(monkeypatch)
@@ -488,11 +447,7 @@ def test_entity_selection_narrows_the_requested_entities(tmp_path, monkeypatch):
     assert cli.main(["export", "--config", str(path), "--date", "2026-07-28"]) == 0
 
     instance = FakeCliClient.instances[0]
-    requested = [
-        entity
-        for call in instance.history_calls
-        for entity in call["entity_ids"]
-    ]
+    requested = [entity for call in instance.history_calls for entity in call["entity_ids"]]
     assert requested == ["sensor.known"]
 
     snapshots = list((tmp_path / "output" / "metadata").glob("entity_snapshot_*.json"))

@@ -110,9 +110,7 @@ def read_parquet(path: Path) -> Iterator[HistoryRecord]:
             for row in batch.to_pylist():
                 row_number += 1
                 location = f"{path.name}, row {row_number}"
-                attributes = _json_mapping(
-                    row["attributes_json"], "attributes_json", location
-                )
+                attributes = _json_mapping(row["attributes_json"], "attributes_json", location)
                 extra = _json_mapping(row["extra_json"], "extra_json", location) or {}
                 yield stored_record(
                     {

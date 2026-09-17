@@ -44,6 +44,7 @@ def user_config(config_dir: Path, text: str) -> Path:
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
+
 def test_config_dir_follows_the_override(isolated_user_environment):
     assert paths.user_config_dir() == isolated_user_environment
     assert paths.user_config_file().name == "config.yaml"
@@ -100,9 +101,7 @@ def test_default_output_directory_is_in_the_home_directory():
 
 
 @pytest.mark.parametrize("lookup_result", ["", ".", "./ha-history-exporter"])
-def test_config_dir_rejects_a_relative_platform_answer(
-    monkeypatch, tmp_path, lookup_result
-):
+def test_config_dir_rejects_a_relative_platform_answer(monkeypatch, tmp_path, lookup_result):
     """platformdirs does not check the Windows known-folder call.
 
     An empty answer becomes '.', and the configuration directory would then
@@ -110,9 +109,7 @@ def test_config_dir_rejects_a_relative_platform_answer(
     """
     monkeypatch.delenv(paths.ENV_CONFIG_DIR, raising=False)
     monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
-    monkeypatch.setattr(
-        paths.platformdirs, "user_config_dir", lambda *a, **k: lookup_result
-    )
+    monkeypatch.setattr(paths.platformdirs, "user_config_dir", lambda *a, **k: lookup_result)
 
     resolved = paths.user_config_dir()
 
@@ -120,9 +117,7 @@ def test_config_dir_rejects_a_relative_platform_answer(
     assert resolved == tmp_path / "roaming" / paths.APP_NAME
 
 
-def test_config_dir_falls_back_to_the_home_directory_as_a_last_resort(
-    monkeypatch, tmp_path
-):
+def test_config_dir_falls_back_to_the_home_directory_as_a_last_resort(monkeypatch, tmp_path):
     monkeypatch.delenv(paths.ENV_CONFIG_DIR, raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
@@ -134,9 +129,7 @@ def test_config_dir_falls_back_to_the_home_directory_as_a_last_resort(
     assert resolved == Path.home() / ".config" / paths.APP_NAME
 
 
-def test_no_configuration_is_discovered_in_the_working_directory(
-    tmp_path, monkeypatch
-):
+def test_no_configuration_is_discovered_in_the_working_directory(tmp_path, monkeypatch):
     """A file lying in the current directory must have no effect at all."""
     for name in ("config.yaml", "ha-history-exporter.yaml", "export_config.yaml"):
         write(tmp_path / name, "requests:\n  batch_size: 99\n")
@@ -149,6 +142,7 @@ def test_no_configuration_is_discovered_in_the_working_directory(
 
 
 # ── schema ────────────────────────────────────────────────────────────────────
+
 
 def test_every_key_has_documentation_and_a_unique_environment_variable():
     seen: set[str] = set()
@@ -172,9 +166,7 @@ def test_the_credential_keys_use_short_environment_variables():
 
 
 def test_only_the_token_is_a_secret():
-    secrets_found = [
-        key.path for key in schema.KEYS if key.status is KeyStatus.SECRET
-    ]
+    secrets_found = [key.path for key in schema.KEYS if key.status is KeyStatus.SECRET]
     assert secrets_found == ["homeassistant.token"]
 
 
@@ -210,6 +202,7 @@ def test_the_configuration_object_cannot_be_changed_after_it_is_built():
 
 
 # ── output formats ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -254,6 +247,7 @@ def test_formats_from_a_file_reach_the_configuration(isolated_user_environment):
 
 
 # ── precedence ────────────────────────────────────────────────────────────────
+
 
 def test_defaults_apply_without_any_configuration_file(tmp_path):
     settings = resolve(environ=SYNTHETIC_ENV)
@@ -300,9 +294,7 @@ def test_the_command_line_overrides_everything(isolated_user_environment):
     user_config(isolated_user_environment, "requests:\n  batch_size: 11\n")
     environ = {**SYNTHETIC_ENV, "HHE_REQUESTS_BATCH_SIZE": "23"}
 
-    settings = resolve(
-        cli_overrides={"requests.batch_size": 7}, environ=environ
-    )
+    settings = resolve(cli_overrides={"requests.batch_size": 7}, environ=environ)
 
     assert settings.config.requests.batch_size == 7
     assert settings.origin("requests.batch_size") == "cli"
@@ -343,6 +335,7 @@ def test_optional_integer_environment_value_may_be_null():
 
 
 # ── validation ────────────────────────────────────────────────────────────────
+
 
 def test_unknown_key_names_the_file_the_line_and_a_suggestion(
     isolated_user_environment,
@@ -408,7 +401,7 @@ def test_a_directory_named_as_the_config_file_is_reported(tmp_path):
 def test_a_user_configuration_that_cannot_be_examined_is_an_error(
     isolated_user_environment, monkeypatch
 ):
-    """"Cannot read it" must never be treated as "it is not there".
+    """ "Cannot read it" must never be treated as "it is not there".
 
     The silent fallback to built-in defaults would send the export to a
     different output directory, where no manifest exists and every day looks
@@ -493,6 +486,7 @@ def test_key_helpers_expose_section_and_name():
 
 # ── credentials ───────────────────────────────────────────────────────────────
 
+
 def test_url_and_token_come_from_the_legacy_environment_variables():
     settings = resolve(environ=SYNTHETIC_ENV)
     assert settings.config.homeassistant.url == "http://home-assistant.invalid"
@@ -545,9 +539,7 @@ def test_invalid_home_assistant_urls_are_rejected_without_echoing_them(url):
     with pytest.raises(ConfigError) as exc:
         resolve(environ={"HA_URL": url, "HA_TOKEN": "synthetic-test-token"})
 
-    rendered = " ".join(
-        [exc.value.summary, exc.value.details or "", *exc.value.context.values()]
-    )
+    rendered = " ".join([exc.value.summary, exc.value.details or "", *exc.value.context.values()])
     if url != "http://":
         assert url not in rendered
     assert "synthetic-private-marker" not in rendered
@@ -562,9 +554,7 @@ def test_invalid_home_assistant_urls_are_rejected_without_echoing_them(url):
     ],
 )
 def test_valid_home_assistant_base_urls_are_normalized(url, expected):
-    settings = resolve(
-        environ={"HA_URL": url, "HA_TOKEN": "synthetic-test-token"}
-    )
+    settings = resolve(environ={"HA_URL": url, "HA_TOKEN": "synthetic-test-token"})
     assert settings.config.homeassistant.url == expected
 
 
@@ -635,6 +625,7 @@ def test_an_absent_token_is_reported_as_not_set():
 
 
 # ── secrets ───────────────────────────────────────────────────────────────────
+
 
 def test_token_round_trip(isolated_user_environment):
     path = secrets.write_token("synthetic-round-trip")

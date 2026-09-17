@@ -82,9 +82,7 @@ def write_token(token: str, config_dir: Path | None = None) -> Path:
     tmp.unlink(missing_ok=True)
 
     document = yaml.safe_dump({_SECTION: {_FIELD: token}}, sort_keys=True)
-    descriptor = os.open(
-        tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, OWNER_ONLY
-    )
+    descriptor = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, OWNER_ONLY)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(document)

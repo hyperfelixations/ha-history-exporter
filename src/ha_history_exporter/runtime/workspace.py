@@ -100,9 +100,7 @@ def open_workspace(cfg: Config) -> Workspace:
             cfg.storage.locked_file_retry_sleep,
         )
         if recovered:
-            logger.warning(
-                "Recovered %d interrupted day transaction(s).", recovered
-            )
+            logger.warning("Recovered %d interrupted day transaction(s).", recovered)
         work_dir = temp_root / f"{RUN_PREFIX}{run_id}"
         work_dir.mkdir(parents=True, exist_ok=False)
     except BaseException:
@@ -139,6 +137,7 @@ def cleanup_stale(temp_root: Path, max_age_hours: int = STALE_AFTER_HOURS) -> in
 
 # ── locking ───────────────────────────────────────────────────────────────────
 
+
 def _acquire_lock(lock_path: Path, run_id: str) -> None:
     payload = (
         f"run_id: {run_id}\n"
@@ -166,9 +165,7 @@ def _acquire_lock(lock_path: Path, run_id: str) -> None:
 
 def _release_lock(lock_path: Path, run_id: str) -> None:
     try:
-        if lock_path.is_file() and f"run_id: {run_id}" in lock_path.read_text(
-            encoding="utf-8"
-        ):
+        if lock_path.is_file() and f"run_id: {run_id}" in lock_path.read_text(encoding="utf-8"):
             lock_path.unlink()
     except OSError:  # pragma: no cover - the run is finished either way
         logger.debug("Could not remove the lock at %s.", lock_path)

@@ -316,6 +316,7 @@ def _run_days(
 
 # ── Day-level export ──────────────────────────────────────────────────────────
 
+
 def _export_day(
     cfg: Config,
     day: date,
@@ -402,13 +403,9 @@ def _export_day(
     manifest.entity_count_with_history = len(fetched.entities_with_history)
     manifest.entity_count_zero_history = len(zero_history)
     manifest.zero_history_entities = zero_history
-    manifest.output_files = {
-        fmt.value: finalized.written.get(fmt) for fmt in FORMAT_ORDER
-    }
+    manifest.output_files = {fmt.value: finalized.written.get(fmt) for fmt in FORMAT_ORDER}
     manifest.artifacts = {
-        fmt.value: asdict(finalized.artifacts[fmt])
-        if cfg.wants(fmt)
-        else None
+        fmt.value: asdict(finalized.artifacts[fmt]) if cfg.wants(fmt) else None
         for fmt in FORMAT_ORDER
     }
 
@@ -476,9 +473,7 @@ def _fetch_day_rows(
 
     with writers.JsonlWriter(temp[Format.JSONL]) as jw, csv_writer as cw:
         for batch_idx, batch in enumerate(batch_list, start=1):
-            logger.debug(
-                "  Batch %d/%d (%d entities) ...", batch_idx, total_batches, len(batch)
-            )
+            logger.debug("  Batch %d/%d (%d entities) ...", batch_idx, total_batches, len(batch))
 
             try:
                 retries_before = client.total_retries
@@ -502,9 +497,7 @@ def _fetch_day_rows(
                     exc,
                     unexpected_summary="Unexpected error while fetching this batch.",
                 )
-                logger.error(
-                    "  Batch %d failed (%s).", batch_idx, type(exc).__name__
-                )
+                logger.error("  Batch %d failed (%s).", batch_idx, type(exc).__name__)
                 result.failed_batches.append(
                     {
                         "batch_index": batch_idx,
@@ -569,9 +562,7 @@ def _finalize_day(
             compression=PARQUET_COMPRESSION,
         )
     validation_paths = {Format.JSONL: temp[Format.JSONL]}
-    validation_paths.update(
-        {fmt: temp[fmt] for fmt in FORMAT_ORDER if cfg.wants(fmt)}
-    )
+    validation_paths.update({fmt: temp[fmt] for fmt in FORMAT_ORDER if cfg.wants(fmt)})
     artifacts = validate_export_artifacts(
         validation_paths,
         expected_rows=expected_rows,
@@ -600,6 +591,7 @@ def _finalize_day(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _chunks(lst: list[T], n: int) -> Iterator[list[T]]:
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
@@ -623,6 +615,4 @@ def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
-        logger.warning(
-            "Could not append to export_runs.jsonl (%s).", type(exc).__name__
-        )
+        logger.warning("Could not append to export_runs.jsonl (%s).", type(exc).__name__)

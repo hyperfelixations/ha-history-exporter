@@ -45,9 +45,7 @@ def test_token_is_only_placed_in_authorization_header():
 
 def test_check_api_accepts_expected_message(monkeypatch):
     client = make_client()
-    sequence = install_get(
-        monkeypatch, client, [FakeResponse(payload={"message": "API running."})]
-    )
+    sequence = install_get(monkeypatch, client, [FakeResponse(payload={"message": "API running."})])
 
     client.check_api()
 

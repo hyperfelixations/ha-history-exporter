@@ -37,10 +37,9 @@ def run(args: argparse.Namespace) -> int:
 
 # ── read ──────────────────────────────────────────────────────────────────────
 
+
 def _effective(args: argparse.Namespace) -> ResolvedSettings:
-    return resolve(
-        explicit_config=getattr(args, "config", None), require_credentials=False
-    )
+    return resolve(explicit_config=getattr(args, "config", None), require_credentials=False)
 
 
 def _get(args: argparse.Namespace) -> int:
@@ -87,6 +86,7 @@ def _path(args: argparse.Namespace) -> int:
 
 # ── write ─────────────────────────────────────────────────────────────────────
 
+
 def _set(args: argparse.Namespace) -> int:
     key = _known_key(args.key)
     _refuse_explicit_config(args)
@@ -107,8 +107,7 @@ def _set(args: argparse.Namespace) -> int:
                     ),
                     Remedy(
                         "Or read it explicitly from standard input:",
-                        "Get-Content <token-file> | hhe config set "
-                        "homeassistant.token --stdin",
+                        "Get-Content <token-file> | hhe config set homeassistant.token --stdin",
                     ),
                 ),
             )
@@ -116,9 +115,7 @@ def _set(args: argparse.Namespace) -> int:
         if not token.strip():
             raise UsageError(
                 "No token was entered; nothing was stored.",
-                remedies=(
-                    Remedy("Try again:", "hhe config set homeassistant.token"),
-                ),
+                remedies=(Remedy("Try again:", "hhe config set homeassistant.token"),),
             )
         path = secrets.write_token(token.strip())
         print(f"Stored the access token in {path}")
@@ -131,9 +128,7 @@ def _set(args: argparse.Namespace) -> int:
         raise UsageError(
             f"A value is required for {key.path}.",
             details=f"{key.doc} Expected type: {key.type.value}.",
-            remedies=(
-                Remedy("Provide the value:", f"hhe config set {key.path} <value>"),
-            ),
+            remedies=(Remedy("Provide the value:", f"hhe config set {key.path} <value>"),),
         )
 
     values = document.read_user_values()
@@ -160,10 +155,7 @@ def _unset(args: argparse.Namespace) -> int:
         document.write_user_values(values)
 
     settings = _effective(args)
-    print(
-        f"{key.path} = {_display_value(settings, key)}  "
-        f"[{settings.origin(key.path)}]"
-    )
+    print(f"{key.path} = {_display_value(settings, key)}  [{settings.origin(key.path)}]")
     return 0
 
 
@@ -194,6 +186,7 @@ def _edit(args: argparse.Namespace) -> int:
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _known_key(key_path: str) -> Key:
     key = schema.BY_PATH.get(key_path)
@@ -237,12 +230,9 @@ def _refuse_explicit_config(args: argparse.Namespace) -> None:
         raise UsageError(
             "config set, unset, and edit always write the user configuration.",
             details=(
-                "A file passed with --config belongs to the caller and is "
-                "never rewritten by HHE."
+                "A file passed with --config belongs to the caller and is never rewritten by HHE."
             ),
-            remedies=(
-                Remedy("Edit that file directly, or drop --config:", "hhe config edit"),
-            ),
+            remedies=(Remedy("Edit that file directly, or drop --config:", "hhe config edit"),),
         )
 
 
@@ -254,8 +244,7 @@ def _prompt_secret() -> str:
             remedies=(
                 Remedy(
                     "Read the token explicitly from standard input:",
-                    "Get-Content <token-file> | hhe config set "
-                    "homeassistant.token --stdin",
+                    "Get-Content <token-file> | hhe config set homeassistant.token --stdin",
                 ),
             ),
         )

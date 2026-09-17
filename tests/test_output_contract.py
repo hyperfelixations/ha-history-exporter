@@ -248,6 +248,7 @@ HISTORY_RESPONSES: list[list[list[dict[str, Any]]]] = [
 
 # ── producing the reference export ────────────────────────────────────────────
 
+
 def produce(root: Path) -> Path:
     """Run the reference export into *root* and return the output directory."""
     cfg = make_config(root, jsonl=True, csv=True, parquet=True, batch_size=BATCH_SIZE)
@@ -284,17 +285,11 @@ def produced(tmp_path_factory) -> Path:
 
 
 def day_file(output: Path, day: date, suffix: str) -> Path:
-    return (
-        output
-        / "exports"
-        / "daily"
-        / f"{day.year}"
-        / f"{day.month:02d}"
-        / f"{day}.{suffix}"
-    )
+    return output / "exports" / "daily" / f"{day.year}" / f"{day.month:02d}" / f"{day}.{suffix}"
 
 
 # ── normalisation helpers ─────────────────────────────────────────────────────
+
 
 def stable_manifest(path: Path) -> dict[str, Any]:
     """Manifest content with run- or encoder-dependent values blanked."""
@@ -313,11 +308,7 @@ def stable_manifest(path: Path) -> dict[str, Any]:
 
 
 def stable_run_log(path: Path) -> list[dict[str, Any]]:
-    entries = [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     for entry in entries:
         for field in VOLATILE_RUN_LOG_FIELDS:
             assert field in entry, f"run log lost the field {field}"
@@ -345,9 +336,7 @@ def parquet_profile(path: Path) -> dict[str, Any]:
             }
         )
     return {
-        "schema": [
-            [field.name, str(field.type), field.nullable] for field in table.schema
-        ],
+        "schema": [[field.name, str(field.type), field.nullable] for field in table.schema],
         "num_row_groups": handle.num_row_groups,
         "num_rows": table.num_rows,
         "compression": handle.metadata.row_group(0).column(0).compression.lower(),
@@ -361,12 +350,11 @@ def read_golden_json(name: str) -> Any:
 
 # ── the golden comparisons ────────────────────────────────────────────────────
 
+
 def test_stable_manifest_ignores_only_platform_dependent_physical_metadata(
     produced: Path, tmp_path: Path
 ):
-    source = json.loads(
-        day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    source = json.loads(day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8"))
     changed = json.loads(json.dumps(source))
     changed["artifacts"]["jsonl"]["size_bytes"] += 1
     changed["artifacts"]["jsonl"]["sha256"] = "0" * 64
@@ -384,12 +372,13 @@ def test_stable_manifest_ignores_only_platform_dependent_physical_metadata(
     changed_path.write_text(json.dumps(changed), encoding="utf-8")
     assert stable_manifest(source_path) != stable_manifest(changed_path)
 
-    changed["artifacts"]["parquet"]["logical_sha256"] = source["artifacts"][
-        "parquet"
-    ]["logical_sha256"]
+    changed["artifacts"]["parquet"]["logical_sha256"] = source["artifacts"]["parquet"][
+        "logical_sha256"
+    ]
     changed["artifacts"]["csv"]["sha256"] = "3" * 64
     changed_path.write_text(json.dumps(changed), encoding="utf-8")
     assert stable_manifest(source_path) != stable_manifest(changed_path)
+
 
 @pytest.mark.parametrize("day", [NORMAL_DAY, DST_DAY], ids=["normal-day", "dst-day"])
 def test_jsonl_bytes_match_the_golden_fixture(produced: Path, day: date):
@@ -399,9 +388,7 @@ def test_jsonl_bytes_match_the_golden_fixture(produced: Path, day: date):
     deliberately platform-dependent contract; see the test below.
     """
     produced_bytes = day_file(produced, day, "jsonl").read_bytes()
-    assert produced_bytes.replace(b"\r\n", b"\n") == (
-        GOLDEN / f"{day}.jsonl"
-    ).read_bytes()
+    assert produced_bytes.replace(b"\r\n", b"\n") == (GOLDEN / f"{day}.jsonl").read_bytes()
 
 
 def test_jsonl_uses_the_platform_line_terminator(produced: Path):
@@ -446,20 +433,14 @@ def test_manifest_matches_the_golden_fixture(produced: Path, day: date):
 
 
 @pytest.mark.parametrize("day", [NORMAL_DAY, DST_DAY], ids=["normal-day", "dst-day"])
-def test_manifest_physical_metadata_matches_the_produced_artifacts(
-    produced: Path, day: date
-):
-    manifest = json.loads(
-        day_file(produced, day, "manifest.json").read_text(encoding="utf-8")
-    )
+def test_manifest_physical_metadata_matches_the_produced_artifacts(produced: Path, day: date):
+    manifest = json.loads(day_file(produced, day, "manifest.json").read_text(encoding="utf-8"))
     for suffix in ("jsonl", "csv", "parquet"):
         artifact_path = day_file(produced, day, suffix)
         metadata = manifest["artifacts"][suffix]
         assert metadata["filename"] == artifact_path.name
         assert metadata["size_bytes"] == artifact_path.stat().st_size
-        assert metadata["sha256"] == hashlib.sha256(
-            artifact_path.read_bytes()
-        ).hexdigest()
+        assert metadata["sha256"] == hashlib.sha256(artifact_path.read_bytes()).hexdigest()
 
 
 def test_run_log_matches_the_golden_fixture(produced: Path):
@@ -474,12 +455,11 @@ def test_run_log_matches_the_golden_fixture(produced: Path):
 # name the contract in the test itself, so a rename or a reordering fails here
 # as well.
 
+
 def test_daily_file_paths_are_unchanged(produced: Path):
     for day in (NORMAL_DAY, DST_DAY):
         for suffix in ("jsonl", "csv", "parquet", "manifest.json"):
-            expected = (
-                produced / "exports" / "daily" / "2026" / "10" / f"{day}.{suffix}"
-            )
+            expected = produced / "exports" / "daily" / "2026" / "10" / f"{day}.{suffix}"
             assert expected.is_file(), f"missing {expected}"
     assert (produced / "metadata" / "export_runs.jsonl").is_file()
 
@@ -527,11 +507,7 @@ def test_manifest_field_set_matches_schema_1_4(produced: Path):
 
 
 def test_jsonl_row_shape_is_unchanged(produced: Path):
-    lines = (
-        day_file(produced, NORMAL_DAY, "jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    )
+    lines = day_file(produced, NORMAL_DAY, "jsonl").read_text(encoding="utf-8").splitlines()
     for line in lines:
         assert list(json.loads(line)) == JSONL_FIELDS
     first = json.loads(lines[0])
@@ -549,9 +525,7 @@ def test_csv_header_and_line_terminator_are_unchanged(produced: Path):
 def test_local_offset_follows_the_dst_change_within_one_file(produced: Path):
     rows = [
         json.loads(line)
-        for line in day_file(produced, DST_DAY, "jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in day_file(produced, DST_DAY, "jsonl").read_text(encoding="utf-8").splitlines()
     ]
     offsets = {row["last_changed"]: row["local_offset"] for row in rows}
     assert offsets["2026-10-24T23:30:00+00:00"] == "+02:00"
@@ -564,34 +538,24 @@ def test_local_offset_is_derived_from_last_updated(produced: Path):
     """The one row whose two timestamps sit on opposite sides of the change."""
     rows = [
         json.loads(line)
-        for line in day_file(produced, DST_DAY, "jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in day_file(produced, DST_DAY, "jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    straddling = next(
-        row for row in rows if row["entity_id"] == "binary_sensor.front_door"
-    )
+    straddling = next(row for row in rows if row["entity_id"] == "binary_sensor.front_door")
     assert straddling["last_changed"] == "2026-10-25T00:59:59+00:00"
     assert straddling["last_updated"] == "2026-10-25T01:00:01+00:00"
     assert straddling["local_offset"] == "+01:00"
 
 
 def test_the_dst_day_spans_twenty_five_hours(produced: Path):
-    manifest = json.loads(
-        day_file(produced, DST_DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads(day_file(produced, DST_DAY, "manifest.json").read_text(encoding="utf-8"))
     start = datetime.fromisoformat(manifest["start_utc"])
     end = datetime.fromisoformat(manifest["end_utc"])
     assert (end - start).total_seconds() == 25 * 3600
 
 
 def test_entities_without_history_are_recorded_not_failed(produced: Path):
-    normal = json.loads(
-        day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8")
-    )
-    dst = json.loads(
-        day_file(produced, DST_DAY, "manifest.json").read_text(encoding="utf-8")
-    )
+    normal = json.loads(day_file(produced, NORMAL_DAY, "manifest.json").read_text(encoding="utf-8"))
+    dst = json.loads(day_file(produced, DST_DAY, "manifest.json").read_text(encoding="utf-8"))
     assert normal["zero_history_entities"] == ["sensor.never_recorded"]
     assert dst["zero_history_entities"] == [
         "sensor.never_recorded",

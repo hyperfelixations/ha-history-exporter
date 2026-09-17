@@ -41,9 +41,7 @@ def test_local_day_bounds_handle_dst(day, expected_hours, start_utc, end_utc):
 
     assert time_utils.to_utc(start).isoformat() == start_utc
     assert time_utils.to_utc(end).isoformat() == end_utc
-    assert (time_utils.to_utc(end) - time_utils.to_utc(start)) == timedelta(
-        hours=expected_hours
-    )
+    assert (time_utils.to_utc(end) - time_utils.to_utc(start)) == timedelta(hours=expected_hours)
 
 
 def test_iter_days_is_inclusive_and_empty_when_reversed():

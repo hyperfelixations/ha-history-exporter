@@ -91,12 +91,11 @@ def day_file(tmp_path, day: date, suffix: str):
 
 
 def manifest_of(tmp_path, day: date) -> dict:
-    return json.loads(
-        day_file(tmp_path, day, "manifest.json").read_text(encoding="utf-8")
-    )
+    return json.loads(day_file(tmp_path, day, "manifest.json").read_text(encoding="utf-8"))
 
 
 # ── the time window ───────────────────────────────────────────────────────────
+
 
 def test_partial_bounds_run_from_local_midnight_to_now():
     now = datetime(2026, 6, 15, 14, 30, 45, 123456, tzinfo=BERLIN)
@@ -124,6 +123,7 @@ def test_partial_bounds_refuse_any_day_but_today():
 
 # ── what triggers it ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("spelling", ["today", "iso"])
 def test_a_single_day_selection_of_today_triggers_the_partial_export(spelling):
     value = "today" if spelling == "today" else today().isoformat()
@@ -148,20 +148,17 @@ def test_nothing_else_reaches_into_the_running_day(argv):
 
 def test_a_range_ending_today_still_skips_today(tmp_path):
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        yesterday(), today(), BERLIN, cfg, force=False, partial_day=None
-    )
+    plan = planner.build_plan(yesterday(), today(), BERLIN, cfg, force=False, partial_day=None)
     assert plan.days_skipped_incomplete == [today()]
     assert plan.partial_days == []
 
 
 # ── the plan ──────────────────────────────────────────────────────────────────
 
+
 def test_the_planner_schedules_the_named_day_as_partial(tmp_path):
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        today(), today(), BERLIN, cfg, force=False, partial_day=today()
-    )
+    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
 
     assert plan.days_to_export == [today()]
     assert plan.partial_days == [today()]
@@ -193,9 +190,7 @@ def test_only_the_named_day_becomes_partial_never_its_neighbours(tmp_path):
 
 def test_a_complete_day_beside_the_partial_one_is_exported_in_full(tmp_path):
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        yesterday(), today(), BERLIN, cfg, force=False, partial_day=today()
-    )
+    plan = planner.build_plan(yesterday(), today(), BERLIN, cfg, force=False, partial_day=today())
 
     assert plan.days_to_export == [yesterday(), today()]
     assert plan.partial_days == [today()]
@@ -203,16 +198,13 @@ def test_a_complete_day_beside_the_partial_one_is_exported_in_full(tmp_path):
 
 def test_the_plan_summary_marks_the_partial_day(tmp_path, capsys):
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        today(), today(), BERLIN, cfg, force=False, partial_day=today()
-    )
-    plan.print_summary(
-        entity_count=1, unknown_count=0, unavailable_count=0, batch_size=5
-    )
+    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
+    plan.print_summary(entity_count=1, unknown_count=0, unavailable_count=0, batch_size=5)
     assert "partial - today is not over yet" in capsys.readouterr().out
 
 
 # ── the run ───────────────────────────────────────────────────────────────────
+
 
 def test_the_partial_day_is_written_and_marked_partial(
     isolated_user_environment, tmp_path, monkeypatch
@@ -248,9 +240,7 @@ def test_the_manifest_records_how_far_the_partial_day_reaches(
     assert (end - start) < timedelta(hours=25)
 
 
-def test_the_run_warns_before_and_after(
-    isolated_user_environment, tmp_path, monkeypatch, caplog
-):
+def test_the_run_warns_before_and_after(isolated_user_environment, tmp_path, monkeypatch, caplog):
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)
     FakeCliClient.history_payload = [[history_row_for(today())]]
@@ -304,6 +294,7 @@ def test_a_dry_run_shows_the_partial_day_and_fetches_nothing(
 
 # ── and the day heals itself ──────────────────────────────────────────────────
 
+
 def test_a_partial_day_is_exported_again_in_full_later(
     isolated_user_environment, tmp_path, monkeypatch
 ):
@@ -326,18 +317,14 @@ def test_a_partial_day_is_exported_again_in_full_later(
         ]
     ]
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        today(), today(), BERLIN, cfg, force=False, partial_day=today()
-    )
+    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
     assert plan.days_to_export == [today()], "a partial day counts as not exported"
 
     assert cli.main(["export", "--date", "today"]) == 0
     assert day_file(tmp_path, today(), "jsonl").read_bytes() != partial_bytes
 
 
-def test_a_successful_day_is_still_skipped(
-    isolated_user_environment, tmp_path, monkeypatch
-):
+def test_a_successful_day_is_still_skipped(isolated_user_environment, tmp_path, monkeypatch):
     """The partial path must not weaken the ordinary resume decision."""
     write_config(isolated_user_environment, tmp_path)
     synthetic_env(monkeypatch)

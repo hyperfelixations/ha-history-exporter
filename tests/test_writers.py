@@ -161,13 +161,9 @@ def test_convert_jsonl_to_parquet_preserves_logical_values(tmp_path):
     assert pq.read_metadata(dst).num_row_groups == 2
     assert records[0]["entity_id"] == "sensor.one"
     assert records[0]["state"] == "1"
-    assert json.loads(records[1]["attributes_json"]) == {
-        "friendly_name": "Zwei"
-    }
+    assert json.loads(records[1]["attributes_json"]) == {"friendly_name": "Zwei"}
     assert records[0]["last_changed"].tzinfo is not None
-    assert json.loads(records[0]["extra_json"]) == {
-        "context": {"id": "synthetic-context"}
-    }
+    assert json.loads(records[0]["extra_json"]) == {"context": {"id": "synthetic-context"}}
 
 
 def test_convert_jsonl_to_parquet_rejects_invalid_timestamp(tmp_path):
@@ -187,6 +183,4 @@ def test_convert_jsonl_to_parquet_rejects_invalid_timestamp(tmp_path):
 
 def test_convert_jsonl_to_parquet_requires_source(tmp_path):
     with pytest.raises(ValidationError, match="Source JSONL file does not exist"):
-        writers.convert_jsonl_to_parquet(
-            tmp_path / "missing.jsonl", tmp_path / "output.parquet"
-        )
+        writers.convert_jsonl_to_parquet(tmp_path / "missing.jsonl", tmp_path / "output.parquet")

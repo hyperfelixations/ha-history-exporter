@@ -90,9 +90,7 @@ def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
 
 
 #: Account names too generic to search for without false positives.
-GENERIC_ACCOUNT_NAMES = frozenset(
-    {"user", "users", "home", "runner", "root", "admin", "build"}
-)
+GENERIC_ACCOUNT_NAMES = frozenset({"user", "users", "home", "runner", "root", "admin", "build"})
 
 
 def private_identifiers() -> list[str]:
