@@ -16,9 +16,13 @@ SUITE_INPUTS = (
     ".github/workflows/publish.yml",
     ".github/workflows/test-publish.yml",
     ".github/workflows/tests.yml",
+    ".github/workflows/security.yml",
+    ".github/dependabot.yml",
+    "requirements-dev.txt",
     "tools/refresh_golden.py",
     "tools/privacy_audit.py",
     "tools/verify_wheel.py",
+    "tools/audit_runtime.py",
 )
 
 

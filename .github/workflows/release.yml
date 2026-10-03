@@ -40,11 +40,11 @@ jobs:
       title: ${{ steps.metadata.outputs.title }}
     steps:
       - name: Check out the selected commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Validate owner, branch, SHA, version, and tag
@@ -100,10 +100,10 @@ jobs:
       HA_URL: ""
       HA_TOKEN: ""
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -123,13 +123,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: python -m pip install --disable-pip-version-check build twine
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Audit the runtime dependencies
+        run: python tools/audit_runtime.py
       - name: Build and verify distributions
         shell: bash
         run: |
@@ -141,7 +143,7 @@ jobs:
             --artifact "$DIST_DIR"/*.whl --artifact "$DIST_DIR"/*.tar.gz
           cd "$DIST_DIR"
           sha256sum -- *.whl *.tar.gz > checksums.txt
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-candidate-${{ needs.validate.outputs.tag }}
           path: |
@@ -165,7 +167,7 @@ jobs:
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_TITLE: ${{ needs.validate.outputs.title }}
     steps:
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-${{ needs.validate.outputs.tag }}
           path: release-assets

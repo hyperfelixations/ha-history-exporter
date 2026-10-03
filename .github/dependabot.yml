@@ -1,0 +1,24 @@
+# Security updates arrive one advisory per pull request; routine tooling updates are grouped.
+# Actions are pinned to commit SHAs; Dependabot moves the SHA and its version comment together.
+# The runtime lower bounds in pyproject.toml are a promise to users and are never raised here.
+
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    versioning-strategy: increase-if-necessary
+    groups:
+      tooling:
+        patterns: ["*"]
+        applies-to: version-updates
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+        applies-to: version-updates

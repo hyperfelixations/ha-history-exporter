@@ -13,11 +13,29 @@ from pathlib import Path
 import pytest
 import yaml
 
-WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
+ROOT = Path(__file__).parents[1]
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
 RELEASE = WORKFLOW_DIR / "release.yml"
 PUBLISH = WORKFLOW_DIR / "publish.yml"
 TEST_PUBLISH = WORKFLOW_DIR / "test-publish.yml"
 TESTS = WORKFLOW_DIR / "tests.yml"
+SECURITY = WORKFLOW_DIR / "security.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+REQUIREMENTS = ROOT / "requirements-dev.txt"
+
+#: Everything the development, build and audit tooling needs, pinned exactly.
+PINNED_TOOLS = {
+    "build",
+    "mypy",
+    "pip-audit",
+    "pytest",
+    "pytest-cov",
+    "pytest-socket",
+    "ruff",
+    "twine",
+    "types-PyYAML",
+    "types-requests",
+}
 
 #: Secret names that would replace Trusted Publishing with a stored token.
 FORBIDDEN_SECRET_PATTERNS = [
@@ -218,3 +236,79 @@ def test_every_source_validation_path_checks_formatting():
     for job in jobs:
         commands = " ".join(step.get("run", "") for step in steps(job))
         assert "python -m ruff format --check ." in commands
+
+
+# ── supply chain ──────────────────────────────────────────────────────────────
+
+
+def run_commands(job: dict) -> str:
+    return "\n".join(step.get("run", "") for step in steps(job))
+
+
+def test_every_tool_requirement_is_pinned_exactly():
+    names = set()
+    for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==\d[\w.]*", line)
+        assert match, f"requirements-dev.txt: {line!r} is not an exact pin"
+        names.add(match.group(1))
+    assert names == PINNED_TOOLS
+
+
+def test_tools_are_installed_only_from_the_pinned_requirements():
+    """An unpinned `pip install build twine` would run whatever PyPI serves that day."""
+    for path in workflow_files():
+        for name, job in load(path)["jobs"].items():
+            for command in run_commands(job).splitlines():
+                if "pip install" not in command:
+                    continue
+                assert not re.search(r"\b(build|twine|pip-audit)\b(?!-)", command), (
+                    f"{path.name}:{name}: {command.strip()}"
+                )
+
+
+def test_security_workflow_audits_every_push_pull_request_and_week():
+    workflow = load(SECURITY)
+    triggers = workflow[True]
+    assert set(triggers) == {"push", "pull_request", "schedule", "workflow_dispatch"}
+    assert triggers["push"] == {"branches": ["main"]}
+    assert triggers["pull_request"] == {"branches": ["main"]}
+    assert len(triggers["schedule"]) == 1
+
+
+def test_security_workflow_audits_the_runtime_with_the_pinned_tooling():
+    commands = run_commands(load(SECURITY)["jobs"]["audit"])
+    install = commands.index("-r requirements-dev.txt")
+    assert install < commands.index("python tools/audit_runtime.py")
+
+
+def test_every_build_path_audits_the_runtime_before_building():
+    for path in (RELEASE, TEST_PUBLISH):
+        commands = run_commands(load(path)["jobs"]["build"])
+        assert "python tools/audit_runtime.py" in commands, path.name
+        assert commands.index("python tools/audit_runtime.py") < commands.index(
+            "python -m build"
+        ), path.name
+
+
+def test_dependabot_watches_pip_and_the_workflow_actions_weekly():
+    updates = {
+        entry["package-ecosystem"]: entry
+        for entry in yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
+    }
+    assert set(updates) == {"pip", "github-actions"}
+    for entry in updates.values():
+        assert entry["directory"] == "/"
+        assert entry["schedule"] == {"interval": "weekly"}
+
+
+def test_dependabot_leaves_the_runtime_lower_bounds_alone():
+    """The `>=` bounds in pyproject.toml are a user-facing promise, not a pin."""
+    pip = next(
+        entry
+        for entry in yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
+        if entry["package-ecosystem"] == "pip"
+    )
+    assert pip["versioning-strategy"] == "increase-if-necessary"

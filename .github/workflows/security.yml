@@ -1,0 +1,39 @@
+# Dependency audit: any advisory against a runtime dependency of the package fails. Advisories
+# against test and build tooling are reported by GitHub (Dependabot alerts and security updates)
+# and do not stop CI: none of that code ships. The schedule catches advisories published
+# without a new commit.
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Runtime dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Audit the runtime dependencies
+        run: python tools/audit_runtime.py
