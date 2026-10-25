@@ -293,22 +293,56 @@ def test_every_build_path_audits_the_runtime_before_building():
         ), path.name
 
 
-def test_dependabot_watches_pip_and_the_workflow_actions_weekly():
-    updates = {
-        entry["package-ecosystem"]: entry
-        for entry in yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
-    }
-    assert set(updates) == {"pip", "github-actions"}
-    for entry in updates.values():
+def dependabot_entries() -> dict[str, dict]:
+    updates = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
+    return {entry["package-ecosystem"]: entry for entry in updates}
+
+
+def test_dependabot_watches_pip_and_the_workflow_actions_in_the_repository_root():
+    entries = dependabot_entries()
+    assert set(entries) == {"pip", "github-actions"}
+    for entry in entries.values():
         assert entry["directory"] == "/"
-        assert entry["schedule"] == {"interval": "weekly"}
+    # Dependabot reads the watched directory only; a manifest elsewhere would never be updated.
+    for folder in ("src", "tests", "tools"):
+        assert not list((ROOT / folder).rglob("requirements*.txt")), folder
+        assert not list((ROOT / folder).rglob("pyproject.toml")), folder
+
+
+def test_version_updates_run_on_the_1st_and_15th_wait_a_week_and_skip_patch_releases():
+    for ecosystem, entry in dependabot_entries().items():
+        assert entry["schedule"] == {"interval": "cron", "cronjob": "0 5 1,15 * *"}, ecosystem
+        assert entry["cooldown"] == {"default-days": 7}, ecosystem
+        assert entry["ignore"] == [
+            {"dependency-name": "*", "update-types": ["version-update:semver-patch"]}
+        ], ecosystem
 
 
 def test_dependabot_leaves_the_runtime_lower_bounds_alone():
     """The `>=` bounds in pyproject.toml are a user-facing promise, not a pin."""
-    pip = next(
-        entry
-        for entry in yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
-        if entry["package-ecosystem"] == "pip"
-    )
-    assert pip["versioning-strategy"] == "increase-if-necessary"
+    assert dependabot_entries()["pip"]["versioning-strategy"] == "increase-if-necessary"
+
+
+def test_minor_updates_are_grouped_majors_stay_single_and_security_updates_come_grouped():
+    version = {
+        "patterns": ["*"],
+        "update-types": ["minor", "patch"],
+        "applies-to": "version-updates",
+    }
+    security = {"patterns": ["*"], "applies-to": "security-updates"}
+    entries = dependabot_entries()
+    assert entries["pip"]["groups"] == {"tooling": version, "security": security}
+    assert entries["github-actions"]["groups"] == {"actions": version, "security": security}
+
+
+def test_no_ignore_rule_can_hold_back_security_updates():
+    """A rule that names only a package would block its security updates as well."""
+    for ecosystem, entry in dependabot_entries().items():
+        for rule in entry["ignore"]:
+            assert rule.get("update-types") and "versions" not in rule, ecosystem
+
+
+def test_the_tests_workflow_runs_pushes_to_main_and_pull_requests_once():
+    triggers = load(TESTS)[True]
+    assert triggers["push"] == {"branches": ["main"]}
+    assert triggers["pull_request"] is None
