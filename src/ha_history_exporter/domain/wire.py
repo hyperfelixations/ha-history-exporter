@@ -4,18 +4,22 @@
 ``minimal_response``, rows after the first may be reduced to ``state`` and
 ``last_changed``. Every row becomes one :class:`HistoryRecord`; nothing is
 invented for fields the selected profile omits.
+
+Without ``skip_initial_state``, Home Assistant opens each entity's group with
+the state in effect at the query start, stamped with that instant. Such a
+carry-in is the only row allowed before the window start and is restamped to
+it, so it belongs to the day it opens.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 from ..errors import ValidationError
 from .query import HistoryQuery
 from .records import HistoryRecord, JsonValue, parse_utc_timestamp
-from .window import offset_label
+from .window import DayWindow, offset_label
 
 _WIRE_FIELDS = frozenset({"entity_id", "state", "last_changed", "last_updated", "attributes"})
 
@@ -29,19 +33,10 @@ def iter_normalized_history(
     payload: WirePayload,
     *,
     requested_entity_ids: Iterable[str],
-    start: datetime,
-    end: datetime,
+    window: DayWindow,
     query: HistoryQuery,
-    timezone: ZoneInfo,
 ) -> Iterator[HistoryRecord]:
-    """Validate *payload* and yield its records in wire order."""
-    if start.tzinfo is None or end.tzinfo is None:
-        raise ValueError("History bounds must be timezone-aware.")
-    start_utc = start.astimezone(UTC)
-    end_utc = end.astimezone(UTC)
-    if start_utc >= end_utc:
-        raise ValueError("History start must be before its end.")
-
+    """Validate *payload*, the answer to a request for *window*, and yield its records."""
     requested = frozenset(requested_entity_ids)
     seen_groups: set[str] = set()
 
@@ -70,10 +65,8 @@ def iter_normalized_history(
                 entity_id=entity_id,
                 location=f"History group {group_index}, row {row_index}",
                 first_in_group=row_index == 1,
-                start=start_utc,
-                end=end_utc,
+                window=window,
                 query=query,
-                timezone=timezone,
             )
 
 
@@ -83,10 +76,8 @@ def _record(
     entity_id: str,
     location: str,
     first_in_group: bool,
-    start: datetime,
-    end: datetime,
+    window: DayWindow,
     query: HistoryQuery,
-    timezone: ZoneInfo,
 ) -> HistoryRecord:
     reduced = query.minimal_response and not first_in_group and "last_updated" not in row
     explicit_entity = row.get("entity_id")
@@ -111,9 +102,10 @@ def _record(
     if last_changed > last_updated:
         raise ValidationError(f"{location}: last_changed is after last_updated.")
 
-    carry_in = not query.skip_initial_state and first_in_group and last_updated == start
-    if not (start < last_updated < end or carry_in):
-        raise ValidationError(f"{location}: timestamp is outside the requested history window.")
+    if not window.contains(last_updated):
+        if not _is_carry_in(last_updated, window, query, first_in_group=first_in_group):
+            raise ValidationError(f"{location}: timestamp is outside the requested history window.")
+        last_changed = last_updated = window.start_utc
 
     if "attributes" in row:
         attributes = row["attributes"]
@@ -136,6 +128,16 @@ def _record(
         last_changed=last_changed,
         last_updated=last_updated,
         attributes=attributes,
-        local_offset=offset_label(last_updated, timezone),
+        local_offset=offset_label(last_updated, window.timezone),
         extra=tuple((key, value) for key, value in row.items() if key not in _WIRE_FIELDS),
+    )
+
+
+def _is_carry_in(
+    last_updated: datetime, window: DayWindow, query: HistoryQuery, *, first_in_group: bool
+) -> bool:
+    return (
+        not query.skip_initial_state
+        and first_in_group
+        and window.query_start <= last_updated < window.start_utc
     )

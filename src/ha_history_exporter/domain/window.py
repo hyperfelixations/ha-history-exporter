@@ -1,11 +1,23 @@
-"""Local calendar time: day identities and the UTC offsets stored in every record."""
+"""Local calendar time: day windows, day identities and record UTC offsets.
+
+A day window is the half-open interval ``[start, end)`` from local midnight
+to the next local midnight, or to the moment a partial export runs. Every
+instant belongs to exactly one day. Home Assistant returns rows with
+``start_time < last_updated < end_time``, so a window asks from
+:attr:`DayWindow.query_start`, one microsecond before its start. See internal
+dev doc § "Day window".
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TypeGuard
 from zoneinfo import ZoneInfo
+
+from ..errors import ExportError
+
+_ONE_MICROSECOND = timedelta(microseconds=1)
 
 
 def format_iso(instant: datetime) -> str:
@@ -24,15 +36,87 @@ class DayIdentity:
     start_utc: str
     end_utc: str
 
+
+def _local_midnight(day: date, timezone: ZoneInfo) -> datetime:
+    return datetime(day.year, day.month, day.day, tzinfo=timezone)
+
+
+@dataclass(frozen=True)
+class DayWindow:
+    """The part of one local calendar day that an export captures."""
+
+    day: date
+    timezone: ZoneInfo
+    #: Local midnight that opens the day; included.
+    start: datetime
+    #: The next local midnight, or the cut-off of a partial day; excluded.
+    end: datetime
+    partial: bool = False
+
+    def __post_init__(self) -> None:
+        if self.start.tzinfo is None or self.end.tzinfo is None:
+            raise ValueError("Day window bounds must be timezone-aware.")
+        if self.start_utc >= self.end_utc:
+            raise ExportError(
+                f"Day {self.day} has no time to export in {self.timezone.key}.",
+                details=(
+                    "The local day is empty: it was skipped by a calendar change, "
+                    "or a partial export started at its first second."
+                ),
+                context={"day": str(self.day)},
+            )
+
     @classmethod
-    def of(cls, day: date, timezone: ZoneInfo, start: datetime, end: datetime) -> DayIdentity:
+    def full(cls, day: date, timezone: ZoneInfo) -> DayWindow:
+        """From local midnight of *day* to local midnight of the next day."""
         return cls(
-            day=day,
-            timezone=timezone.key,
-            start_local=format_iso(start),
-            end_local=format_iso(end),
-            start_utc=format_iso(start.astimezone(UTC)),
-            end_utc=format_iso(end.astimezone(UTC)),
+            day,
+            timezone,
+            _local_midnight(day, timezone),
+            _local_midnight(day + timedelta(days=1), timezone),
+        )
+
+    @classmethod
+    def elapsed(cls, day: date, timezone: ZoneInfo, now: datetime) -> DayWindow:
+        """From local midnight of the running *day* to *now* in whole seconds."""
+        current = now.astimezone(timezone)
+        if day != current.date():
+            raise ValueError(
+                f"Day {day} is not today ({current.date()}) in {timezone.key}; "
+                "only the running day can be exported partially."
+            )
+        return cls(
+            day,
+            timezone,
+            _local_midnight(day, timezone),
+            current.replace(microsecond=0),
+            partial=True,
+        )
+
+    @property
+    def start_utc(self) -> datetime:
+        return self.start.astimezone(UTC)
+
+    @property
+    def end_utc(self) -> datetime:
+        return self.end.astimezone(UTC)
+
+    @property
+    def query_start(self) -> datetime:
+        """The exclusive start to send to Home Assistant, so that ``start`` is included."""
+        return self.start_utc - _ONE_MICROSECOND
+
+    def contains(self, instant: datetime) -> bool:
+        return self.start_utc <= instant < self.end_utc
+
+    def identity(self) -> DayIdentity:
+        return DayIdentity(
+            day=self.day,
+            timezone=self.timezone.key,
+            start_local=format_iso(self.start),
+            end_local=format_iso(self.end),
+            start_utc=format_iso(self.start_utc),
+            end_utc=format_iso(self.end_utc),
         )
 
 

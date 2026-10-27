@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import date, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,12 +11,13 @@ from ha_history_exporter.domain.stored import (
     check_against_request,
     stored_record,
 )
+from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import ValidationError
 from tests.support.records import make_record
 
 BERLIN = ZoneInfo("Europe/Berlin")
-START = datetime(2026, 7, 27, 22, tzinfo=UTC)
-END = datetime(2026, 7, 28, 22, tzinfo=UTC)
+WINDOW = DayWindow.full(date(2026, 7, 28), BERLIN)
+START, END = WINDOW.start_utc, WINDOW.end_utc
 
 
 def row(**changes: Any) -> dict[str, Any]:
@@ -31,14 +32,8 @@ def row(**changes: Any) -> dict[str, Any]:
     }
 
 
-def contract(*, allow_start_state: bool = False) -> RecordContract:
-    return RecordContract(
-        requested_entity_ids=frozenset({"sensor.one"}),
-        start=START,
-        end=END,
-        allow_start_state=allow_start_state,
-        timezone=BERLIN,
-    )
+def contract() -> RecordContract:
+    return RecordContract(requested_entity_ids=frozenset({"sensor.one"}), window=WINDOW)
 
 
 def test_unknown_jsonl_fields_become_ordered_extras() -> None:
@@ -70,8 +65,11 @@ def test_invalid_stored_rows_name_file_and_line(changes: dict[str, Any], message
         stored_record(row(**changes), location="2026-07-28.jsonl, line 7")
 
 
-def test_records_of_the_request_pass() -> None:
-    check_against_request(make_record(), contract(), first_for_entity=True, location="f")
+@pytest.mark.parametrize(
+    "updated", [START, START + timedelta(hours=12), END - timedelta(microseconds=1)]
+)
+def test_records_of_the_request_pass(updated: Any) -> None:
+    check_against_request(make_record(updated=updated), contract(), location="f")
 
 
 @pytest.mark.parametrize(
@@ -79,26 +77,15 @@ def test_records_of_the_request_pass() -> None:
     [
         (make_record("sensor.other"), "not requested"),
         (make_record(updated=END), "outside"),
-        (make_record(updated=START), "outside"),
+        (make_record(updated=START - timedelta(microseconds=1)), "outside"),
     ],
 )
 def test_records_outside_the_request_are_rejected(record: Any, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
-        check_against_request(record, contract(), first_for_entity=True, location="f")
-
-
-def test_a_carry_in_at_the_start_is_allowed_only_first_and_only_when_requested() -> None:
-    carry_in = make_record(updated=START)
-    check_against_request(
-        carry_in, contract(allow_start_state=True), first_for_entity=True, location="f"
-    )
-    with pytest.raises(ValidationError, match="outside"):
-        check_against_request(
-            carry_in, contract(allow_start_state=True), first_for_entity=False, location="f"
-        )
+        check_against_request(record, contract(), location="f")
 
 
 def test_an_inconsistent_local_offset_is_rejected() -> None:
     record = make_record(timezone=ZoneInfo("UTC"))
     with pytest.raises(ValidationError, match="inconsistent local_offset"):
-        check_against_request(record, contract(), first_for_entity=True, location="f")
+        check_against_request(record, contract(), location="f")

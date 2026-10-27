@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -8,13 +8,15 @@ import pytest
 
 from ha_history_exporter.domain.query import HistoryQuery
 from ha_history_exporter.domain.records import HistoryRecord
+from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.domain.wire import iter_normalized_history
 from ha_history_exporter.errors import ValidationError
 from tests.helpers import state_row
 
 BERLIN = ZoneInfo("Europe/Berlin")
-START = datetime(2026, 7, 28, tzinfo=UTC)
-END = datetime(2026, 7, 29, tzinfo=UTC)
+WINDOW = DayWindow.full(date(2026, 7, 28), BERLIN)
+START = WINDOW.start_utc
+TICK = timedelta(microseconds=1)
 
 
 def normalize(
@@ -27,10 +29,8 @@ def normalize(
         iter_normalized_history(
             payload,
             requested_entity_ids=requested,
-            start=START,
-            end=END,
+            window=WINDOW,
             query=query or HistoryQuery(),
-            timezone=BERLIN,
         )
     )
 
@@ -141,40 +141,49 @@ def test_missing_attributes_are_rejected_for_a_full_profile() -> None:
         normalize([[row]])
 
 
-def test_the_start_instant_is_only_allowed_for_the_first_carry_in_state() -> None:
-    carry_in = state_row("sensor.one", "1", START.isoformat())
-    with_carry_in = HistoryQuery(skip_initial_state=False)
-
-    assert normalize([[carry_in]], query=with_carry_in)[0].last_updated == START
+def test_the_window_start_and_end_are_half_open() -> None:
+    at_start = state_row("sensor.one", "1", START.isoformat())
+    before_end = state_row("sensor.one", "2", (WINDOW.end_utc - TICK).isoformat())
+    records = normalize([[at_start, before_end]])
+    assert [record.last_updated for record in records] == [START, WINDOW.end_utc - TICK]
+    assert records[0].local_offset == "+02:00"
 
     with pytest.raises(ValidationError, match="outside"):
-        normalize([[carry_in]])
+        normalize([[state_row("sensor.one", "3", WINDOW.end_utc.isoformat())]])
 
-    later_boundary = state_row("sensor.one", "2", START.isoformat())
+
+def test_a_carry_in_is_restamped_to_the_window_start() -> None:
+    carry_in = state_row("sensor.one", "1", WINDOW.query_start.isoformat())
+    event_at_start = state_row("sensor.one", "2", START.isoformat())
+
+    records = normalize([[carry_in, event_at_start]], query=HistoryQuery(skip_initial_state=False))
+
+    assert [(r.state, r.last_changed, r.last_updated) for r in records] == [
+        ("1", START, START),
+        ("2", START, START),
+    ]
+    assert records[0].local_offset == "+02:00"
+
+
+@pytest.mark.parametrize(
+    ("rows", "query"),
+    [
+        pytest.param([("1", WINDOW.query_start)], HistoryQuery(), id="not-requested"),
+        pytest.param(
+            [("1", START + TICK), ("2", WINDOW.query_start)],
+            HistoryQuery(skip_initial_state=False),
+            id="not-first",
+        ),
+        pytest.param(
+            [("1", WINDOW.query_start - TICK)],
+            HistoryQuery(skip_initial_state=False),
+            id="before-the-query",
+        ),
+    ],
+)
+def test_only_a_requested_first_row_may_precede_the_window(
+    rows: list[tuple[str, Any]], query: HistoryQuery
+) -> None:
+    payload = [[state_row("sensor.one", state, instant.isoformat()) for state, instant in rows]]
     with pytest.raises(ValidationError, match="outside"):
-        normalize([[state_row("sensor.one"), later_boundary]], query=with_carry_in)
-
-
-def test_bounds_must_be_aware_and_ordered() -> None:
-    with pytest.raises(ValueError, match="timezone-aware"):
-        list(
-            iter_normalized_history(
-                [],
-                requested_entity_ids=[],
-                start=datetime(2026, 7, 28),
-                end=END,
-                query=HistoryQuery(),
-                timezone=BERLIN,
-            )
-        )
-    with pytest.raises(ValueError, match="before its end"):
-        list(
-            iter_normalized_history(
-                [],
-                requested_entity_ids=[],
-                start=END,
-                end=START,
-                query=HistoryQuery(),
-                timezone=BERLIN,
-            )
-        )
+        normalize(payload, query=query)

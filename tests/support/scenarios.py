@@ -2,7 +2,8 @@
 
 ``REFERENCE`` covers a normal day and the 25-hour autumn DST day with every
 format, Unicode, commas, line breaks, nested JSON and an entity without
-history. The other scenarios pin the failure, partial-day and carry-in shapes.
+history. The other scenarios pin the failure, partial-day and carry-in shapes
+and the day boundaries.
 """
 
 from __future__ import annotations
@@ -224,7 +225,8 @@ PARTIAL = Scenario(
 )
 
 #: skip_initial_state = false: Home Assistant prepends each entity's state at
-#: the window start, stamped exactly at local midnight.
+#: the query start, one microsecond before local midnight; the export stamps
+#: it at midnight.
 CARRY_IN = Scenario(
     name="carry_in",
     days=(NORMAL_DAY,),
@@ -234,7 +236,7 @@ CARRY_IN = Scenario(
                 row(
                     "sensor.kitchen_temperature",
                     "20.0",
-                    "2026-10-23T22:00:00+00:00",
+                    "2026-10-23T21:59:59.999999+00:00",
                     _TEMPERATURE_ATTRS,
                 ),
                 row(
@@ -248,17 +250,41 @@ CARRY_IN = Scenario(
                 row(
                     "sensor.status_note",
                     "idle",
-                    "2026-10-23T22:00:00+00:00",
+                    "2026-10-23T21:59:59.999999+00:00",
                     _NOTE_ATTRS,
                 ),
             ],
         ],
-        [[row("binary_sensor.front_door", "off", "2026-10-23T22:00:00+00:00", _DOOR_ATTRS)]],
+        [[row("binary_sensor.front_door", "off", "2026-10-23T21:59:59.999999+00:00", _DOOR_ATTRS)]],
     ),
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
     formats=frozenset({"jsonl", "csv", "parquet"}),
     skip_initial_state=False,
+)
+
+#: Two consecutive days: a change exactly at local midnight opens the day it
+#: starts, and the last microsecond before midnight closes the previous one.
+MIDNIGHT = Scenario(
+    name="midnight",
+    days=(date(2026, 10, 23), NORMAL_DAY),
+    responses=(
+        [
+            [
+                row("binary_sensor.front_door", "on", "2026-10-22T22:00:00+00:00", _DOOR_ATTRS),
+                row(
+                    "binary_sensor.front_door",
+                    "off",
+                    "2026-10-23T21:59:59.999999+00:00",
+                    _DOOR_ATTRS,
+                ),
+            ]
+        ],
+        [[row("binary_sensor.front_door", "on", "2026-10-23T22:00:00+00:00", _DOOR_ATTRS)]],
+    ),
+    entity_ids=("binary_sensor.front_door",),
+    entity_count_total=1,
+    formats=frozenset({"jsonl", "csv"}),
 )
 
 #: /api/states of the snapshot contract: Unicode, unknown and unavailable states.
@@ -279,4 +305,5 @@ SCENARIOS: tuple[Scenario, ...] = (
     AUTH_ABORT,
     PARTIAL,
     CARRY_IN,
+    MIDNIGHT,
 )

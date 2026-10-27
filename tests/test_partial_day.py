@@ -21,11 +21,8 @@ from ha_history_exporter import cli, ha_client
 from ha_history_exporter.app.export import plan_export
 from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.domain.plan import DayAction, ExportPlan, build_plan
-from ha_history_exporter.time_utils import (
-    local_day_bounds,
-    partial_day_bounds,
-    today_local,
-)
+from ha_history_exporter.domain.window import DayWindow
+from ha_history_exporter.time_utils import today_local
 from tests.helpers import FakeCliClient, make_config, state_row
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -52,11 +49,12 @@ def plan(start: date, end: date, partial_day: date | None = None) -> ExportPlan:
 
 
 def history_row_for(day: date, state: str = "1", fraction: float = 0.5) -> dict:
-    if day == today():
-        start, end = partial_day_bounds(day, BERLIN)
-    else:
-        start, end = local_day_bounds(day, BERLIN)
-    timestamp = start + (end - start) * fraction
+    window = (
+        DayWindow.elapsed(day, BERLIN, datetime.now(BERLIN))
+        if day == today()
+        else DayWindow.full(day, BERLIN)
+    )
+    timestamp = window.start_utc + (window.end_utc - window.start_utc) * fraction
     return state_row(
         "sensor.synthetic",
         state,
@@ -106,33 +104,6 @@ def day_file(tmp_path, day: date, suffix: str):
 
 def manifest_of(tmp_path, day: date) -> dict:
     return json.loads(day_file(tmp_path, day, "manifest.json").read_text(encoding="utf-8"))
-
-
-# ── the time window ───────────────────────────────────────────────────────────
-
-
-def test_partial_bounds_run_from_local_midnight_to_now():
-    now = datetime(2026, 6, 15, 14, 30, 45, 123456, tzinfo=BERLIN)
-    start, end = partial_day_bounds(date(2026, 6, 15), BERLIN, now)
-
-    assert start == datetime(2026, 6, 15, 0, 0, 0, tzinfo=BERLIN)
-    assert end == datetime(2026, 6, 15, 14, 30, 45, tzinfo=BERLIN)
-    assert end.microsecond == 0
-
-
-def test_partial_bounds_on_a_dst_transition_day():
-    """The 25-hour day still starts at its own local midnight."""
-    now = datetime(2026, 10, 25, 5, 0, 0, tzinfo=BERLIN)
-    start, end = partial_day_bounds(date(2026, 10, 25), BERLIN, now)
-
-    assert start.isoformat() == "2026-10-25T00:00:00+02:00"
-    assert end.isoformat() == "2026-10-25T05:00:00+01:00"
-
-
-def test_partial_bounds_refuse_any_day_but_today():
-    now = datetime(2026, 6, 15, 12, 0, tzinfo=BERLIN)
-    with pytest.raises(ValueError, match="is not today"):
-        partial_day_bounds(date(2026, 6, 14), BERLIN, now)
 
 
 # ── what triggers it ──────────────────────────────────────────────────────────

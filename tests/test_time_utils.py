@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -8,7 +8,6 @@ import pytest
 from ha_history_exporter import time_utils
 
 BERLIN = ZoneInfo("Europe/Berlin")
-UTC = ZoneInfo("UTC")
 
 
 class FrozenDateTime(datetime):
@@ -25,23 +24,6 @@ def test_today_and_latest_complete_day_are_local(monkeypatch):
     assert time_utils.latest_complete_day(BERLIN) == date(2026, 7, 29)
     assert time_utils.is_day_complete(date(2026, 7, 29), BERLIN)
     assert not time_utils.is_day_complete(date(2026, 7, 30), BERLIN)
-
-
-@pytest.mark.parametrize(
-    ("day", "expected_hours", "start_utc", "end_utc"),
-    [
-        (date(2026, 1, 15), 24, "2026-01-14T23:00:00+00:00", "2026-01-15T23:00:00+00:00"),
-        (date(2026, 6, 15), 24, "2026-06-14T22:00:00+00:00", "2026-06-15T22:00:00+00:00"),
-        (date(2026, 3, 29), 23, "2026-03-28T23:00:00+00:00", "2026-03-29T22:00:00+00:00"),
-        (date(2026, 10, 25), 25, "2026-10-24T22:00:00+00:00", "2026-10-25T23:00:00+00:00"),
-    ],
-)
-def test_local_day_bounds_handle_dst(day, expected_hours, start_utc, end_utc):
-    start, end = time_utils.local_day_bounds(day, BERLIN)
-
-    assert time_utils.to_utc(start).isoformat() == start_utc
-    assert time_utils.to_utc(end).isoformat() == end_utc
-    assert (time_utils.to_utc(end) - time_utils.to_utc(start)) == timedelta(hours=expected_hours)
 
 
 def test_iter_days_is_inclusive_and_empty_when_reversed():
@@ -71,8 +53,3 @@ def test_parse_date_arg(monkeypatch, argument, expected):
 def test_parse_date_arg_rejects_unknown_formats(argument):
     with pytest.raises(ValueError, match="Unrecognised date argument"):
         time_utils.parse_date_arg(argument, BERLIN)
-
-
-def test_to_utc_requires_no_special_case_for_utc_input():
-    value = datetime(2026, 7, 30, 10, tzinfo=UTC)
-    assert time_utils.to_utc(value) == value

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -16,17 +16,13 @@ from ha_history_exporter.domain.manifest import (
     RetentionStatus,
 )
 from ha_history_exporter.domain.query import HistoryQuery
-from ha_history_exporter.domain.window import DayIdentity
+from ha_history_exporter.domain.window import DayIdentity, DayWindow
 
 DAY = date(2026, 7, 28)
 
 
 def identity(day: date = DAY, timezone: str = "Europe/Berlin") -> DayIdentity:
-    zone = ZoneInfo(timezone)
-    start = datetime(day.year, day.month, day.day, tzinfo=zone)
-    following = day + timedelta(days=1)
-    end = datetime(following.year, following.month, following.day, tzinfo=zone)
-    return DayIdentity.of(day, zone, start, end)
+    return DayWindow.full(day, ZoneInfo(timezone)).identity()
 
 
 def manifest14(

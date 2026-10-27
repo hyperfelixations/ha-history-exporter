@@ -13,7 +13,7 @@ import contextlib
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -37,7 +37,7 @@ from ..domain.manifest import (
 from ..domain.query import HistoryQuery
 from ..domain.records import LogicalDigest
 from ..domain.stored import RecordContract
-from ..domain.window import DayIdentity, format_iso
+from ..domain.window import DayIdentity, DayWindow, format_iso
 from ..domain.wire import WirePayload, iter_normalized_history
 from ..errors import AuthError, ErrorRecord, ExportError, Remedy, safe_error_record
 from ..formats import FORMATS
@@ -124,23 +124,22 @@ class DayOutcome:
     fatal: AuthError | None = None
 
 
-def capture_day(
-    ctx: CaptureContext, day: date, *, start: datetime, end: datetime, partial: bool
-) -> DayOutcome:
-    """Capture and publish *day*.
+def capture_day(ctx: CaptureContext, window: DayWindow) -> DayOutcome:
+    """Capture and publish the day of *window*.
 
     A failed day yields a ``failed`` manifest, persisted unless the day already
     has one. An authentication failure is recorded the same way and ends the
     run, because no further request can succeed.
     """
-    identity = DayIdentity.of(day, ctx.tz, start, end)
+    day, partial = window.day, window.partial
+    identity = window.identity()
     existing = load_manifest(ctx.layout, identity)
     progress = _Progress(
         started_at=format_iso(ctx.clock.now().astimezone(ctx.tz)),
         started_monotonic=ctx.clock.monotonic(),
     )
     try:
-        prepared = _capture(ctx, day, start, end, progress)
+        prepared = _capture(ctx, window, progress)
         manifest = _manifest(ctx, identity, progress, partial=partial)
         _publish(ctx, day, prepared, manifest, existing)
     except AuthError as exc:
@@ -207,17 +206,16 @@ def _manifest(
     )
 
 
-def _capture(
-    ctx: CaptureContext, day: date, start: datetime, end: datetime, progress: _Progress
-) -> dict[Format, Path]:
+def _capture(ctx: CaptureContext, window: DayWindow, progress: _Progress) -> dict[Format, Path]:
     """Fetch the day into the working directory and validate every artifact."""
+    day = window.day
     work_dir = ctx.workspace.work_dir
     temp = {fmt: work_dir / f"{day.isoformat()}.{fmt.value}" for fmt in ctx.formats}
     for path in temp.values():
         # A retried day within the same run must not see the previous attempt.
         path.unlink(missing_ok=True)
 
-    fetched = _fetch(ctx, start, end, temp, progress)
+    fetched = _fetch(ctx, window, temp, progress)
     progress.retried_request_count = fetched.retries
 
     if progress.failed_batches:
@@ -253,13 +251,7 @@ def _capture(
 
     progress.artifacts = validate_artifacts(
         temp,
-        contract=RecordContract(
-            requested_entity_ids=frozenset(ctx.entity_ids),
-            start=start.astimezone(UTC),
-            end=end.astimezone(UTC),
-            allow_start_state=not ctx.query.skip_initial_state,
-            timezone=ctx.tz,
-        ),
+        contract=RecordContract(requested_entity_ids=frozenset(ctx.entity_ids), window=window),
         expected=CaptureSummary(rows=fetched.rows, logical_sha256=fetched.logical_sha256),
     )
     progress.state_object_count = fetched.rows
@@ -272,8 +264,7 @@ def _capture(
 
 def _fetch(
     ctx: CaptureContext,
-    start: datetime,
-    end: datetime,
+    window: DayWindow,
     temp: dict[Format, Path],
     progress: _Progress,
 ) -> _Fetched:
@@ -299,7 +290,10 @@ def _fetch(
             try:
                 retries_before = ctx.client.total_retries
                 payload = ctx.client.get_history(
-                    start_dt=start, end_dt=end, entity_ids=batch, **query.options()
+                    start_dt=window.query_start,
+                    end_dt=window.end_utc,
+                    entity_ids=batch,
+                    **query.options(),
                 )
                 fetched.retries += ctx.client.total_retries - retries_before
                 progress.request_count += 1
@@ -324,10 +318,8 @@ def _fetch(
                 for record in iter_normalized_history(
                     payload,
                     requested_entity_ids=batch,
-                    start=start,
-                    end=end,
+                    window=window,
                     query=query,
-                    timezone=ctx.tz,
                 ):
                     for writer in writers:
                         writer.write(record)

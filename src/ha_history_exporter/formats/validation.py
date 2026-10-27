@@ -43,18 +43,11 @@ def inspect_artifact(
     spec = FORMATS[fmt]
     label = fmt.value.upper()
     digest = LogicalDigest()
-    seen: set[str] = set()
 
     def consume(records: Iterator[HistoryRecord]) -> None:
         for index, record in enumerate(records, start=1):
             if contract is not None:
-                check_against_request(
-                    record,
-                    contract,
-                    first_for_entity=record.entity_id not in seen,
-                    location=f"{path.name}, record {index}",
-                )
-            seen.add(record.entity_id)
+                check_against_request(record, contract, location=f"{path.name}, record {index}")
             digest.add(record)
 
     try:

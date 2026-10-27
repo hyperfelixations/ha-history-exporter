@@ -9,12 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from ..errors import ValidationError
 from .records import STORAGE_FIELDS, HistoryRecord, JsonValue, parse_utc_timestamp
-from .window import is_offset_label, offset_label
+from .window import DayWindow, is_offset_label, offset_label
 
 
 def stored_record(
@@ -69,26 +67,16 @@ class RecordContract:
     """The request a stored artifact must match."""
 
     requested_entity_ids: frozenset[str]
-    start: datetime
-    end: datetime
-    allow_start_state: bool
-    timezone: ZoneInfo
+    window: DayWindow
 
 
 def check_against_request(
-    record: HistoryRecord,
-    contract: RecordContract,
-    *,
-    first_for_entity: bool,
-    location: str,
+    record: HistoryRecord, contract: RecordContract, *, location: str
 ) -> None:
     """Reject a stored record that the request could not have produced."""
     if record.entity_id not in contract.requested_entity_ids:
         raise ValidationError(f"{location}: the record belongs to an entity not requested.")
-    carry_in = (
-        contract.allow_start_state and first_for_entity and record.last_updated == contract.start
-    )
-    if not (contract.start < record.last_updated < contract.end or carry_in):
+    if not contract.window.contains(record.last_updated):
         raise ValidationError(f"{location}: the record is outside the requested history window.")
-    if record.local_offset != offset_label(record.last_updated, contract.timezone):
+    if record.local_offset != offset_label(record.last_updated, contract.window.timezone):
         raise ValidationError(f"{location}: the record has an inconsistent local_offset.")

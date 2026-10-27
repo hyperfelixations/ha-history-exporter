@@ -1,7 +1,6 @@
-"""Timezone-aware day boundary utilities for Europe/Berlin with full DST support.
+"""Calendar days as the command line names them: today, yesterday, ranges.
 
-All "local day" operations use the calendar date in the configured timezone.
-DST-transition days (23 h or 25 h) are handled automatically by zoneinfo.
+Day windows themselves live in :mod:`ha_history_exporter.domain.window`.
 """
 
 from __future__ import annotations
@@ -10,8 +9,6 @@ import re
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-
-_UTC = ZoneInfo("UTC")
 
 
 def today_local(tz: ZoneInfo) -> date:
@@ -33,29 +30,6 @@ def is_day_complete(day: date, tz: ZoneInfo) -> bool:
     return day < today_local(tz)
 
 
-def local_day_bounds(day: date, tz: ZoneInfo) -> tuple[datetime, datetime]:
-    """Return (start, end) as timezone-aware datetimes for one calendar day.
-
-    DST transitions are handled automatically:
-      - Summer day (23 h): correct 22:00–22:00 UTC window
-      - Winter day (25 h): correct 23:00–23:00 UTC window
-      - Transition days: `zoneinfo` picks the correct offset
-
-    Returns:
-        (start, end) where start == 00:00:00 local on *day* and
-        end   == 00:00:00 local on *day + 1 day* (exclusive upper bound).
-    """
-    start = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=tz)
-    next_day = day + timedelta(days=1)
-    end = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz)
-    return start, end
-
-
-def to_utc(dt: datetime) -> datetime:
-    """Convert any timezone-aware datetime to UTC."""
-    return dt.astimezone(_UTC)
-
-
 def last_n_complete_days(n: int, tz: ZoneInfo) -> tuple[date, date]:
     """Return (start, end) covering the *n* most recent fully elapsed local days.
 
@@ -69,29 +43,6 @@ def last_n_complete_days(n: int, tz: ZoneInfo) -> tuple[date, date]:
         raise ValueError("--last-days must be 1 or greater.")
     end = latest_complete_day(tz)
     return end - timedelta(days=n - 1), end
-
-
-def partial_day_bounds(
-    day: date, tz: ZoneInfo, now: datetime | None = None
-) -> tuple[datetime, datetime]:
-    """Return (start, end) for a day that is still running.
-
-    The window begins at local midnight and ends at *now*, truncated to whole
-    seconds. Only ``--date`` pointing at today produces such a window, and the
-    day is recorded as ``partial`` so a later run replaces it in full. See
-    internal dev doc, Teil-Export des heutigen Tages.
-
-    Raises:
-        ValueError if *day* is not the current local day.
-    """
-    current = datetime.now(tz) if now is None else now.astimezone(tz)
-    if day != current.date():
-        raise ValueError(
-            f"Day {day} is not today ({current.date()}) in {tz}; "
-            "only the running day can be exported partially."
-        )
-    start, _ = local_day_bounds(day, tz)
-    return start, current.replace(microsecond=0)
 
 
 def iter_days(start: date, end: date) -> Iterator[date]:

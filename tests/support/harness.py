@@ -21,10 +21,9 @@ from ha_history_exporter.archive.store import load_manifest
 from ha_history_exporter.archive.workspace import new_run_id
 from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
 from ha_history_exporter.domain.snapshot import snapshot_document
-from ha_history_exporter.domain.window import DayIdentity
+from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
 from ha_history_exporter.settings import HistoryRequestSettings
-from ha_history_exporter.time_utils import local_day_bounds
 from tests.helpers import FakeHomeAssistantClient, make_config
 
 FailureKind = Literal["unreachable", "api", "auth"]
@@ -145,7 +144,5 @@ def stored_status(output_dir: Path, day: date, timezone: str = "Europe/Berlin") 
     """
     cfg = make_config(output_dir.parent)
     cfg = replace(cfg, export=replace(cfg.export, output_dir=str(output_dir), timezone=timezone))
-    zone = ZoneInfo(timezone)
-    start, end = local_day_bounds(day, zone)
-    loaded = load_manifest(cfg.layout, DayIdentity.of(day, zone, start, end))
+    loaded = load_manifest(cfg.layout, DayWindow.full(day, ZoneInfo(timezone)).identity())
     return None if loaded is None else loaded.status.value

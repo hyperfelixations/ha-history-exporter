@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,7 @@ import pytest
 from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.records import HistoryRecord, LogicalDigest
 from ha_history_exporter.domain.stored import RecordContract
+from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import ValidationError
 from ha_history_exporter.formats import FORMATS
 from ha_history_exporter.formats.validation import (
@@ -23,10 +24,7 @@ from tests.support.records import make_record
 
 CONTRACT = RecordContract(
     requested_entity_ids=frozenset({"sensor.one", "sensor.two"}),
-    start=datetime(2026, 7, 27, 22, tzinfo=UTC),
-    end=datetime(2026, 7, 28, 22, tzinfo=UTC),
-    allow_start_state=False,
-    timezone=ZoneInfo("Europe/Berlin"),
+    window=DayWindow.full(date(2026, 7, 28), ZoneInfo("Europe/Berlin")),
 )
 RECORDS = [make_record(), make_record("sensor.two", "2")]
 

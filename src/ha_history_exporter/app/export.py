@@ -19,11 +19,10 @@ from ..archive.workspace import new_run_id
 from ..domain.clock import Clock, SystemClock
 from ..domain.manifest import Manifest14, ManifestStatus
 from ..domain.plan import DayAction, ExportPlan, build_plan
-from ..domain.window import DayIdentity
+from ..domain.window import DayWindow, format_iso
 from ..errors import ConfigError, Remedy
 from ..formats import missing_requirements
 from ..settings import Config
-from ..time_utils import local_day_bounds, partial_day_bounds
 from .capture import CaptureContext, HistoryClient, capture_day, run_log_entry
 
 logger = logging.getLogger(__name__)
@@ -43,8 +42,7 @@ def plan_export(
     layout = ArchiveLayout(Path(cfg.export.output_dir))
 
     def completed(day: date) -> str | None:
-        start, end = local_day_bounds(day, tz)
-        loaded = load_manifest(layout, DayIdentity.of(day, tz, start, end))
+        loaded = load_manifest(layout, DayWindow.full(day, tz).identity())
         if loaded is None or loaded.status is not ManifestStatus.OK:
             return None
         return f"manifest.json status=ok, {loaded.state_object_count} state objects"
@@ -164,17 +162,20 @@ def run_export(
             clock=clock,
         )
         for index, day in enumerate(days):
-            partial = day in partial_days
-            start, end = partial_day_bounds(day, tz, now) if partial else local_day_bounds(day, tz)
+            window = (
+                DayWindow.elapsed(day, tz, now or clock.now())
+                if day in partial_days
+                else DayWindow.full(day, tz)
+            )
             logger.info(
-                "== Day %d/%d: %s  [%s -> %s] ==",
+                "== Day %d/%d: %s  [%s -> %s) ==",
                 index + 1,
                 len(days),
                 day,
-                start.replace(microsecond=0).isoformat(),
-                end.replace(microsecond=0).isoformat(),
+                format_iso(window.start),
+                format_iso(window.end),
             )
-            outcome = capture_day(ctx, day, start=start, end=end, partial=partial)
+            outcome = capture_day(ctx, window)
             any_failed |= outcome.manifest.status is ManifestStatus.FAILED
             _log_run(layout, outcome.manifest)
             if outcome.fatal is not None:

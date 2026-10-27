@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.4",
+  "status": "ok",
+  "source": "home_assistant_rest_history",
+  "date": "2026-10-23",
+  "timezone": "Europe/Berlin",
+  "start_local": "2026-10-23T00:00:00+02:00",
+  "end_local": "2026-10-24T00:00:00+02:00",
+  "start_utc": "2026-10-22T22:00:00+00:00",
+  "end_utc": "2026-10-23T22:00:00+00:00",
+  "export_started_at": "<volatile>",
+  "export_finished_at": "<volatile>",
+  "duration_seconds": "<volatile>",
+  "entity_count_current": 1,
+  "entity_count_requested": 1,
+  "entity_count_with_history": 1,
+  "entity_count_zero_history": 0,
+  "state_object_count": 2,
+  "batch_size_entities": 2,
+  "request_count": 1,
+  "failed_request_count": 0,
+  "retried_request_count": 0,
+  "history_request_options": {
+    "minimal_response": false,
+    "no_attributes": false,
+    "significant_changes_only": false,
+    "skip_initial_state": true
+  },
+  "capture_profile": {
+    "response": "full",
+    "attributes": "full",
+    "state_changes": "all",
+    "initial_state": "omitted"
+  },
+  "retention": {
+    "status": "known_safe",
+    "purge_keep_days": 14
+  },
+  "output_files": {
+    "jsonl": "2026-10-23.jsonl",
+    "csv": "2026-10-23.csv",
+    "parquet": null
+  },
+  "artifacts": {
+    "jsonl": {
+      "filename": "2026-10-23.jsonl",
+      "size_bytes": 503,
+      "sha256": "9e8f40bfc4a1b5c7cc53ccf8853227fbb22e7fea04c89389b433bf798880d299",
+      "row_count": 2,
+      "logical_sha256": "b12c63cc17b64212f3393fc19b55813847b6f270b8701f564fc977b517e31dc2"
+    },
+    "csv": {
+      "filename": "2026-10-23.csv",
+      "size_bytes": 408,
+      "sha256": "b473d89732c75fe40797e961a97f50ea323def4c2e062985f2c9550a85aac30d",
+      "row_count": 2,
+      "logical_sha256": "b12c63cc17b64212f3393fc19b55813847b6f270b8701f564fc977b517e31dc2"
+    },
+    "parquet": null
+  },
+  "zero_history_entities": [],
+  "failed_batches": [],
+  "skipped_reason": null,
+  "error": null,
+  "error_code": null,
+  "script_version": "<volatile>"
+}

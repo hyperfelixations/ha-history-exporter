@@ -26,6 +26,7 @@ OUTCOMES: dict[str, int | type[BaseException]] = {
     "auth_abort": AuthError,
     "partial_day": 0,
     "carry_in": 0,
+    "midnight": 0,
 }
 
 
@@ -120,3 +121,14 @@ def test_stable_manifest_neutralises_only_volatile_values() -> None:
     assert stable["artifacts"]["jsonl"]["logical_sha256"] == "b" * 64
     for name in golden.VOLATILE_MANIFEST_FIELDS:
         assert stable[name] == golden.VOLATILE
+
+
+def test_each_day_is_requested_from_one_microsecond_before_its_start(
+    productions: dict[str, Production],
+) -> None:
+    """Home Assistant returns ``start < last_updated < end``; the day is ``[start, end)``."""
+    calls = productions["midnight"].history_calls
+    assert [(call["start_dt"].isoformat(), call["end_dt"].isoformat()) for call in calls] == [
+        ("2026-10-22T21:59:59.999999+00:00", "2026-10-23T22:00:00+00:00"),
+        ("2026-10-23T21:59:59.999999+00:00", "2026-10-24T22:00:00+00:00"),
+    ]

@@ -245,9 +245,12 @@ sluggish during an export, lower `requests.batch_size` and raise
 `requests.sleep_between_requests`.
 
 The default profile sends `significant_changes_only=0` explicitly and requests
-every Recorder state row strictly inside the day. `skip_initial_state=true`
-omits Home Assistant's synthetic carry-in state at the exact start boundary;
-set it to `false` only when that context row is useful to you.
+every Recorder state row from local midnight up to, but not including, the
+next local midnight, so a change at exactly midnight belongs to the day it
+opens. `skip_initial_state=true` omits Home Assistant's synthetic carry-in
+state, the state in effect at midnight; with `false` it is the first row of
+each entity, stamped at midnight. Set it to `false` only when that context row
+is useful to you.
 
 `minimal_response`, `no_attributes`, and `significant_changes_only` all request
 less information. Minimal responses omit attribute snapshots and other fields
