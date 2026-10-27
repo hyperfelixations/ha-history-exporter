@@ -12,7 +12,7 @@ scheduled task or a double-clicked batch file can never block on one.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -46,7 +46,7 @@ def history_row_for(day: date, state: str = "1", fraction: float = 0.5) -> dict:
     return state_row(
         "sensor.synthetic",
         state,
-        timestamp.astimezone(timezone.utc).isoformat(),
+        timestamp.astimezone(UTC).isoformat(),
     )
 
 

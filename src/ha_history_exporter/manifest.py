@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone, tzinfo
+from datetime import UTC, date, datetime, tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -363,9 +363,9 @@ def _validate_data(
         name: _aware_datetime(data[name], name, expected_day)
         for name in ("start_local", "end_local", "start_utc", "end_utc")
     }
-    if parsed["start_local"].astimezone(timezone.utc) != parsed["start_utc"]:
+    if parsed["start_local"].astimezone(UTC) != parsed["start_utc"]:
         raise _invalid(expected_day, "start_local and start_utc disagree")
-    if parsed["end_local"].astimezone(timezone.utc) != parsed["end_utc"]:
+    if parsed["end_local"].astimezone(UTC) != parsed["end_utc"]:
         raise _invalid(expected_day, "end_local and end_utc disagree")
     if data["start_local"] != expected_start_local or data["start_utc"] != expected_start_utc:
         raise _invalid(expected_day, "start boundary does not match the target day")

@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -93,8 +93,8 @@ def _validate_records(
                 validate_stored_record(
                     record,
                     requested_entity_ids=requested_entity_ids,
-                    start=start.astimezone(timezone.utc),
-                    end=end.astimezone(timezone.utc),
+                    start=start.astimezone(UTC),
+                    end=end.astimezone(UTC),
                     allow_start_state=not settings.skip_initial_state,
                     first_for_entity=record.entity_id not in seen_entities,
                     local_timezone=local_timezone,

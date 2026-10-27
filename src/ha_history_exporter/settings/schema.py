@@ -16,7 +16,7 @@ import difflib
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from ..errors import ConfigError, Remedy
@@ -45,7 +45,7 @@ _RECORDER = RecorderSettings()
 _STORAGE = StorageSettings()
 
 
-class KeyType(str, Enum):
+class KeyType(StrEnum):
     STRING = "string"
     PATH = "path"
     BOOL = "boolean"
@@ -57,7 +57,7 @@ class KeyType(str, Enum):
     FORMAT_LIST = "list of output formats"
 
 
-class KeyStatus(str, Enum):
+class KeyStatus(StrEnum):
     SUPPORTED = "supported"
     SECRET = "secret"  # noqa: S105 - status name, not a secret
 

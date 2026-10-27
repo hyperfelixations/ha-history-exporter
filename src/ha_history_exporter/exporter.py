@@ -27,7 +27,6 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
@@ -55,8 +54,6 @@ from .time_utils import (
 from .validators import ArtifactMetadata, validate_export_artifacts
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 #: Physical Parquet layout. Part of the frozen output contract: a fixture small
 #: enough to fit one row group cannot show a change here, so it is pinned by
@@ -592,7 +589,7 @@ def _finalize_day(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _chunks(lst: list[T], n: int) -> Iterator[list[T]]:
+def _chunks[T](lst: list[T], n: int) -> Iterator[list[T]]:
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
 

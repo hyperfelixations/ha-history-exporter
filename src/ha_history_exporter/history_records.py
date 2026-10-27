@@ -12,7 +12,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeGuard
 from zoneinfo import ZoneInfo
 
@@ -73,7 +73,7 @@ def _parse_timestamp(value: Any, field_name: str, group: int, row: int) -> datet
         ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValidationError(f"History group {group}, row {row}: {field_name} needs a timezone.")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _offset(value: datetime, local_timezone: ZoneInfo) -> str:
@@ -169,8 +169,8 @@ def iter_normalized_history(
     """Validate a history payload and yield canonical records in wire order."""
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("History bounds must be timezone-aware.")
-    start_utc = start.astimezone(timezone.utc)
-    end_utc = end.astimezone(timezone.utc)
+    start_utc = start.astimezone(UTC)
+    end_utc = end.astimezone(UTC)
     if start_utc >= end_utc:
         raise ValueError("History start must be before its end.")
 

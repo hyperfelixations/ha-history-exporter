@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -94,7 +94,7 @@ def test_atomic_replace_retries_permission_error(tmp_path, monkeypatch):
     [
         (
             "2026-07-28T10:00:00.123456+02:00",
-            datetime(2026, 7, 28, 8, 0, 0, 123456, tzinfo=timezone.utc),
+            datetime(2026, 7, 28, 8, 0, 0, 123456, tzinfo=UTC),
         ),
     ],
 )

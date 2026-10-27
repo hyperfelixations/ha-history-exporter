@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from ..layout import ExportLayout
 
 
-class Format(str, Enum):
+class Format(StrEnum):
     """An output format for exported history."""
 
     JSONL = "jsonl"

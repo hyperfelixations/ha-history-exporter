@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,7 +15,6 @@ from ha_history_exporter.history_records import (
 from ha_history_exporter.settings import HistoryRequestSettings
 from tests.helpers import state_row
 
-UTC = timezone.utc
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
 START = datetime(2026, 7, 28, tzinfo=UTC)
 END = datetime(2026, 7, 29, tzinfo=UTC)

@@ -23,7 +23,7 @@ import csv
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, ClassVar, TextIO
@@ -263,7 +263,7 @@ def _parse_ts_utc(ts_str: str | None) -> datetime:
         raise ValidationError("A timestamp is not valid ISO 8601.") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValidationError("A timestamp needs a timezone.")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def convert_jsonl_to_parquet(

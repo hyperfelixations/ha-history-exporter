@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -126,8 +126,8 @@ def make_valid_parquet(path, rows=2):
     values = {
         "entity_id": [f"sensor.{index}" for index in range(rows)],
         "state": [str(index) for index in range(rows)],
-        "last_changed": [datetime(2026, 7, 28, 10, tzinfo=timezone.utc)] * rows,
-        "last_updated": [datetime(2026, 7, 28, 10, tzinfo=timezone.utc)] * rows,
+        "last_changed": [datetime(2026, 7, 28, 10, tzinfo=UTC)] * rows,
+        "last_updated": [datetime(2026, 7, 28, 10, tzinfo=UTC)] * rows,
         "attributes_json": [json.dumps({})] * rows,
         "local_offset": ["+02:00"] * rows,
         "extra_json": [None] * rows,
@@ -136,7 +136,7 @@ def make_valid_parquet(path, rows=2):
 
 
 def test_cross_format_validation_requires_identical_logical_records(tmp_path):
-    from datetime import datetime, timezone
+    from datetime import datetime
     from zoneinfo import ZoneInfo
 
     from ha_history_exporter.writers import CsvWriter, JsonlWriter, convert_jsonl_to_parquet
@@ -159,8 +159,8 @@ def test_cross_format_validation_requires_identical_logical_records(tmp_path):
         {Format.JSONL: jsonl, Format.CSV: csv_path, Format.PARQUET: parquet},
         expected_rows=1,
         requested_entity_ids=["sensor.one"],
-        start=datetime(2026, 7, 28, tzinfo=timezone.utc),
-        end=datetime(2026, 7, 29, tzinfo=timezone.utc),
+        start=datetime(2026, 7, 28, tzinfo=UTC),
+        end=datetime(2026, 7, 29, tzinfo=UTC),
         settings=HistoryRequestSettings(),
         local_timezone=ZoneInfo("Europe/Berlin"),
     )
@@ -180,8 +180,8 @@ def test_cross_format_validation_requires_identical_logical_records(tmp_path):
             {Format.JSONL: jsonl, Format.CSV: csv_path},
             expected_rows=1,
             requested_entity_ids=["sensor.one"],
-            start=datetime(2026, 7, 28, tzinfo=timezone.utc),
-            end=datetime(2026, 7, 29, tzinfo=timezone.utc),
+            start=datetime(2026, 7, 28, tzinfo=UTC),
+            end=datetime(2026, 7, 29, tzinfo=UTC),
             settings=HistoryRequestSettings(),
             local_timezone=ZoneInfo("Europe/Berlin"),
         )

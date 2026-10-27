@@ -19,7 +19,7 @@ import socket
 import string
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,7 +40,7 @@ STALE_AFTER_HOURS = 48
 
 def new_run_id() -> str:
     """A run identifier that is unique across processes and sub-second runs."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     alphabet = string.ascii_lowercase + string.digits
     suffix = "".join(random.choices(alphabet, k=6))  # noqa: S311 - uniqueness, not secrecy
     return f"{stamp}-{os.getpid()}-{suffix}"
@@ -143,7 +143,7 @@ def _acquire_lock(lock_path: Path, run_id: str) -> None:
         f"run_id: {run_id}\n"
         f"pid: {os.getpid()}\n"
         f"host: {socket.gethostname()}\n"
-        f"started_at: {datetime.now(timezone.utc).isoformat()}\n"
+        f"started_at: {datetime.now(UTC).isoformat()}\n"
     )
     try:
         descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
