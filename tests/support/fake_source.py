@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ha_history_exporter.domain.query import HistoryQuery
+from ha_history_exporter.domain.records import JsonValue
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.domain.wire import WirePayload
 from ha_history_exporter.errors import HHEError
@@ -91,3 +93,47 @@ class FakeHistorySource:
     @property
     def unanswered(self) -> int:
         return len(self._answers)
+
+
+class RecordedHistorySource(FakeHistorySource):
+    """Home Assistant with a fixed Recorder, answering like ``/api/history/period``.
+
+    A request returns, for each requested entity in request order, the rows
+    with ``query_start < last_updated < end``; a row stamped exactly at the
+    query start is the carry-in state and is returned only without
+    ``skip_initial_state``. *failures* fail requests by their 1-based number.
+    """
+
+    def __init__(
+        self,
+        rows: Sequence[Mapping[str, JsonValue]],
+        *,
+        failures: Mapping[int, HHEError] | None = None,
+        states: Sequence[StateObject] = (),
+        time_zone: str = "Europe/Berlin",
+    ) -> None:
+        super().__init__(states=states, time_zone=time_zone)
+        self._rows = list(rows)
+        self._failures = dict(failures or {})
+
+    def history(
+        self, window: DayWindow, entity_ids: Sequence[str], query: HistoryQuery
+    ) -> HistoryCall:
+        self.calls.append(HistoryRequest(window, tuple(entity_ids), query))
+        failure = self._failures.get(len(self.calls))
+        if failure is not None:
+            raise HistoryFetchError(failure, CallStats(1))
+        start, end = window.query_start, window.end_utc
+        payload = []
+        for entity_id in entity_ids:
+            group = []
+            for row in self._rows:
+                if row["entity_id"] != entity_id:
+                    continue
+                updated = datetime.fromisoformat(str(row["last_updated"]))
+                carry_in = updated == start and not query.skip_initial_state
+                if start < updated < end or carry_in:
+                    group.append(row)
+            if group:
+                payload.append(group)
+        return HistoryCall(payload, CallStats(1))

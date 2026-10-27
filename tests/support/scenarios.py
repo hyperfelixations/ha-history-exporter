@@ -12,7 +12,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tests.support.harness import Failure, Response, Scenario
+from tests.support.harness import Failure, Scenario
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -62,87 +62,65 @@ REFERENCE_ENTITY_IDS = (
     "sensor.never_recorded",
 )
 
-#: One entry per history request, in call order: batches of two, two and one
-#: entity for each of the two days. An empty list is a batch in which no
-#: requested entity had recorded history.
-_REFERENCE_RESPONSES: tuple[Response, ...] = (
-    [
-        [
-            row(
-                "sensor.kitchen_temperature",
-                "21.5",
-                "2026-10-24T08:30:00+00:00",
-                _TEMPERATURE_ATTRS,
-            ),
-            row(
-                "sensor.kitchen_temperature",
-                "22.0",
-                "2026-10-24T09:15:42.123456+00:00",
-                _TEMPERATURE_ATTRS,
-                updated="2026-10-24T09:15:43.500000+00:00",
-            ),
-        ],
-        [
-            row(
-                "sensor.status_note",
-                'Alarm, "high" level',
-                "2026-10-24T10:00:00+00:00",
-                _NOTE_ATTRS,
-            ),
-        ],
-    ],
-    [
-        [row("binary_sensor.front_door", "on", "2026-10-24T11:00:00+00:00", _DOOR_ATTRS)],
-        [row("sensor.unicode_payload", "zwölf", "2026-10-24T12:00:00+00:00", _UNICODE_ATTRS)],
-    ],
-    [],
-    [
-        [
-            # Local 01:30 CEST, still +02:00.
-            row(
-                "sensor.kitchen_temperature",
-                "19.5",
-                "2026-10-24T23:30:00+00:00",
-                _TEMPERATURE_ATTRS,
-            ),
-            # Local 02:30 CET, already +01:00.
-            row(
-                "sensor.kitchen_temperature",
-                "18.0",
-                "2026-10-25T01:30:00+00:00",
-                _TEMPERATURE_ATTRS,
-            ),
-        ],
-    ],
-    [
-        [
-            # Changed one second before the changeover, updated two seconds
-            # after it: local_offset follows last_updated, already +01:00.
-            row(
-                "binary_sensor.front_door",
-                "off",
-                "2026-10-25T00:59:59+00:00",
-                _DOOR_ATTRS,
-                updated="2026-10-25T01:00:01+00:00",
-            ),
-        ],
-        [
-            # The exact changeover instant.
-            row(
-                "sensor.unicode_payload",
-                "unavailable",
-                "2026-10-25T01:00:00+00:00",
-                _UNICODE_ATTRS,
-            ),
-        ],
-    ],
-    [],
+#: The Recorder of the reference instance: rows of both days, any entity.
+_REFERENCE_HISTORY: tuple[dict[str, Any], ...] = (
+    row(
+        "sensor.kitchen_temperature",
+        "21.5",
+        "2026-10-24T08:30:00+00:00",
+        _TEMPERATURE_ATTRS,
+    ),
+    row(
+        "sensor.kitchen_temperature",
+        "22.0",
+        "2026-10-24T09:15:42.123456+00:00",
+        _TEMPERATURE_ATTRS,
+        updated="2026-10-24T09:15:43.500000+00:00",
+    ),
+    row(
+        "sensor.status_note",
+        'Alarm, "high" level',
+        "2026-10-24T10:00:00+00:00",
+        _NOTE_ATTRS,
+    ),
+    row("binary_sensor.front_door", "on", "2026-10-24T11:00:00+00:00", _DOOR_ATTRS),
+    row("sensor.unicode_payload", "zwölf", "2026-10-24T12:00:00+00:00", _UNICODE_ATTRS),
+    # Local 01:30 CEST, still +02:00.
+    row(
+        "sensor.kitchen_temperature",
+        "19.5",
+        "2026-10-24T23:30:00+00:00",
+        _TEMPERATURE_ATTRS,
+    ),
+    # Local 02:30 CET, already +01:00.
+    row(
+        "sensor.kitchen_temperature",
+        "18.0",
+        "2026-10-25T01:30:00+00:00",
+        _TEMPERATURE_ATTRS,
+    ),
+    # Changed one second before the changeover, updated two seconds after it:
+    # local_offset follows last_updated, already +01:00.
+    row(
+        "binary_sensor.front_door",
+        "off",
+        "2026-10-25T00:59:59+00:00",
+        _DOOR_ATTRS,
+        updated="2026-10-25T01:00:01+00:00",
+    ),
+    # The exact changeover instant.
+    row(
+        "sensor.unicode_payload",
+        "unavailable",
+        "2026-10-25T01:00:00+00:00",
+        _UNICODE_ATTRS,
+    ),
 )
 
 REFERENCE = Scenario(
     name="reference",
     days=(NORMAL_DAY, DST_DAY),
-    responses=_REFERENCE_RESPONSES,
+    history=_REFERENCE_HISTORY,
     entity_ids=REFERENCE_ENTITY_IDS,
     entity_count_total=7,
     formats=frozenset({"jsonl", "csv", "parquet"}),
@@ -154,38 +132,34 @@ _THREE_ENTITIES = (
     "binary_sensor.front_door",
 )
 
-#: The second of two batches fails with an API error, so the day fails.
+#: The second of two history requests fails with an API error, so the day fails.
 FAILED_DAY = Scenario(
     name="failed_day",
     days=(NORMAL_DAY,),
-    responses=(
-        [
-            [
-                row(
-                    "sensor.kitchen_temperature",
-                    "21.5",
-                    "2026-10-24T08:30:00+00:00",
-                    _TEMPERATURE_ATTRS,
-                )
-            ]
-        ],
-        Failure("api"),
+    history=(
+        row(
+            "sensor.kitchen_temperature",
+            "21.5",
+            "2026-10-24T08:30:00+00:00",
+            _TEMPERATURE_ATTRS,
+        ),
     ),
+    failures={2: Failure("api")},
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
     formats=frozenset({"jsonl", "csv"}),
 )
 
-#: Home Assistant becomes unreachable during the first of two days.
+#: Home Assistant is unavailable for the first request of the first of two
+#: days; the run ends and the second day is not attempted.
 UNREACHABLE = Scenario(
     name="unreachable",
     days=(NORMAL_DAY, DST_DAY),
-    responses=(
-        Failure("unreachable"),
-        [[row("binary_sensor.front_door", "on", "2026-10-24T11:00:00+00:00", _DOOR_ATTRS)]],
-        [],
-        [[row("binary_sensor.front_door", "off", "2026-10-25T09:00:00+00:00", _DOOR_ATTRS)]],
+    history=(
+        row("binary_sensor.front_door", "on", "2026-10-24T11:00:00+00:00", _DOOR_ATTRS),
+        row("binary_sensor.front_door", "off", "2026-10-25T09:00:00+00:00", _DOOR_ATTRS),
     ),
+    failures={1: Failure("unreachable")},
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
 )
@@ -194,7 +168,7 @@ UNREACHABLE = Scenario(
 AUTH_ABORT = Scenario(
     name="auth_abort",
     days=(NORMAL_DAY, DST_DAY),
-    responses=(Failure("auth"),),
+    failures={1: Failure("auth")},
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
 )
@@ -203,18 +177,13 @@ AUTH_ABORT = Scenario(
 PARTIAL = Scenario(
     name="partial_day",
     days=(PARTIAL_DAY,),
-    responses=(
-        [
-            [
-                row(
-                    "sensor.kitchen_temperature",
-                    "17.0",
-                    "2026-10-26T06:00:00+00:00",
-                    _TEMPERATURE_ATTRS,
-                )
-            ]
-        ],
-        [],
+    history=(
+        row(
+            "sensor.kitchen_temperature",
+            "17.0",
+            "2026-10-26T06:00:00+00:00",
+            _TEMPERATURE_ATTRS,
+        ),
     ),
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
@@ -230,32 +199,21 @@ PARTIAL = Scenario(
 CARRY_IN = Scenario(
     name="carry_in",
     days=(NORMAL_DAY,),
-    responses=(
-        [
-            [
-                row(
-                    "sensor.kitchen_temperature",
-                    "20.0",
-                    "2026-10-23T21:59:59.999999+00:00",
-                    _TEMPERATURE_ATTRS,
-                ),
-                row(
-                    "sensor.kitchen_temperature",
-                    "21.5",
-                    "2026-10-24T08:30:00+00:00",
-                    _TEMPERATURE_ATTRS,
-                ),
-            ],
-            [
-                row(
-                    "sensor.status_note",
-                    "idle",
-                    "2026-10-23T21:59:59.999999+00:00",
-                    _NOTE_ATTRS,
-                ),
-            ],
-        ],
-        [[row("binary_sensor.front_door", "off", "2026-10-23T21:59:59.999999+00:00", _DOOR_ATTRS)]],
+    history=(
+        row(
+            "sensor.kitchen_temperature",
+            "20.0",
+            "2026-10-23T21:59:59.999999+00:00",
+            _TEMPERATURE_ATTRS,
+        ),
+        row(
+            "sensor.kitchen_temperature",
+            "21.5",
+            "2026-10-24T08:30:00+00:00",
+            _TEMPERATURE_ATTRS,
+        ),
+        row("sensor.status_note", "idle", "2026-10-23T21:59:59.999999+00:00", _NOTE_ATTRS),
+        row("binary_sensor.front_door", "off", "2026-10-23T21:59:59.999999+00:00", _DOOR_ATTRS),
     ),
     entity_ids=_THREE_ENTITIES,
     entity_count_total=3,
@@ -268,19 +226,10 @@ CARRY_IN = Scenario(
 MIDNIGHT = Scenario(
     name="midnight",
     days=(date(2026, 10, 23), NORMAL_DAY),
-    responses=(
-        [
-            [
-                row("binary_sensor.front_door", "on", "2026-10-22T22:00:00+00:00", _DOOR_ATTRS),
-                row(
-                    "binary_sensor.front_door",
-                    "off",
-                    "2026-10-23T21:59:59.999999+00:00",
-                    _DOOR_ATTRS,
-                ),
-            ]
-        ],
-        [[row("binary_sensor.front_door", "on", "2026-10-23T22:00:00+00:00", _DOOR_ATTRS)]],
+    history=(
+        row("binary_sensor.front_door", "on", "2026-10-22T22:00:00+00:00", _DOOR_ATTRS),
+        row("binary_sensor.front_door", "off", "2026-10-23T21:59:59.999999+00:00", _DOOR_ATTRS),
+        row("binary_sensor.front_door", "on", "2026-10-23T22:00:00+00:00", _DOOR_ATTRS),
     ),
     entity_ids=("binary_sensor.front_door",),
     entity_count_total=1,

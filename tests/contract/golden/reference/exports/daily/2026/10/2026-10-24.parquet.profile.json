@@ -41,6 +41,15 @@
   "compression": "snappy",
   "rows": [
     {
+      "entity_id": "binary_sensor.front_door",
+      "state": "on",
+      "last_changed": "2026-10-24T11:00:00+00:00",
+      "last_updated": "2026-10-24T11:00:00+00:00",
+      "attributes_json": "{\"friendly_name\": \"Front door\", \"device_class\": \"door\"}",
+      "local_offset": "+02:00",
+      "extra_json": null
+    },
+    {
       "entity_id": "sensor.kitchen_temperature",
       "state": "21.5",
       "last_changed": "2026-10-24T08:30:00+00:00",
@@ -64,15 +73,6 @@
       "last_changed": "2026-10-24T10:00:00+00:00",
       "last_updated": "2026-10-24T10:00:00+00:00",
       "attributes_json": "{\"friendly_name\": \"Status note\", \"description\": \"line one\\nline two, with a comma\"}",
-      "local_offset": "+02:00",
-      "extra_json": null
-    },
-    {
-      "entity_id": "binary_sensor.front_door",
-      "state": "on",
-      "last_changed": "2026-10-24T11:00:00+00:00",
-      "last_updated": "2026-10-24T11:00:00+00:00",
-      "attributes_json": "{\"friendly_name\": \"Front door\", \"device_class\": \"door\"}",
       "local_offset": "+02:00",
       "extra_json": null
     },

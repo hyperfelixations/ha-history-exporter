@@ -9,10 +9,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ha_history_exporter.app.export import plan_export
+from ha_history_exporter.app.export import ExportRequest, plan_export
+from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.manifest import ManifestStatus
-from ha_history_exporter.domain.plan import DayAction, ExportPlan
+from ha_history_exporter.domain.plan import DayAction, DaySelection, ExportPlan
 from ha_history_exporter.errors import ConfigError, ExportError
 from ha_history_exporter.settings import Config, RecorderSettings
 from tests.helpers import make_config
@@ -24,7 +25,11 @@ TODAY = date(2026, 7, 30)
 
 def plan(cfg: Config, *, today: date = TODAY, force: bool = False) -> ExportPlan:
     return plan_export(
-        cfg, requested_start=DAY, requested_end=DAY, today=today, tz=BERLIN, force=force
+        cfg,
+        ArchiveLayout(cfg.export.output_dir),
+        ExportRequest(DaySelection.single(DAY), force=force),
+        zone=BERLIN,
+        today=today,
     )
 
 

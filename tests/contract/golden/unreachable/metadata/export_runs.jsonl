@@ -1,2 +1,1 @@
 {"day": "2026-10-24", "status": "failed", "started_at": "<volatile>", "finished_at": "<volatile>", "state_object_count": 0, "entity_count_requested": 3, "entity_count_with_history": 0, "duration_seconds": "<volatile>"}
-{"day": "2026-10-25", "status": "ok", "started_at": "<volatile>", "finished_at": "<volatile>", "state_object_count": 1, "entity_count_requested": 3, "entity_count_with_history": 1, "duration_seconds": "<volatile>"}

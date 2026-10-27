@@ -45,23 +45,23 @@
     "jsonl": {
       "filename": "2026-10-25.jsonl",
       "size_bytes": 1163,
-      "sha256": "45144a725f97c7cbf07c031648e6457e90183cc5f9dfb397549ad7a8e959df6d",
+      "sha256": "af3f62109ca5505b1d3181aad7880d24e4e39a2a6d7f73dd4058c52ef37fad5b",
       "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
+      "logical_sha256": "6d5c477ca3a32574dcf7f58f54a87e0845103c1f34a77d8a57a1a61cfaf58f8f"
     },
     "csv": {
       "filename": "2026-10-25.csv",
       "size_bytes": 904,
-      "sha256": "c168e8479cb582bde84ce12e3dac2a95923fd87c618b5e72accd85ca6462d66f",
+      "sha256": "ed7f030119a2d7823113bcdb0b58f71e9b802bc13af19e9784e320759d29cb42",
       "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
+      "logical_sha256": "6d5c477ca3a32574dcf7f58f54a87e0845103c1f34a77d8a57a1a61cfaf58f8f"
     },
     "parquet": {
       "filename": "2026-10-25.parquet",
       "size_bytes": "<volatile>",
       "sha256": "<volatile>",
       "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
+      "logical_sha256": "6d5c477ca3a32574dcf7f58f54a87e0845103c1f34a77d8a57a1a61cfaf58f8f"
     }
   },
   "zero_history_entities": [

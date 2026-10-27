@@ -5,6 +5,11 @@ artifact is read back and compared with the captured records, the manifest is
 built from what the attempt established, and artifacts and manifest are
 published as one day transaction. Files of formats that the previous manifest
 declared but the new generation no longer contains are retired with it.
+
+The first history request that fails for good fails the day. A failed day is
+recorded by a ``failed`` manifest through the same transaction; it replaces
+a ``failed`` or ``pending`` manifest and never an ``ok`` or ``partial`` one.
+See internal dev doc § "Export run".
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
 from .. import __version__, fsio
@@ -39,13 +44,29 @@ from ..domain.records import LogicalDigest
 from ..domain.stored import RecordContract
 from ..domain.window import DayIdentity, DayWindow, format_iso
 from ..domain.wire import iter_normalized_history
-from ..errors import AuthError, ErrorRecord, ExportError, Remedy, safe_error_record
+from ..errors import (
+    AuthError,
+    ErrorRecord,
+    ExportError,
+    HAConnectionError,
+    HHEError,
+    InternalError,
+    Remedy,
+    TLSError,
+    safe_error_record,
+)
 from ..formats import FORMATS
 from ..formats.validation import CaptureSummary, validate_artifacts
 from ..settings import Config
 from ..source.protocol import HistoryFetchError, HistorySource
 
 logger = logging.getLogger(__name__)
+
+#: Failures after which no further request can succeed; they end the run.
+RUN_ENDING = (AuthError, HAConnectionError, TLSError)
+
+#: Statuses a failed attempt may replace.
+_REPLACEABLE = frozenset({ManifestStatus.FAILED, ManifestStatus.PENDING})
 
 
 @dataclass(frozen=True)
@@ -105,16 +126,14 @@ class _Fetched:
 @dataclass(frozen=True)
 class DayOutcome:
     manifest: Manifest14
-    #: An error that ends the whole run once this day is recorded.
-    fatal: AuthError | None = None
+    #: An error that ends the run once this day is recorded.
+    fatal: HHEError | None = None
 
 
 def capture_day(ctx: CaptureContext, window: DayWindow) -> DayOutcome:
-    """Capture and publish the day of *window*.
+    """Capture and publish the day of *window*; a failure is recorded, not raised.
 
-    A failed day yields a ``failed`` manifest, persisted unless the day already
-    has one. An authentication failure is recorded the same way and ends the
-    run, because no further request can succeed.
+    An interruption is recorded as well and then propagates.
     """
     day, partial = window.day, window.partial
     identity = window.identity()
@@ -127,16 +146,21 @@ def capture_day(ctx: CaptureContext, window: DayWindow) -> DayOutcome:
         prepared = _capture(ctx, window, progress)
         manifest = _manifest(ctx, identity, progress, partial=partial)
         _publish(ctx, day, prepared, manifest, existing)
-    except AuthError as exc:
-        logger.error("Day %s aborted due to an authentication error.", day)
-        manifest = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
-        _save_failure(ctx, manifest, existing)
-        return DayOutcome(manifest, fatal=exc)
+    except HHEError as exc:
+        logger.error("Day %s failed: %s", day, exc.summary)
+        failed = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
+        _save_failure(ctx, failed, existing)
+        return DayOutcome(failed, exc if isinstance(exc, RUN_ENDING) else None)
     except Exception as exc:
-        logger.error("Day %s failed (%s).", day, type(exc).__name__)
-        manifest = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
-        _save_failure(ctx, manifest, existing)
-        return DayOutcome(manifest)
+        logger.error("Day %s failed with an unexpected error.", day, exc_info=exc)
+        failed = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
+        _save_failure(ctx, failed, existing)
+        return DayOutcome(failed, InternalError.during(f"the export of {day}"))
+    except KeyboardInterrupt as exc:
+        logger.warning("Day %s was interrupted.", day)
+        failed = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
+        _save_failure(ctx, failed, existing)
+        raise
     logger.info(
         "Day %s done - %d state objects, %d/%d entities had history.",
         day,
@@ -202,21 +226,6 @@ def _capture(ctx: CaptureContext, window: DayWindow, progress: _Progress) -> dic
 
     fetched = _fetch(ctx, window, temp, progress)
 
-    if progress.failed_batches:
-        raise ExportError(
-            f"{len(progress.failed_batches)} batch(es) failed for {day}.",
-            details=(
-                "The day was not written. Every failed batch is recorded in "
-                "the day manifest with its position and entity count."
-            ),
-            remedies=(
-                Remedy(
-                    "Retry the day with a longer timeout and more retries:",
-                    f"hhe export --date {day} --timeout 300 --max-retries 5",
-                ),
-            ),
-            context={"day": str(day)},
-        )
     if fetched.rows == 0 and ctx.cfg.recorder.purge_keep_days is None:
         raise ExportError(
             f"Empty history for {day} cannot be verified without Recorder retention.",
@@ -276,37 +285,58 @@ def _fetch(
             except HistoryFetchError as failure:
                 progress.retried_request_count += failure.stats.retries
                 progress.failed_request_count += 1
-                if isinstance(failure.error, AuthError):
-                    raise failure.error from None
-                error = safe_error_record(failure.error)
-                logger.error("  Batch %d failed: %s", index, failure.error.summary)
-                progress.failed_batches.append(
-                    FailedBatch(
-                        batch_index=index,
-                        entity_count=len(batch),
-                        error_code=error.code,
-                        error=error.summary,
-                    )
-                )
-            else:
-                progress.retried_request_count += call.stats.retries
-                progress.request_count += 1
-                for record in iter_normalized_history(
-                    call.payload,
-                    requested_entity_ids=batch,
-                    window=window,
-                    query=query,
-                ):
-                    for writer in writers:
-                        writer.write(record)
-                    digest.add(record)
-                    fetched.entities_with_history.add(record.entity_id)
+                _batch_failed(progress, failure.error, window.day, index, batches)
+            progress.retried_request_count += call.stats.retries
+            progress.request_count += 1
+            for record in iter_normalized_history(
+                call.payload,
+                requested_entity_ids=batch,
+                window=window,
+                query=query,
+            ):
+                for writer in writers:
+                    writer.write(record)
+                digest.add(record)
+                fetched.entities_with_history.add(record.entity_id)
             if index < len(batches):
                 ctx.sleep(pause)
 
     fetched.rows = digest.rows
     fetched.logical_sha256 = digest.hexdigest()
     return fetched
+
+
+def _batch_failed(
+    progress: _Progress, error: HHEError, day: date, index: int, batches: list[list[str]]
+) -> NoReturn:
+    """Record the failed batch and end the day; a rejected token is no batch's fault."""
+    if isinstance(error, AuthError):
+        raise error
+    record = safe_error_record(error)
+    progress.failed_batches.append(
+        FailedBatch(
+            batch_index=index,
+            entity_count=len(batches[index - 1]),
+            error_code=record.code,
+            error=record.summary,
+        )
+    )
+    if isinstance(error, RUN_ENDING):
+        raise error
+    raise ExportError(
+        f"History batch {index} of {len(batches)} failed for {day}.",
+        details=(
+            "The day was not written. The failed batch is recorded in the day manifest "
+            f"with its position and entity count: {error.summary}"
+        ),
+        remedies=(
+            Remedy(
+                "Retry the day with a longer timeout and more retries:",
+                f"hhe export --date {day} --timeout 300 --max-retries 5",
+            ),
+        ),
+        context={"day": str(day)},
+    )
 
 
 def _publish(
@@ -316,21 +346,31 @@ def _publish(
     manifest: Manifest14,
     existing: StoredManifest | None,
 ) -> None:
-    layout = ctx.layout
-    manifest_temp = ctx.workspace.work_dir / f"{day.isoformat()}.manifest.json"
-    fsio.atomic_write(manifest_temp, manifest.encode())
     retire = []
     if existing is not None:
         retire = [
-            layout.day_file(day, fmt.value)
+            ctx.layout.day_file(day, fmt.value)
             for fmt, name in existing.output_files.items()
             if name is not None and fmt not in prepared
         ]
+    _commit(ctx, day, prepared, manifest, retire)
+
+
+def _commit(
+    ctx: CaptureContext,
+    day: date,
+    artifacts: dict[Format, Path],
+    manifest: Manifest14,
+    retire: list[Path],
+) -> None:
+    layout = ctx.layout
+    manifest_temp = ctx.workspace.work_dir / f"{day.isoformat()}.manifest.json"
+    fsio.atomic_write(manifest_temp, manifest.encode())
     DayTransaction(
         layout,
         ctx.workspace.run_id,
         day,
-        artifacts=[(path, layout.day_file(day, fmt.value)) for fmt, path in prepared.items()],
+        artifacts=[(path, layout.day_file(day, fmt.value)) for fmt, path in artifacts.items()],
         manifest=(manifest_temp, layout.manifest_file(day)),
         retire=retire,
         retries=ctx.cfg.storage.locked_file_retries,
@@ -341,15 +381,15 @@ def _publish(
 def _save_failure(
     ctx: CaptureContext, manifest: Manifest14, existing: StoredManifest | None
 ) -> None:
-    """Record a failed attempt, unless the day already has a manifest to keep."""
-    if existing is not None:
+    """Record a failed attempt, unless the day keeps a successful manifest."""
+    day = manifest.identity.day
+    if existing is not None and existing.status not in _REPLACEABLE:
+        logger.info("Day %s keeps its %s manifest.", day, existing.status.value)
         return
-    fsio.atomic_write(
-        ctx.layout.manifest_file(manifest.identity.day),
-        manifest.encode(),
-        retries=ctx.cfg.storage.locked_file_retries,
-        retry_sleep=ctx.cfg.storage.locked_file_retry_sleep,
-    )
+    try:
+        _commit(ctx, day, {}, manifest, [])
+    except (OSError, HHEError) as exc:
+        logger.error("The failed attempt for %s could not be recorded: %s", day, exc)
 
 
 def _chunks[T](items: list[T], size: int) -> Iterator[list[T]]:

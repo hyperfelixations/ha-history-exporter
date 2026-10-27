@@ -8,26 +8,31 @@ implementation can be rebuilt without touching a contract test.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from ha_history_exporter.app.export import run_export
+from ha_history_exporter.app.export import ExportRequest, run_export
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.archive.metadata import write_snapshot
 from ha_history_exporter.archive.store import load_manifest
 from ha_history_exporter.archive.workspace import new_run_id
-from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
+from ha_history_exporter.domain.plan import DaySelection
 from ha_history_exporter.domain.snapshot import snapshot_document
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
-from ha_history_exporter.settings import HistoryRequestSettings
+from ha_history_exporter.settings import EntitySettings, HistoryRequestSettings
 from tests.helpers import make_config
-from tests.support.fake_source import FakeHistorySource, HistoryRequest
+from tests.support.clock import FixedClock
+from tests.support.fake_source import HistoryRequest, RecordedHistorySource
 
 FailureKind = Literal["unreachable", "api", "auth"]
+
+#: The domain of the entities a scenario counts but does not request.
+_EXCLUDED_DOMAIN = "update"
 
 
 @dataclass(frozen=True)
@@ -37,19 +42,22 @@ class Failure:
     kind: FailureKind
 
 
-#: One history request's answer: the list-of-lists payload or a failure.
-Response = list[list[dict[str, Any]]] | Failure
-
-
 @dataclass(frozen=True)
 class Scenario:
-    """Everything an export run is asked to do, stated independently of the code."""
+    """Everything an export run is asked to do, stated independently of the code.
+
+    *history* is the Recorder of the instance: every row of every entity.
+    *failures* fail history requests by their 1-based number. Of the
+    *entity_count_total* current entities, those beyond *entity_ids* are
+    excluded from the request by configuration.
+    """
 
     name: str
     days: tuple[date, ...]
-    responses: tuple[Response, ...]
     entity_ids: tuple[str, ...]
     entity_count_total: int
+    history: tuple[dict[str, Any], ...] = ()
+    failures: Mapping[int, Failure] = field(default_factory=dict)
     formats: frozenset[str] = frozenset({"jsonl"})
     batch_size: int = 2
     timezone: str = "Europe/Berlin"
@@ -78,6 +86,12 @@ def _exception(failure: Failure) -> HHEError:
     return AuthError("Authentication failed: Home Assistant rejected the access token (HTTP 401).")
 
 
+def _states(scenario: Scenario) -> list[dict[str, Any]]:
+    excluded = scenario.entity_count_total - len(scenario.entity_ids)
+    ids = [*scenario.entity_ids, *(f"{_EXCLUDED_DOMAIN}.synthetic_{n}" for n in range(excluded))]
+    return [{"entity_id": entity_id, "state": "on", "attributes": {}} for entity_id in ids]
+
+
 def produce(scenario: Scenario, root: Path) -> Production:
     """Run *scenario* into *root* and report what happened."""
     cfg = make_config(
@@ -90,39 +104,34 @@ def produce(scenario: Scenario, root: Path) -> Production:
     )
     cfg = replace(
         cfg,
-        export=replace(cfg.export, timezone=ZoneInfo(scenario.timezone)),
+        export=replace(cfg.export, timezone=None),
         history_request=HistoryRequestSettings(skip_initial_state=scenario.skip_initial_state),
+        entities=EntitySettings(exclude_domains=(_EXCLUDED_DOMAIN,)),
     )
-    source = FakeHistorySource(
-        _exception(response) if isinstance(response, Failure) else response
-        for response in scenario.responses
+    source = RecordedHistorySource(
+        scenario.history,
+        failures={number: _exception(kind) for number, kind in scenario.failures.items()},
+        states=_states(scenario),
+        time_zone=scenario.timezone,
     )
-    plan = ExportPlan(
-        requested_start=scenario.days[0],
-        requested_end=scenario.days[-1],
-        today=scenario.today,
-        decisions=tuple(
-            DayDecision(
-                day,
-                DayAction.EXPORT_PARTIAL if day == scenario.partial_day else DayAction.EXPORT,
-            )
-            for day in scenario.days
-        ),
+    zone = ZoneInfo(scenario.timezone)
+    now = scenario.now or datetime.combine(scenario.today, time(12), tzinfo=zone)
+    selection = (
+        DaySelection.single(scenario.partial_day)
+        if scenario.partial_day is not None
+        else DaySelection(start=scenario.days[0], end=scenario.days[-1])
     )
     try:
-        exit_code = run_export(
-            cfg=cfg,
-            plan=plan,
-            entity_ids=list(scenario.entity_ids),
-            entity_count_total=scenario.entity_count_total,
-            source=source,
-            tz=ZoneInfo(scenario.timezone),
+        result = run_export(
+            ExportRequest(selection),
+            cfg,
+            lambda: source,
+            clock=FixedClock(now),
             sleep=lambda _seconds: None,
-            now=scenario.now,
         )
     except HHEError as exc:
         return Production(cfg.export.output_dir, None, type(exc), source.calls)
-    return Production(cfg.export.output_dir, exit_code, None, source.calls)
+    return Production(cfg.export.output_dir, int(result.exit_code), None, source.calls)
 
 
 def produce_snapshot(states: list[dict[str, Any]], output_dir: Path) -> Path:

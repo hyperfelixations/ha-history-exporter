@@ -154,6 +154,24 @@ class TLSError(HHEError):
     code = ErrorCode.TLS
 
 
+class InternalError(HHEError):
+    """A defect: an exception HHE does not expect. Its traceback is in the log file."""
+
+    exit_code = ExitCode.INTERNAL
+    code = ErrorCode.UNEXPECTED
+
+    @classmethod
+    def during(cls, activity: str) -> InternalError:
+        return cls(
+            f"An unexpected internal error stopped {activity}.",
+            details=(
+                "This is a defect in HHE or a condition of this machine it does not "
+                "foresee. The traceback is in the log file of the run; it may name "
+                "entities, so review it before sharing it in a bug report."
+            ),
+        )
+
+
 class ValidationError(HHEError):
     """Data that breaks the record contract: from Home Assistant or a stored file."""
 

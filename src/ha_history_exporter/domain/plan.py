@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 
+from ..errors import Remedy, UsageError
+
 
 class DayAction(StrEnum):
     EXPORT = "export"
@@ -102,3 +104,90 @@ def _decide(
             f"Day {day} touches or exceeds the {purge_keep_days}-day Recorder retention.",
         )
     return DayDecision(day, DayAction.EXPORT)
+
+
+class RelativeDay(StrEnum):
+    TODAY = "today"
+    YESTERDAY = "yesterday"
+
+
+type DaySpec = date | RelativeDay
+
+
+def parse_day(text: str) -> DaySpec:
+    """``YYYY-MM-DD``, ``today`` or ``yesterday``; raises ValueError otherwise."""
+    value = text.strip().lower()
+    try:
+        return RelativeDay(value)
+    except ValueError:
+        pass
+    if len(value) == 10:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+    raise ValueError(f"'{text}' is not a day; use YYYY-MM-DD, yesterday or today.")
+
+
+def _resolve(spec: DaySpec, today: date) -> date:
+    match spec:
+        case RelativeDay.TODAY:
+            return today
+        case RelativeDay.YESTERDAY:
+            return today - timedelta(days=1)
+        case _:
+            return spec
+
+
+@dataclass(frozen=True)
+class RequestedDays:
+    start: date
+    end: date
+    #: The running day, when it was requested by name.
+    partial_day: date | None = None
+
+
+@dataclass(frozen=True)
+class DaySelection:
+    """The days a run is asked for, before the archive's calendar is known.
+
+    Without a selection the most recent complete day is meant. Only a single
+    day that is today asks for the running day; a range that reaches today
+    still skips it.
+    """
+
+    start: DaySpec | None = None
+    end: DaySpec | None = None
+    last_days: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.last_days is not None and (
+            self.last_days < 1 or self.start is not None or self.end is not None
+        ):
+            raise ValueError("last_days is a positive count without start and end")
+        if (self.start is None) != (self.end is None):
+            raise ValueError("a range needs a start and an end")
+
+    @classmethod
+    def single(cls, day: DaySpec) -> DaySelection:
+        return cls(start=day, end=day)
+
+    def resolve(self, today: date) -> RequestedDays:
+        latest = today - timedelta(days=1)
+        if self.last_days is not None:
+            return RequestedDays(latest - timedelta(days=self.last_days - 1), latest)
+        if self.start is None or self.end is None:
+            return RequestedDays(latest, latest)
+        start, end = _resolve(self.start, today), _resolve(self.end, today)
+        if start > end:
+            raise UsageError(
+                f"The range starts after it ends ({start} > {end}).",
+                remedies=(
+                    Remedy(
+                        "Name the earlier day first:",
+                        "hhe export --start-date 2026-06-01 --end-date yesterday",
+                    ),
+                ),
+            )
+        partial = start if start == end == today else None
+        return RequestedDays(start, end, partial)

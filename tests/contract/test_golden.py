@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from ha_history_exporter.errors import AuthError
+from ha_history_exporter.errors import AuthError, HAConnectionError
 from tests.support import golden
 from tests.support.harness import Production, Scenario, produce
 from tests.support.scenarios import SCENARIOS
@@ -22,7 +22,7 @@ from tests.support.scenarios import SCENARIOS
 OUTCOMES: dict[str, int | type[BaseException]] = {
     "reference": 0,
     "failed_day": 1,
-    "unreachable": 1,
+    "unreachable": HAConnectionError,
     "auth_abort": AuthError,
     "partial_day": 0,
     "carry_in": 0,
