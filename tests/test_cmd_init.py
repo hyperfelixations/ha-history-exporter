@@ -150,17 +150,7 @@ def test_init_rejects_an_invalid_timezone(monkeypatch, capsys, fake_client):
     assert "not a known IANA time zone" in capsys.readouterr().err
 
 
-def test_init_warns_when_parquet_lacks_pyarrow(monkeypatch, capsys, fake_client):
-    import builtins
-
-    real_import = builtins.__import__
-
-    def no_pyarrow(name, *args, **kwargs):
-        if name == "pyarrow":
-            raise ImportError("synthetic missing pyarrow")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", no_pyarrow)
+def test_init_warns_when_parquet_lacks_pyarrow(monkeypatch, capsys, fake_client, without_pyarrow):
     answers(monkeypatch, "http://home-assistant.invalid", "", "parquet", "")
     token(monkeypatch)
 

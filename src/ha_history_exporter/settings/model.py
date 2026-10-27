@@ -14,27 +14,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 
+from ..domain.formats import Format
 from ..layout import ExportLayout
-
-
-class Format(StrEnum):
-    """An output format for exported history."""
-
-    JSONL = "jsonl"
-    CSV = "csv"
-    PARQUET = "parquet"
-
-
-#: Formats in their canonical order, used wherever a set is rendered for a user.
-FORMAT_ORDER: tuple[Format, ...] = (Format.JSONL, Format.CSV, Format.PARQUET)
-
-
-def format_list(formats: frozenset[Format]) -> str:
-    """Render a format set the way it is written on the command line."""
-    return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in formats) or "none"
 
 
 @dataclass(frozen=True)

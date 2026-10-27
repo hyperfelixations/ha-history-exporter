@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from ha_history_exporter import cli
-from ha_history_exporter.settings import Format, document, paths, schema, secrets
+from ha_history_exporter.domain.formats import Format
+from ha_history_exporter.settings import document, paths, schema, secrets
 from ha_history_exporter.settings.schema import KeyStatus
 
 SYNTHETIC_TOKEN = "synthetic-stored-token"

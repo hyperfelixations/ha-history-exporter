@@ -25,12 +25,16 @@ import logging
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import manifest as mf
-from . import writers
+from .domain.formats import FORMAT_ORDER, Format
+from .domain.query import HistoryQuery
+from .domain.records import LogicalDigest
+from .domain.stored import RecordContract
+from .domain.wire import iter_normalized_history
 from .errors import (
     AuthError,
     ConfigError,
@@ -38,28 +42,21 @@ from .errors import (
     Remedy,
     safe_error_record,
 )
+from .formats import FORMATS, missing_requirements
+from .formats.validation import ArtifactMetadata, CaptureSummary, validate_artifacts
 from .ha_client import HomeAssistantClient
-from .history_records import iter_normalized_history
 from .planner import ExportPlan
 from .runtime.transaction import DayTransaction
 from .runtime.workspace import Workspace, open_workspace
-from .settings import Config, Format
-from .settings.model import FORMAT_ORDER
+from .settings import Config
 from .time_utils import (
     format_iso,
     local_day_bounds,
     partial_day_bounds,
     to_utc,
 )
-from .validators import ArtifactMetadata, validate_export_artifacts
 
 logger = logging.getLogger(__name__)
-
-#: Physical Parquet layout. Part of the frozen output contract: a fixture small
-#: enough to fit one row group cannot show a change here, so it is pinned by
-#: name. See internal dev doc, Ausgabedateien.
-PARQUET_ROW_GROUP_SIZE = 200_000
-PARQUET_COMPRESSION = "snappy"
 
 
 def run_export(
@@ -101,32 +98,29 @@ def run_export(
         return 0
 
     # Fail fast: verify pyarrow is available before touching HA or writing files.
-    if cfg.wants(Format.PARQUET):
-        try:
-            import pyarrow  # noqa: F401
-        except ImportError as exc:
-            raise ConfigError(
-                "Parquet output is enabled but pyarrow is not installed.",
-                details=(
-                    "Parquet needs pyarrow, a large platform-specific package "
-                    "that HHE keeps optional. Nothing was requested from Home "
-                    "Assistant."
+    if missing_requirements(cfg.export.formats):
+        raise ConfigError(
+            "Parquet output is enabled but pyarrow is not installed.",
+            details=(
+                "Parquet needs pyarrow, a large platform-specific package "
+                "that HHE keeps optional. Nothing was requested from Home "
+                "Assistant."
+            ),
+            remedies=(
+                Remedy(
+                    "Add it to an existing pipx installation:",
+                    "pipx inject ha-history-exporter pyarrow",
                 ),
-                remedies=(
-                    Remedy(
-                        "Add it to an existing pipx installation:",
-                        "pipx inject ha-history-exporter pyarrow",
-                    ),
-                    Remedy(
-                        "Or install HHE with the extra:",
-                        'pip install "ha-history-exporter[parquet]"',
-                    ),
-                    Remedy(
-                        "Or turn Parquet off:",
-                        "hhe config set export.formats jsonl",
-                    ),
+                Remedy(
+                    "Or install HHE with the extra:",
+                    'pip install "ha-history-exporter[parquet]"',
                 ),
-            ) from exc
+                Remedy(
+                    "Or turn Parquet off:",
+                    "hhe config set export.formats jsonl",
+                ),
+            ),
+        )
 
     days = plan.days_to_export
 
@@ -327,13 +321,12 @@ def _export_day(
     workspace: Workspace,
     sleep: Callable[[float], None] = time.sleep,
 ) -> _FinalizedDay:
-    """Fetch one day, validate it, and publish the requested formats."""
+    """Fetch one day into the working directory and validate every artifact."""
     work_dir = workspace.work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # A format's value is its file suffix; the frozen output contract names the
-    # files YYYY-MM-DD.{jsonl,csv,parquet}.
-    temp = {fmt: work_dir / f"{day_str}.{fmt.value}" for fmt in FORMAT_ORDER}
+    # A format's value is its file suffix: YYYY-MM-DD.{jsonl,csv,parquet}.
+    temp = {fmt: work_dir / f"{day_str}.{fmt.value}" for fmt in FORMAT_ORDER if cfg.wants(fmt)}
     for path in temp.values():
         # A retried day within the same run must not see the previous attempt.
         path.unlink(missing_ok=True)
@@ -388,7 +381,7 @@ def _export_day(
         cfg=cfg,
         day=day,
         temp=temp,
-        expected_rows=fetched.state_count,
+        fetched=fetched,
         requested_entity_ids=entity_ids,
         start_dt=start_dt,
         end_dt=end_dt,
@@ -402,7 +395,7 @@ def _export_day(
     manifest.zero_history_entities = zero_history
     manifest.output_files = {fmt.value: finalized.written.get(fmt) for fmt in FORMAT_ORDER}
     manifest.artifacts = {
-        fmt.value: asdict(finalized.artifacts[fmt]) if cfg.wants(fmt) else None
+        fmt.value: asdict(finalized.artifacts[fmt]) if fmt in finalized.artifacts else None
         for fmt in FORMAT_ORDER
     }
 
@@ -421,8 +414,9 @@ class _FetchedDay:
     """What one day's history retrieval produced."""
 
     state_count: int = 0
-    entities_with_history: set = field(default_factory=set)
-    failed_batches: list = field(default_factory=list)
+    logical_sha256: str = ""
+    entities_with_history: set[str] = field(default_factory=set)
+    failed_batches: list[dict[str, object]] = field(default_factory=list)
     retried: int = 0
 
 
@@ -435,9 +429,19 @@ class _FinalizedDay:
     artifacts: dict[Format, ArtifactMetadata]
 
 
+def _query(cfg: Config) -> HistoryQuery:
+    options = cfg.history_request
+    return HistoryQuery(
+        minimal_response=options.minimal_response,
+        no_attributes=options.no_attributes,
+        significant_changes_only=options.significant_changes_only,
+        skip_initial_state=options.skip_initial_state,
+    )
+
+
 def _fetch_day_rows(
     cfg: Config,
-    temp: dict,
+    temp: dict[Format, Path],
     start_dt: datetime,
     end_dt: datetime,
     entity_ids: list[str],
@@ -446,12 +450,10 @@ def _fetch_day_rows(
     tz: ZoneInfo,
     sleep: Callable[[float], None],
 ) -> _FetchedDay:
-    """Stream one day of history into the working directory.
-
-    JSONL is always written: it is the intermediate every other format is
-    derived from, whether or not it was requested as an output.
-    """
+    """Stream one day of history into every requested format at once."""
     result = _FetchedDay()
+    query = _query(cfg)
+    digest = LogicalDigest()
     batch_list = list(_chunks(entity_ids, cfg.requests.batch_size))
     total_batches = len(batch_list)
 
@@ -462,13 +464,10 @@ def _fetch_day_rows(
         cfg.requests.batch_size,
     )
 
-    csv_writer = (
-        writers.CsvWriter(temp[Format.CSV])
-        if cfg.wants(Format.CSV)
-        else contextlib.nullcontext(None)
-    )
-
-    with writers.JsonlWriter(temp[Format.JSONL]) as jw, csv_writer as cw:
+    with contextlib.ExitStack() as stack:
+        writers = [
+            stack.enter_context(FORMATS[fmt].open_writer(path)) for fmt, path in temp.items()
+        ]
         for batch_idx, batch in enumerate(batch_list, start=1):
             logger.debug("  Batch %d/%d (%d entities) ...", batch_idx, total_batches, len(batch))
 
@@ -478,10 +477,7 @@ def _fetch_day_rows(
                     start_dt=start_dt,
                     end_dt=end_dt,
                     entity_ids=batch,
-                    minimal_response=cfg.history_request.minimal_response,
-                    no_attributes=cfg.history_request.no_attributes,
-                    significant_changes_only=cfg.history_request.significant_changes_only,
-                    skip_initial_state=cfg.history_request.skip_initial_state,
+                    **query.options(),
                 )
                 result.retried += client.total_retries - retries_before
                 manifest.request_count += 1
@@ -509,79 +505,55 @@ def _fetch_day_rows(
                     sleep(cfg.requests.sleep_between_requests)
                 continue
 
-            rows = iter_normalized_history(
+            for record in iter_normalized_history(
                 payload,
                 requested_entity_ids=batch,
                 start=start_dt,
                 end=end_dt,
-                settings=cfg.history_request,
-                local_timezone=tz,
-            )
-            batch_state_count = 0
-            for record in rows:
-                enriched = record.as_json_dict()
-                jw.write(enriched)
-                if cw is not None:
-                    cw.write(enriched)
+                query=query,
+                timezone=tz,
+            ):
+                for writer in writers:
+                    writer.write(record)
+                digest.add(record)
                 result.entities_with_history.add(record.entity_id)
-                batch_state_count += 1
-
-            result.state_count += batch_state_count
 
             if batch_idx < total_batches:
                 sleep(cfg.requests.sleep_between_requests)
 
+    result.state_count = digest.rows
+    result.logical_sha256 = digest.hexdigest()
     return result
 
 
 def _finalize_day(
     cfg: Config,
     day: date,
-    temp: dict,
-    expected_rows: int,
+    temp: dict[Format, Path],
+    fetched: _FetchedDay,
     requested_entity_ids: list[str],
     start_dt: datetime,
     end_dt: datetime,
     tz: ZoneInfo,
 ) -> _FinalizedDay:
-    """Validate, derive, and publish; return the file name per written format.
+    """Prove that every prepared artifact holds exactly the captured records.
 
-    Parquet is derived from the already validated JSONL, so it can only ever
-    contain data that passed its own check first. Nothing reaches a final path
-    before every local validation has passed.
+    Nothing reaches a final path before this read-back has passed.
     """
-    if cfg.wants(Format.PARQUET):
-        logger.info("  Converting JSONL -> Parquet ...")
-        writers.convert_jsonl_to_parquet(
-            src=temp[Format.JSONL],
-            dst=temp[Format.PARQUET],
-            row_group_size=PARQUET_ROW_GROUP_SIZE,
-            compression=PARQUET_COMPRESSION,
-        )
-    validation_paths = {Format.JSONL: temp[Format.JSONL]}
-    validation_paths.update({fmt: temp[fmt] for fmt in FORMAT_ORDER if cfg.wants(fmt)})
-    artifacts = validate_export_artifacts(
-        validation_paths,
-        expected_rows=expected_rows,
-        requested_entity_ids=requested_entity_ids,
-        start=start_dt,
-        end=end_dt,
-        settings=cfg.history_request,
-        local_timezone=tz,
+    artifacts = validate_artifacts(
+        temp,
+        contract=RecordContract(
+            requested_entity_ids=frozenset(requested_entity_ids),
+            start=start_dt.astimezone(UTC),
+            end=end_dt.astimezone(UTC),
+            allow_start_state=not cfg.history_request.skip_initial_state,
+            timezone=tz,
+        ),
+        expected=CaptureSummary(rows=fetched.state_count, logical_sha256=fetched.logical_sha256),
     )
-
-    written: dict[Format, str] = {}
-    prepared = {}
-    for fmt in FORMAT_ORDER:
-        if not cfg.wants(fmt):
-            temp[fmt].unlink(missing_ok=True)
-            continue
-        final = cfg.layout.day_file(day, fmt.value)
-        prepared[fmt] = temp[fmt]
-        written[fmt] = final.name
     return _FinalizedDay(
-        written=written,
-        prepared=prepared,
+        written={fmt: cfg.layout.day_file(day, fmt.value).name for fmt in temp},
+        prepared=dict(temp),
         artifacts=artifacts,
     )
 

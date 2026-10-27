@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__ as SCRIPT_VERSION
+from . import fsio
+from .domain.formats import FORMAT_ORDER
 from .errors import ExportError, Remedy
-from .settings.model import FORMAT_ORDER, Config, HistoryRequestSettings, RequestSettings
+from .settings.model import Config, HistoryRequestSettings, RequestSettings
 
 logger = logging.getLogger(__name__)
 
@@ -554,8 +556,6 @@ def save(
     locked_file_retry_sleep: float = 2.0,
 ) -> None:
     """Validate and atomically write a manifest to its final path."""
-    from .writers import atomic_replace
-
     try:
         target_day = date.fromisoformat(manifest.date)
     except (TypeError, ValueError) as exc:
@@ -563,7 +563,9 @@ def save(
     path = cfg.layout.day_file(target_day, "manifest.json")
     tmp = path.with_suffix(".json.tmp")
     write_file(manifest, tmp)
-    atomic_replace(tmp, path, locked_file_retries, locked_file_retry_sleep)
+    fsio.replace_durable(
+        tmp, path, retries=locked_file_retries, retry_sleep=locked_file_retry_sleep
+    )
     logger.debug("Manifest saved for %s (status=%s).", manifest.date, manifest.status)
 
 

@@ -14,8 +14,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ... import __version__, ha_client
+from ...domain.formats import FORMAT_ORDER, Format
 from ...errors import HHEError
-from ...settings import Config, Format, ResolvedSettings, paths, resolve, secrets
+from ...formats import missing_requirements
+from ...settings import Config, ResolvedSettings, paths, resolve, secrets
 
 OK = "ok"
 WARN = "warn"
@@ -200,15 +202,7 @@ def _check_temp_dir(cfg: Config) -> list[Result]:
 
 
 def _check_formats(cfg: Config) -> list[Result]:
-    enabled = [
-        name
-        for name, on in (
-            ("jsonl", cfg.wants(Format.JSONL)),
-            ("csv", cfg.wants(Format.CSV)),
-            ("parquet", cfg.wants(Format.PARQUET)),
-        )
-        if on
-    ]
+    enabled = [fmt.value for fmt in FORMAT_ORDER if cfg.wants(fmt)]
     if not enabled:
         return [
             Result(
@@ -221,9 +215,7 @@ def _check_formats(cfg: Config) -> list[Result]:
 
     results = [Result(OK, "output formats", ", ".join(enabled))]
     if cfg.wants(Format.PARQUET):
-        try:
-            import pyarrow  # noqa: F401
-        except ImportError:
+        if missing_requirements(cfg.export.formats):
             results.append(
                 Result(
                     FAIL,

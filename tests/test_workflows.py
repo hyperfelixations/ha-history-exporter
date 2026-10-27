@@ -26,6 +26,7 @@ REQUIREMENTS = ROOT / "requirements-dev.txt"
 #: Everything the development, build and audit tooling needs, pinned exactly.
 PINNED_TOOLS = {
     "build",
+    "hypothesis",
     "mypy",
     "pip-audit",
     "pytest",

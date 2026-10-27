@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.errors import ConfigError, CredentialsError
 from ha_history_exporter.settings import (
     Config,
-    Format,
     HistoryRequestSettings,
     paths,
     resolve,

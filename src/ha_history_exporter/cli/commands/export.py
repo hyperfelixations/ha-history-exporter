@@ -15,6 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ... import ha_client
+from ...domain.formats import Format
 from ...entity_snapshot import (
     apply_optional_excludes,
     build_snapshot,
@@ -25,7 +26,7 @@ from ...errors import ConfigError, Remedy, UsageError
 from ...exporter import run_export
 from ...planner import build_plan
 from ...runtime.workspace import new_run_id
-from ...settings import Config, Format, load_settings, schema
+from ...settings import Config, resolve, schema
 from ...time_utils import (
     last_n_complete_days,
     latest_complete_day,
@@ -51,7 +52,7 @@ _VALUE_OVERRIDES = {
 
 def run(args: argparse.Namespace) -> int:
     """Execute one export run and return the process exit code."""
-    settings = load_settings(
+    settings = resolve(
         explicit_config=args.config,
         cli_overrides=cli_overrides(args),
     )

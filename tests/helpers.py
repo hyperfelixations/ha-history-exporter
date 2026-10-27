@@ -8,12 +8,12 @@ from typing import Any, ClassVar
 
 import requests
 
+from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.planner import DayDecision, ExportPlan
 from ha_history_exporter.settings import (
     Config,
     EntitySettings,
     ExportSettings,
-    Format,
     HistoryRequestSettings,
     HomeAssistantSettings,
     RecorderSettings,

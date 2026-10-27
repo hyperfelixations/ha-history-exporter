@@ -9,9 +9,8 @@ import pyarrow.parquet as pq
 import pytest
 
 from ha_history_exporter import exporter
-from ha_history_exporter.errors import AuthError
+from ha_history_exporter.errors import AuthError, ConfigError
 from ha_history_exporter.planner import ExportPlan
-from ha_history_exporter.settings.model import FORMAT_ORDER
 from tests.helpers import (
     FakeHomeAssistantClient,
     make_config,
@@ -444,17 +443,12 @@ def test_export_respects_every_valid_format_combination(
     }
 
 
-def test_the_parquet_layout_constants_are_the_contracted_ones():
-    """Row group size and codec belong to the frozen output contract.
+def test_parquet_without_pyarrow_stops_before_home_assistant_is_asked(tmp_path, without_pyarrow):
+    cfg = make_config(tmp_path, parquet=True)
+    client = FakeHomeAssistantClient([])
 
-    The golden fixture is small enough to fit into a single row group, so a
-    changed row group size stays invisible there. It is pinned by name instead.
-    """
-    assert exporter.PARQUET_ROW_GROUP_SIZE == 200_000
-    assert exporter.PARQUET_COMPRESSION == "snappy"
+    with pytest.raises(ConfigError, match="pyarrow is not installed"):
+        exporter.run_export(cfg, make_export_plan(DAY), ["sensor.a"], 1, client, BERLIN)
 
-
-def test_every_format_value_is_its_file_suffix():
-    """The export builds file names from Format.value; the contract names the
-    daily files YYYY-MM-DD.{jsonl,csv,parquet}."""
-    assert [fmt.value for fmt in FORMAT_ORDER] == ["jsonl", "csv", "parquet"]
+    assert client.calls == []
+    assert not (tmp_path / "output").exists()

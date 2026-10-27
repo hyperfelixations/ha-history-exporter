@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import fsio
 from .time_utils import format_iso
 
 logger = logging.getLogger(__name__)
@@ -120,14 +121,7 @@ def save_snapshot(snapshot: dict, metadata_dir: Path, run_id: str | None = None)
     suffix = f"_{run_id}" if run_id else ""
     filename = f"entity_snapshot_{ts}{suffix}.json"
     path = metadata_dir / filename
-    tmp = path.with_name(path.name + ".tmp")
-
-    with tmp.open("w", encoding="utf-8", newline="\n") as f:
-        json.dump(snapshot, f, indent=2, ensure_ascii=False)
-
-    from .writers import atomic_replace
-
-    atomic_replace(tmp, path)
+    fsio.atomic_write(path, json.dumps(snapshot, indent=2, ensure_ascii=False).encode("utf-8"))
 
     logger.info("Entity snapshot saved: %s (%d entities).", filename, snapshot["entity_count"])
     return path

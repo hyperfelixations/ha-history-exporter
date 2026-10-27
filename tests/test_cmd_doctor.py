@@ -89,21 +89,10 @@ def test_doctor_warns_when_no_format_is_enabled(configured, capsys):
     assert "snapshot only" in out
 
 
-def test_doctor_fails_when_parquet_lacks_pyarrow(configured, monkeypatch, capsys):
-    import builtins
-
+def test_doctor_fails_when_parquet_lacks_pyarrow(configured, without_pyarrow, capsys):
     values = document.read_user_values()
     values["export.formats"] = ["jsonl", "parquet"]
     document.write_user_values(values)
-
-    real_import = builtins.__import__
-
-    def no_pyarrow(name, *args, **kwargs):
-        if name == "pyarrow":
-            raise ImportError("synthetic missing pyarrow")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", no_pyarrow)
 
     assert cli.main(["doctor", "--offline"]) == 1
     out = capsys.readouterr().out

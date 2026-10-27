@@ -78,21 +78,6 @@ def test_format_iso_removes_microseconds_and_preserves_offset():
     assert time_utils.format_iso(value) == "2026-07-30T10:11:12+02:00"
 
 
-@pytest.mark.parametrize(
-    ("timestamp", "expected"),
-    [
-        ("2026-10-25T00:59:59+00:00", "+02:00"),
-        ("2026-10-25T01:00:00+00:00", "+01:00"),
-        ("2026-03-29T00:59:59+00:00", "+01:00"),
-        ("2026-03-29T01:00:00+00:00", "+02:00"),
-        (None, None),
-        ("not-a-timestamp", None),
-    ],
-)
-def test_local_offset_str_handles_dst_and_invalid_values(timestamp, expected):
-    assert time_utils.local_offset_str(timestamp, BERLIN) == expected
-
-
 def test_to_utc_requires_no_special_case_for_utc_input():
     value = datetime(2026, 7, 30, 10, tzinfo=UTC)
     assert time_utils.to_utc(value) == value

@@ -126,30 +126,3 @@ def parse_date_arg(s: str, tz: ZoneInfo) -> date:
 def format_iso(dt: datetime) -> str:
     """Return an ISO-8601 string with UTC offset (no microseconds)."""
     return dt.replace(microsecond=0).isoformat()
-
-
-def local_offset_str(ts_str: str | None, tz: ZoneInfo) -> str | None:
-    """Return the UTC offset for *ts_str* expressed in *tz*, e.g. '+02:00' or '+01:00'.
-
-    Computed per timestamp so DST transition days are handled correctly:
-    two state changes on the same day may return different offsets if they
-    straddle the clock-change moment (e.g. 01:29 UTC → '+02:00',
-    01:31 UTC → '+01:00' on the October fallback night).
-
-    Returns None if *ts_str* is missing or cannot be parsed.
-    """
-    if not ts_str:
-        return None
-    try:
-        dt = datetime.fromisoformat(ts_str)
-        offset = dt.astimezone(tz).utcoffset()
-        if offset is None:
-            return None
-        total_sec = int(offset.total_seconds())
-        sign = "+" if total_sec >= 0 else "-"
-        total_sec = abs(total_sec)
-        h, rem = divmod(total_sec, 3600)
-        m = rem // 60
-        return f"{sign}{h:02d}:{m:02d}"
-    except (ValueError, AttributeError, TypeError):
-        return None

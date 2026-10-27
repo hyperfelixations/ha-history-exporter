@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import logging
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 
 import pytest
@@ -71,6 +73,19 @@ def restore_root_logger():
             root_logger.removeHandler(handler)
             handler.close()
     root_logger.setLevel(original_level)
+
+
+@pytest.fixture
+def without_pyarrow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the optional pyarrow package look uninstalled."""
+    real_find_spec = importlib.util.find_spec
+
+    def find_spec(name: str, package: str | None = None) -> ModuleSpec | None:
+        if name == "pyarrow" or name.startswith("pyarrow."):
+            return None
+        return real_find_spec(name, package)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
 
 
 @pytest.fixture

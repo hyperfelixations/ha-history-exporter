@@ -10,8 +10,9 @@ import pytest
 from ha_history_exporter import __version__, cli
 from ha_history_exporter.cli import parser
 from ha_history_exporter.cli.commands import export as export_command
+from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.errors import UsageError
-from ha_history_exporter.settings import Format, schema
+from ha_history_exporter.settings import schema
 from ha_history_exporter.time_utils import last_n_complete_days, today_local
 
 BERLIN = ZoneInfo("Europe/Berlin")

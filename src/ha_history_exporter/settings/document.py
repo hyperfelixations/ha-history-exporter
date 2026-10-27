@@ -18,9 +18,9 @@ from typing import Any
 
 import yaml
 
+from ..domain.formats import FORMAT_ORDER, Format
 from ..errors import ConfigError, Remedy
 from . import paths, schema, sources
-from .model import FORMAT_ORDER, Format
 from .schema import KeyStatus, KeyType
 
 HEADER = """\

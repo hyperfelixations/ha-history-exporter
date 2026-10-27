@@ -19,13 +19,17 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from ..domain.formats import (
+    FORMAT_ORDER,
+    Format,
+    FormatSetError,
+    parse_format_set,
+)
 from ..errors import ConfigError, Remedy
 from . import paths
 from .model import (
-    FORMAT_ORDER,
     EntitySettings,
     ExportSettings,
-    Format,
     HistoryRequestSettings,
     HomeAssistantSettings,
     RecorderSettings,
@@ -140,54 +144,23 @@ def text(value: Any, field_name: str) -> str:
 
 
 def format_set(value: Any, field_name: str) -> frozenset[Format]:
-    """Accept a YAML list, a comma-separated string, or 'none'.
+    """Accept a list, a comma-separated string, or 'none'.
 
     ``none`` and the empty list both mean snapshot-only: HHE records the
     current entity states and requests no history at all.
     """
-    if isinstance(value, frozenset):
+    if isinstance(value, frozenset) and all(isinstance(item, Format) for item in value):
         return value
-    if isinstance(value, str):
-        items = [part.strip().lower() for part in value.split(",") if part.strip()]
-    elif isinstance(value, (list, tuple)):
-        items = []
-        for item in value:
-            if not isinstance(item, str):
-                raise _fail(field_name, "must list output formats as strings.")
-            items.append(item.strip().lower())
-    else:
+    if not isinstance(value, (str, list, tuple)):
         raise _fail(
             field_name,
             "must be a list of output formats.",
-            details=f"Valid formats: {_valid_formats()}, or 'none' for no history.",
+            details=f"Valid formats: {', '.join(FORMAT_ORDER)}, or 'none' for no history.",
         )
-
-    if not items:
-        return frozenset()
-    if "none" in items:
-        if len(items) > 1:
-            raise _fail(
-                field_name,
-                "cannot combine 'none' with another format.",
-                details=("'none' means snapshot-only: no history request and no daily manifest."),
-            )
-        return frozenset()
-
-    selected = set()
-    for item in items:
-        try:
-            selected.add(Format(item))
-        except ValueError as exc:
-            raise _fail(
-                field_name,
-                f"does not know the output format {item!r}.",
-                details=f"Valid formats: {_valid_formats()}, or 'none'.",
-            ) from exc
-    return frozenset(selected)
-
-
-def _valid_formats() -> str:
-    return ", ".join(fmt.value for fmt in FORMAT_ORDER)
+    try:
+        return parse_format_set(value)
+    except FormatSetError as exc:
+        raise _fail(field_name, exc.problem, details=exc.details) from exc
 
 
 # ── registry ──────────────────────────────────────────────────────────────────

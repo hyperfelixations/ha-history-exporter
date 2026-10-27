@@ -15,9 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ...domain.formats import render_format_set
 from ...errors import ConfigError, Remedy, UsageError
 from ...settings import ResolvedSettings, document, paths, resolve, schema, secrets
-from ...settings.model import FORMAT_ORDER
 from ...settings.schema import Key, KeyStatus
 
 TOKEN_KEY = "homeassistant.token"  # noqa: S105 - key path, not a secret
@@ -212,7 +212,7 @@ def render_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, frozenset):
-        return ",".join(fmt.value for fmt in FORMAT_ORDER if fmt in value) or "none"
+        return render_format_set(value)
     if isinstance(value, (tuple, list)):
         return ",".join(str(item) for item in value)
     return str(value)

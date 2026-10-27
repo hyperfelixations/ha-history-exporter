@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .. import fsio
 from ..errors import ExportError
-from ..writers import atomic_replace
 from .workspace import Workspace, same_filesystem
 
 JOURNAL_DIRNAME = ".hhe-transactions"
@@ -23,7 +23,8 @@ def journal_root(output_dir: Path) -> Path:
 
 
 def _replace_file(src: Path, dst: Path, retries: int, retry_sleep: float) -> None:
-    atomic_replace(src, dst, retries, retry_sleep)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fsio.replace(src, dst, retries=retries, retry_sleep=retry_sleep)
 
 
 def _fsync_file(path: Path) -> None:

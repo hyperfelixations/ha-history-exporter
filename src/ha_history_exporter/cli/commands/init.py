@@ -13,8 +13,10 @@ import sys
 from zoneinfo import ZoneInfo
 
 from ... import ha_client
+from ...domain.formats import Format, render_format_set
 from ...errors import HHEError, Remedy, UsageError
-from ...settings import Format, ResolvedSettings, document, format_list, paths, resolve, secrets
+from ...formats import missing_requirements
+from ...settings import ResolvedSettings, document, paths, resolve, secrets
 from ...settings.resolver import validate_home_assistant_url
 from .export import parse_format_list
 
@@ -109,16 +111,13 @@ def _ask_token(args: argparse.Namespace, interactive: bool) -> str:
 def _ask_formats(
     args: argparse.Namespace, current: ResolvedSettings, interactive: bool
 ) -> frozenset[Format]:
-    default = format_list(current.config.export.formats)
+    default = render_format_set(current.config.export.formats)
     raw = args.format or _ask(None, "Output formats", default, interactive)
     selection = parse_format_list(raw)
 
-    if Format.PARQUET in selection:
-        try:
-            import pyarrow  # noqa: F401
-        except ImportError:
-            print("  ! Parquet needs pyarrow, which is not installed.")
-            print("    Install it with:  pipx inject ha-history-exporter pyarrow")
+    if missing_requirements(selection):
+        print("  ! Parquet needs pyarrow, which is not installed.")
+        print("    Install it with:  pipx inject ha-history-exporter pyarrow")
     return selection
 
 

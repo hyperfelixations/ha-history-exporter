@@ -9,8 +9,8 @@ import pytest
 
 from ha_history_exporter import cli, ha_client
 from ha_history_exporter.cli.commands import export as export_command
+from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.errors import AuthError
-from ha_history_exporter.settings import Format
 from tests.helpers import FakeCliClient, state_row
 from tests.test_manifest import valid_data
 
