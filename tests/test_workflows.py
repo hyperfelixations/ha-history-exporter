@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
-import yaml
+
+# PyYAML is a development tool here; it has no wheel for every interpreter.
+yaml = pytest.importorskip("yaml")
 
 ROOT = Path(__file__).parents[1]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
@@ -50,33 +53,35 @@ FORBIDDEN_SECRET_PATTERNS = [
 SHA_PIN = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 
 
-def load(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+def load(path: Path) -> dict[Any, Any]:
+    data: dict[Any, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data
 
 
 def workflow_files() -> list[Path]:
     return sorted(WORKFLOW_DIR.glob("*.yml"))
 
 
-def steps(job: dict) -> list[dict]:
-    return job.get("steps", [])
+def steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = job.get("steps", [])
+    return found
 
 
 # ── all workflows ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
-def test_workflow_is_valid_yaml(path):
+def test_workflow_is_valid_yaml(path: Path) -> None:
     assert isinstance(load(path), dict)
 
 
 @pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
-def test_workflow_grants_read_only_permissions_by_default(path):
+def test_workflow_grants_read_only_permissions_by_default(path: Path) -> None:
     assert load(path)["permissions"] == {"contents": "read"}
 
 
 @pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
-def test_no_workflow_stores_an_index_token(path):
+def test_no_workflow_stores_an_index_token(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     for pattern in FORBIDDEN_SECRET_PATTERNS:
         assert not pattern.search(text), (
@@ -88,12 +93,12 @@ def test_no_workflow_stores_an_index_token(path):
 # ── release workflow ──────────────────────────────────────────────────────────
 
 
-def test_release_runs_only_on_manual_dispatch():
+def test_release_runs_only_on_manual_dispatch() -> None:
     triggers = load(RELEASE)[True]
     assert set(triggers) == {"workflow_dispatch"}
 
 
-def test_release_candidate_cannot_select_or_publish_to_an_index():
+def test_release_candidate_cannot_select_or_publish_to_an_index() -> None:
     workflow = load(RELEASE)
     inputs = workflow[True]["workflow_dispatch"]["inputs"]
     assert "publish_to" not in inputs
@@ -101,19 +106,19 @@ def test_release_candidate_cannot_select_or_publish_to_an_index():
     assert "pypa/gh-action-pypi-publish" not in RELEASE.read_text(encoding="utf-8")
 
 
-def test_release_candidate_always_creates_an_unpublished_github_draft():
+def test_release_candidate_always_creates_an_unpublished_github_draft() -> None:
     job = load(RELEASE)["jobs"]["create-draft-release"]
     assert "if" not in job
     assert "--draft" in " ".join(step.get("run", "") for step in steps(job))
 
 
-def test_real_pypi_requires_a_published_github_release():
+def test_real_pypi_requires_a_published_github_release() -> None:
     triggers = load(PUBLISH)[True]
     assert triggers == {"release": {"types": ["published"]}}
     assert "workflow_dispatch" not in triggers
 
 
-def test_real_publish_job_uses_only_verified_release_assets():
+def test_real_publish_job_uses_only_verified_release_assets() -> None:
     jobs = load(PUBLISH)["jobs"]
     assert set(jobs) == {"verify-release", "publish"}
     assert jobs["publish"]["needs"] == "verify-release"
@@ -125,21 +130,21 @@ def test_real_publish_job_uses_only_verified_release_assets():
     assert 'metadata["Version"] == expected_version' in commands
 
 
-def test_real_publish_job_never_builds_its_own_distributions():
+def test_real_publish_job_never_builds_its_own_distributions() -> None:
     job = load(PUBLISH)["jobs"]["publish"]
     commands = " ".join(step.get("run", "") for step in steps(job))
     assert "python -m build" not in commands
     assert any("download-artifact" in step.get("uses", "") for step in steps(job))
 
 
-def test_real_publish_job_uses_the_official_action_and_environment():
+def test_real_publish_job_uses_the_official_action_and_environment() -> None:
     job = load(PUBLISH)["jobs"]["publish"]
     assert job["environment"] == "pypi"
     uses = [step.get("uses", "") for step in steps(job)]
     assert any(item.startswith("pypa/gh-action-pypi-publish@") for item in uses)
 
 
-def test_testpypi_is_manual_and_cannot_select_real_pypi():
+def test_testpypi_is_manual_and_cannot_select_real_pypi() -> None:
     workflow = load(TEST_PUBLISH)
     assert set(workflow[True]) == {"workflow_dispatch"}
     assert "publish_to" not in workflow[True]["workflow_dispatch"]["inputs"]
@@ -149,7 +154,7 @@ def test_testpypi_is_manual_and_cannot_select_real_pypi():
     assert upload["with"]["repository-url"] == "https://test.pypi.org/legacy/"
 
 
-def test_release_paths_privacy_scan_history_and_distributions():
+def test_release_paths_privacy_scan_history_and_distributions() -> None:
     release_jobs = load(RELEASE)["jobs"]
     release_validate = " ".join(step.get("run", "") for step in steps(release_jobs["validate"]))
     release_build = " ".join(step.get("run", "") for step in steps(release_jobs["build"]))
@@ -166,7 +171,7 @@ def test_release_paths_privacy_scan_history_and_distributions():
         assert "--artifact" in commands
 
 
-def test_every_distribution_path_installs_and_smoke_tests_the_wheel():
+def test_every_distribution_path_installs_and_smoke_tests_the_wheel() -> None:
     jobs = [
         load(TESTS)["jobs"]["packaging"],
         load(RELEASE)["jobs"]["build"],
@@ -179,7 +184,7 @@ def test_every_distribution_path_installs_and_smoke_tests_the_wheel():
         assert "tools/verify_wheel.py" in commands
 
 
-def test_only_actual_upload_jobs_receive_oidc():
+def test_only_actual_upload_jobs_receive_oidc() -> None:
     for path in workflow_files():
         for name, job in load(path)["jobs"].items():
             has_oidc = job.get("permissions", {}).get("id-token") == "write"
@@ -189,13 +194,13 @@ def test_only_actual_upload_jobs_receive_oidc():
             ), f"{path.name}:{name}"
 
 
-def test_release_validates_the_package_version_against_the_input():
+def test_release_validates_the_package_version_against_the_input() -> None:
     text = RELEASE.read_text(encoding="utf-8")
     assert "__version__" in text
     assert "package_version" in text
 
 
-def test_beta_versions_must_be_pep440_normalised():
+def test_beta_versions_must_be_pep440_normalised() -> None:
     """1.4.0-beta.1 would be rebuilt as 1.4.0b1 and no longer match."""
     text = RELEASE.read_text(encoding="utf-8")
     assert "(a|b|rc)[0-9]+" in text
@@ -205,7 +210,7 @@ def test_beta_versions_must_be_pep440_normalised():
 # ── action pinning ────────────────────────────────────────────────────────────
 
 
-def test_every_action_is_pinned_to_a_commit_sha():
+def test_every_action_is_pinned_to_a_commit_sha() -> None:
     """A moving action tag in any workflow would be an unreviewed code change."""
     jobs = {
         f"{path.name}:{name}": job
@@ -218,7 +223,7 @@ def test_every_action_is_pinned_to_a_commit_sha():
         assert SHA_PIN.match(reference), reference
 
 
-def test_checkout_never_persists_credentials():
+def test_checkout_never_persists_credentials() -> None:
     for path in workflow_files():
         for name, job in load(path)["jobs"].items():
             for step in steps(job):
@@ -228,7 +233,7 @@ def test_checkout_never_persists_credentials():
                     )
 
 
-def test_every_source_validation_path_checks_formatting():
+def test_every_source_validation_path_checks_formatting() -> None:
     jobs = [
         load(TESTS)["jobs"]["static"],
         load(RELEASE)["jobs"]["test"],
@@ -243,11 +248,11 @@ def test_every_source_validation_path_checks_formatting():
 # ── supply chain ──────────────────────────────────────────────────────────────
 
 
-def run_commands(job: dict) -> str:
+def run_commands(job: dict[str, Any]) -> str:
     return "\n".join(step.get("run", "") for step in steps(job))
 
 
-def test_every_tool_requirement_is_pinned_exactly():
+def test_every_tool_requirement_is_pinned_exactly() -> None:
     names = set()
     for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -259,7 +264,7 @@ def test_every_tool_requirement_is_pinned_exactly():
     assert names == PINNED_TOOLS
 
 
-def test_tools_are_installed_only_from_the_pinned_requirements():
+def test_tools_are_installed_only_from_the_pinned_requirements() -> None:
     """An unpinned `pip install build twine` would run whatever PyPI serves that day."""
     for path in workflow_files():
         for name, job in load(path)["jobs"].items():
@@ -271,7 +276,7 @@ def test_tools_are_installed_only_from_the_pinned_requirements():
                 )
 
 
-def test_security_workflow_audits_every_push_pull_request_and_week():
+def test_security_workflow_audits_every_push_pull_request_and_week() -> None:
     workflow = load(SECURITY)
     triggers = workflow[True]
     assert set(triggers) == {"push", "pull_request", "schedule", "workflow_dispatch"}
@@ -280,13 +285,13 @@ def test_security_workflow_audits_every_push_pull_request_and_week():
     assert len(triggers["schedule"]) == 1
 
 
-def test_security_workflow_audits_the_runtime_with_the_pinned_tooling():
+def test_security_workflow_audits_the_runtime_with_the_pinned_tooling() -> None:
     commands = run_commands(load(SECURITY)["jobs"]["audit"])
     install = commands.index("-r requirements-dev.txt")
     assert install < commands.index("python tools/audit_runtime.py")
 
 
-def test_every_build_path_audits_the_runtime_before_building():
+def test_every_build_path_audits_the_runtime_before_building() -> None:
     for path in (RELEASE, TEST_PUBLISH):
         commands = run_commands(load(path)["jobs"]["build"])
         assert "python tools/audit_runtime.py" in commands, path.name
@@ -295,12 +300,12 @@ def test_every_build_path_audits_the_runtime_before_building():
         ), path.name
 
 
-def dependabot_entries() -> dict[str, dict]:
+def dependabot_entries() -> dict[str, dict[str, Any]]:
     updates = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
     return {entry["package-ecosystem"]: entry for entry in updates}
 
 
-def test_dependabot_watches_pip_and_the_workflow_actions_in_the_repository_root():
+def test_dependabot_watches_pip_and_the_workflow_actions_in_the_repository_root() -> None:
     entries = dependabot_entries()
     assert set(entries) == {"pip", "github-actions"}
     for entry in entries.values():
@@ -311,7 +316,7 @@ def test_dependabot_watches_pip_and_the_workflow_actions_in_the_repository_root(
         assert not list((ROOT / folder).rglob("pyproject.toml")), folder
 
 
-def test_version_updates_run_on_the_1st_and_15th_wait_a_week_and_skip_patch_releases():
+def test_version_updates_run_on_the_1st_and_15th_wait_a_week_and_skip_patch_releases() -> None:
     for ecosystem, entry in dependabot_entries().items():
         assert entry["schedule"] == {"interval": "cron", "cronjob": "0 5 1,15 * *"}, ecosystem
         assert entry["cooldown"] == {"default-days": 7}, ecosystem
@@ -320,12 +325,12 @@ def test_version_updates_run_on_the_1st_and_15th_wait_a_week_and_skip_patch_rele
         ], ecosystem
 
 
-def test_dependabot_leaves_the_runtime_lower_bounds_alone():
+def test_dependabot_leaves_the_runtime_lower_bounds_alone() -> None:
     """The `>=` bounds in pyproject.toml are a user-facing promise, not a pin."""
     assert dependabot_entries()["pip"]["versioning-strategy"] == "increase-if-necessary"
 
 
-def test_minor_updates_are_grouped_majors_stay_single_and_security_updates_come_grouped():
+def test_minor_updates_are_grouped_majors_stay_single_and_security_updates_come_grouped() -> None:
     version = {
         "patterns": ["*"],
         "update-types": ["minor", "patch"],
@@ -337,14 +342,14 @@ def test_minor_updates_are_grouped_majors_stay_single_and_security_updates_come_
     assert entries["github-actions"]["groups"] == {"actions": version, "security": security}
 
 
-def test_no_ignore_rule_can_hold_back_security_updates():
+def test_no_ignore_rule_can_hold_back_security_updates() -> None:
     """A rule that names only a package would block its security updates as well."""
     for ecosystem, entry in dependabot_entries().items():
         for rule in entry["ignore"]:
             assert rule.get("update-types") and "versions" not in rule, ecosystem
 
 
-def test_the_tests_workflow_runs_pushes_to_main_and_pull_requests_once():
+def test_the_tests_workflow_runs_pushes_to_main_and_pull_requests_once() -> None:
     triggers = load(TESTS)[True]
     assert triggers["push"] == {"branches": ["main"]}
     assert triggers["pull_request"] is None

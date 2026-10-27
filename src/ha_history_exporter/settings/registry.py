@@ -20,8 +20,6 @@ from .model import SETTING, Config, Setting
 
 TOKEN_KEY = "homeassistant.token"  # noqa: S105 - key path, not a secret
 TOKEN_ENV = "HHE_TOKEN"  # noqa: S105 - variable name, not a secret
-#: Documentation of the token key, which has no field in Config.
-TOKEN_DOC = "Long-lived access token of Home Assistant; kept in the credentials file."  # noqa: S105
 
 #: HHE_* variables that configure something other than a key.
 OTHER_ENV = frozenset({paths.ENV_CONFIG_DIR, "HHE_NO_COLOR"})
@@ -84,11 +82,6 @@ def build_config(values: Mapping[str, Any]) -> Config:
         for section, section_type in _section_types().items()
     }
     return Config(**sections)
-
-
-def values_of(config: Config) -> dict[str, Any]:
-    """The value of every key path in *config*."""
-    return {key.path: getattr(getattr(config, key.section), key.name) for key in KEYS}
 
 
 def suggest(unknown: str) -> str | None:

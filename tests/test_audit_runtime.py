@@ -27,20 +27,20 @@ def load_tool() -> ModuleType:
     return module
 
 
-def test_audit_command_inspects_only_the_given_environment():
+def test_audit_command_inspects_only_the_given_environment() -> None:
     command = load_tool().audit_command(Path("site-packages"), [])
     assert command[:3] == [sys.executable, "-m", "pip_audit"]
     assert command[command.index("--path") + 1] == "site-packages"
     assert "--ignore-vuln" not in command
 
 
-def test_audit_command_ignores_only_explicitly_named_vulnerabilities():
+def test_audit_command_ignores_only_explicitly_named_vulnerabilities() -> None:
     command = load_tool().audit_command(Path("site-packages"), ["GHSA-aaaa", "PYSEC-1"])
     ignored = [command[i + 1] for i, item in enumerate(command) if item == "--ignore-vuln"]
     assert ignored == ["GHSA-aaaa", "PYSEC-1"]
 
 
-def test_install_command_puts_the_project_with_its_extras_into_the_target():
+def test_install_command_puts_the_project_with_its_extras_into_the_target() -> None:
     command = load_tool().install_command(Path("env") / "python")
     assert command == [
         sys.executable,
@@ -56,12 +56,12 @@ def test_install_command_puts_the_project_with_its_extras_into_the_target():
 
 @pytest.mark.parametrize("audit_exit_code", [0, 1])
 def test_the_audit_runs_after_the_install_and_its_verdict_is_the_result(
-    monkeypatch, audit_exit_code
-):
+    monkeypatch: pytest.MonkeyPatch, audit_exit_code: int
+) -> None:
     tool = load_tool()
     calls: list[list[str]] = []
 
-    def fake_run(command, **kwargs):
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append([str(item) for item in command])
         if "sysconfig" in " ".join(map(str, command)):
             return subprocess.CompletedProcess(command, 0, stdout="site-packages\n")
@@ -78,10 +78,12 @@ def test_the_audit_runs_after_the_install_and_its_verdict_is_the_result(
     assert kinds == ["install", "site", "audit"]
 
 
-def test_a_failing_install_is_not_reported_as_a_clean_audit(monkeypatch):
+def test_a_failing_install_is_not_reported_as_a_clean_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     tool = load_tool()
 
-    def fake_run(command, **kwargs):
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.CalledProcessError(1, command)
 
     monkeypatch.setattr(tool.subprocess, "run", fake_run)

@@ -92,25 +92,6 @@ def _toml_type(value: object) -> str:
             return type(value).__name__
 
 
-class Text:
-    type_name = "string"
-    echo = True
-
-    def from_toml(self, value: object, ctx: ParseContext) -> str:
-        if not isinstance(value, str):
-            raise _type_error("a string", value)
-        return value
-
-    def from_text(self, raw: str, ctx: ParseContext) -> str:
-        return raw
-
-    def to_toml(self, value: str) -> TomlValue:
-        return value
-
-    def display(self, value: str) -> str:
-        return value
-
-
 class HttpUrl:
     """An http or https base URL without credentials, path, query or fragment.
 
@@ -279,7 +260,7 @@ class Integer:
 
     @property
     def type_name(self) -> str:
-        return f"integer ≥ {self.minimum}"
+        return f"integer of at least {self.minimum}"
 
     echo = True
 
@@ -310,7 +291,7 @@ class Integer:
 class Seconds:
     """A finite, non-negative number of seconds."""
 
-    type_name = "number ≥ 0"
+    type_name = "number of at least 0"
     echo = True
 
     @staticmethod
@@ -400,7 +381,7 @@ class Names:
 class SecondsList:
     """Wait times in seconds; as text, separated by commas."""
 
-    type_name = "list of numbers ≥ 0"
+    type_name = "list of numbers of at least 0"
     echo = True
 
     def from_toml(self, value: object, ctx: ParseContext) -> tuple[float, ...]:

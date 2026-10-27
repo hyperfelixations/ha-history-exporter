@@ -60,6 +60,12 @@ def unset_value(path: Path, key_path: str, *, environ: Mapping[str, str]) -> boo
     return True
 
 
+def check(path: Path, *, environ: Mapping[str, str]) -> None:
+    """Resolve the document at *path* on its own; an error says what is wrong."""
+    entries = document_entries(read_text(path), path, environ)
+    configuration_from({dotted: entry.value for dotted, entry in entries.items()})
+
+
 def write(path: Path, values: Mapping[str, TomlValue], *, environ: Mapping[str, str]) -> None:
     """Replace the document with one setting *values*, after resolving it."""
     text = render_config(values)

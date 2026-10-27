@@ -7,16 +7,17 @@ import re
 import socket
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from pytest_socket import SocketBlockedError
 
-from ha_history_exporter.settings import paths, schema
+from ha_history_exporter.settings import registry
 
 ROOT = Path(__file__).parents[1]
 
 
-def load_privacy_audit():
+def load_privacy_audit() -> ModuleType:
     path = ROOT / "tools" / "privacy_audit.py"
     spec = importlib.util.spec_from_file_location("privacy_audit", path)
     assert spec is not None and spec.loader is not None
@@ -26,7 +27,7 @@ def load_privacy_audit():
     return module
 
 
-def test_socket_access_is_blocked_by_default():
+def test_socket_access_is_blocked_by_default() -> None:
     with (
         pytest.warns(UserWarning, match="tried to use socket.socket"),
         pytest.raises(SocketBlockedError),
@@ -34,16 +35,12 @@ def test_socket_access_is_blocked_by_default():
         socket.socket()
 
 
-def test_production_environment_is_removed():
-    for name in (
-        "HA_URL",
-        "HA_TOKEN",
-        *(key.env_var for key in schema.KEYS if key.env_var != paths.ENV_CONFIG_DIR),
-    ):
+def test_production_environment_is_removed() -> None:
+    for name in (*registry.BY_ENV, registry.TOKEN_ENV):
         assert name not in os.environ
 
 
-def test_public_checkout_contains_no_local_live_artifacts():
+def test_public_checkout_contains_no_local_live_artifacts() -> None:
     """Ignored files still belong to the checkout and must remain synthetic."""
     forbidden = (
         ROOT / "export_config.yaml",
@@ -58,7 +55,7 @@ def test_public_checkout_contains_no_local_live_artifacts():
     assert not [path.name for path in forbidden if path.exists()]
 
 
-def test_local_configuration_files_are_ignored():
+def test_local_configuration_files_are_ignored() -> None:
     """A configuration file in the checkout must never be committed."""
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
@@ -67,7 +64,7 @@ def test_local_configuration_files_are_ignored():
     assert "/ha-history-exporter.yaml" in gitignore
 
 
-def test_no_example_configuration_is_shipped():
+def test_no_example_configuration_is_shipped() -> None:
     """`hhe config edit` generates a documented file with real defaults.
 
     A checked-in example would duplicate the key registry and drift.
@@ -75,7 +72,7 @@ def test_no_example_configuration_is_shipped():
     assert not (ROOT / "config.example.yaml").exists()
 
 
-def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints():
+def test_test_sources_contain_no_absolute_user_paths_or_real_endpoints() -> None:
     forbidden_patterns = [
         re.compile(r"[A-Za-z]:\\\\Users\\\\", re.IGNORECASE),
         re.compile(r"https?://(?:homeassistant|ha)\\.(?!invalid)", re.IGNORECASE),
@@ -107,19 +104,19 @@ def private_identifiers() -> list[str]:
     return [name]
 
 
-def test_publishable_sources_contain_no_private_workspace_paths():
+def test_publishable_sources_contain_no_private_workspace_paths() -> None:
     audit = load_privacy_audit()
     identifiers = tuple(private_identifiers())
 
     assert audit.scan_paths(ROOT, identifiers) == set()
 
 
-def test_generic_privacy_audit_covers_the_publishable_tree():
+def test_generic_privacy_audit_covers_the_publishable_tree() -> None:
     audit = load_privacy_audit()
     assert audit.scan_paths(ROOT) == set()
 
 
-def test_generic_privacy_audit_detects_secret_shapes_without_echoing_values(tmp_path):
+def test_generic_privacy_audit_detects_secret_shapes_without_echoing_values(tmp_path: Path) -> None:
     audit = load_privacy_audit()
     marker = "gh" + "p_" + "A" * 36
     path = tmp_path / "sample.txt"
@@ -131,19 +128,19 @@ def test_generic_privacy_audit_detects_secret_shapes_without_echoing_values(tmp_
     assert marker not in repr(findings)
 
 
-def test_private_denylist_must_live_outside_the_repository(tmp_path):
+def test_private_denylist_must_live_outside_the_repository(tmp_path: Path) -> None:
     audit = load_privacy_audit()
     denylist = ROOT / "synthetic-private-denylist.txt"
     with pytest.raises(ValueError, match="outside the repository"):
         audit.load_external_denylist(denylist, ROOT)
 
 
-def test_local_helper_script_is_not_published():
+def test_local_helper_script_is_not_published() -> None:
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "/ha_history_export_last_10_days.bat" in gitignore
 
 
-def test_runtime_output_stays_ascii():
+def test_runtime_output_stays_ascii() -> None:
     """Log lines and printed text must survive a legacy console code page."""
     import ast
 

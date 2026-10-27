@@ -18,7 +18,6 @@ from ha_history_exporter.settings.registry import (
     build_config,
     suggest,
     unknown_environment,
-    values_of,
 )
 from ha_history_exporter.settings.validators import ParseContext
 from tests.unit.settings import samples
@@ -65,7 +64,8 @@ def test_every_default_survives_its_own_kind(tmp_path: Path) -> None:
 
 def test_a_configuration_is_rebuilt_from_its_values() -> None:
     config = Config()
-    assert build_config(values_of(config)) == config
+    values = {key.path: getattr(getattr(config, key.section), key.name) for key in KEYS}
+    assert build_config(values) == config
 
 
 def test_the_defaults_are_the_proven_ones() -> None:

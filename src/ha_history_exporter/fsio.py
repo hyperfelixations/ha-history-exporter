@@ -85,20 +85,6 @@ def replace(
             return
 
 
-def replace_durable(
-    source: Path,
-    target: Path,
-    *,
-    retries: int = 0,
-    retry_sleep: float = 0.0,
-) -> None:
-    """:func:`replace`, then flush both directory entries."""
-    replace(source, target, retries=retries, retry_sleep=retry_sleep)
-    fsync_dir(target.parent)
-    if source.parent != target.parent:
-        fsync_dir(source.parent)
-
-
 def atomic_write(
     path: Path,
     data: bytes,

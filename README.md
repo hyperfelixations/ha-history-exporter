@@ -84,9 +84,9 @@ pipx inject ha-history-exporter pyarrow
 pip install "ha-history-exporter[parquet]"
 ```
 
-Requires Python 3.10 or newer. The release test matrix covers Linux and Windows
-on Python 3.10 and 3.13. macOS uses the same Python interfaces but is not yet
-part of the continuous test matrix.
+Requires Python 3.12 or newer. The test matrix covers Linux and Windows on
+Python 3.12 to 3.15. macOS uses the same Python interfaces but is not yet part
+of the continuous test matrix.
 
 ### From a clone
 
@@ -107,13 +107,14 @@ $ hhe init
 Home Assistant URL [http://homeassistant.local:8123]: https://ha.example.net
 Long-lived access token (input hidden): ********
   -> Contacting https://ha.example.net ...
-     OK (1258 entities)
+     OK: Home Assistant 2026.10.1, 1258 entities, Europe/Berlin
 Output directory [/home/you/ha-history-exports]:
-Output formats [jsonl]: jsonl,parquet
-Timezone [Europe/Berlin]:
+Output formats (jsonl, csv, parquet, or none) [jsonl]: jsonl,parquet
+Time zone of the exported days (Home Assistant's) [Europe/Berlin]:
+Recorder retention of Home Assistant in days (purge_keep_days) [10]:
 
-Wrote /home/you/.config/ha-history-exporter/config.yaml
-Wrote /home/you/.config/ha-history-exporter/credentials.yaml (access token, not readable by other users)
+Wrote /home/you/.config/ha-history-exporter/config.toml
+Wrote /home/you/.config/ha-history-exporter/credentials.toml (the access token, readable by your account only)
 
 Next:  hhe export
 ```
@@ -162,11 +163,15 @@ Sources are merged, highest precedence first:
 | 3 | your configuration file | see `hhe config path` |
 | 4 | built-in defaults | |
 
-There is **one** configuration file. HHE never picks one up from the directory
-you happen to be standing in — a tool whose behaviour depends on that is a tool
-nobody can reason about. To use a different file for one run, name it:
-`hhe export --config ./other.yaml`. That file then replaces the usual one
-entirely.
+There is **one** configuration file, written in [TOML](https://toml.io/). HHE
+never picks one up from the directory you happen to be standing in. To use a
+different file for one run, name it: `hhe export --config ./other.toml`. That
+file then replaces the usual one entirely.
+
+A relative path in the file is relative to the file itself; a relative path in
+an environment variable or an option is relative to the working directory.
+`~`, `$NAME` and `${NAME}` (on Windows also `%NAME%`) are expanded; a variable
+that is not defined is an error.
 
 `hhe config list --origin` shows every effective value together with the source
 it came from, which is the fastest way to answer "why is it doing that?".
@@ -175,11 +180,12 @@ it came from, which is the fastest way to answer "why is it doing that?".
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| configuration | `~/.config/ha-history-exporter/config.yaml` | `~/Library/Application Support/ha-history-exporter/config.yaml` | `%APPDATA%\ha-history-exporter\config.yaml` |
-| credentials | same directory, `credentials.yaml` | same | same |
+| configuration | `~/.config/ha-history-exporter/config.toml` | `~/Library/Application Support/ha-history-exporter/config.toml` | `%APPDATA%\ha-history-exporter\config.toml` |
+| credentials | same directory, `credentials.toml` | same | same |
 | exports | `~/ha-history-exports` | same | `%USERPROFILE%\ha-history-exports` |
 
-`hhe config path` prints the resolved paths on your machine.
+`hhe config path` prints the resolved paths on your machine. `HHE_CONFIG_DIR`
+names another configuration directory.
 
 ### Changing settings
 
@@ -193,9 +199,19 @@ hhe config edit                      # open the file in $EDITOR
 ```
 
 Writes always go to your configuration file, never to a file you passed with
-`--config`. The file lists every key with its documentation; keys you have not
-set appear commented out, showing the built-in default for your machine, so it
-is also the reference you can read offline.
+`--config`, and a value is checked before the file is replaced: the file never
+holds a setting a run would reject. The file lists every key with its
+documentation; keys you have not set appear commented out, showing the default
+or an example, so it is also the reference you can read offline.
+
+```toml
+[export]
+output_dir = "/mnt/archive/ha-history"
+formats = ["jsonl", "parquet"]
+
+[requests]
+batch_size = 15
+```
 
 ### Environment variables
 
@@ -203,25 +219,26 @@ Every key has one: `HHE_` followed by the key path in upper case with dots
 replaced by underscores, for example `HHE_EXPORT_OUTPUT_DIR`,
 `HHE_EXPORT_FORMATS`, `HHE_REQUESTS_BATCH_SIZE`.
 
-The two credential keys have short names of their own: `HHE_URL` and
-`HHE_TOKEN`. `HA_URL` and `HA_TOKEN` keep working and take precedence, so an
-existing setup does not have to change.
+The URL and the token have short names of their own: `HHE_URL` and
+`HHE_TOKEN`. A variable that starts with `HHE_` but names no key is reported,
+because it is usually a typo.
 
 ### Key reference
 
 | Key | Default | Meaning |
 |---|---|---|
 | `homeassistant.url` | – | Base URL of your Home Assistant instance |
-| `homeassistant.token` | – | Access token; stored in `credentials.yaml` only |
+| `homeassistant.token` | – | Access token; stored in `credentials.toml` only |
+| `homeassistant.ca_bundle` | – | PEM file of the authority that signed the HTTPS certificate of Home Assistant |
 | `export.output_dir` | `~/ha-history-exports` | Receives exports, metadata, and logs |
-| `export.timezone` | `Europe/Berlin` | IANA time zone defining local days |
-| `export.formats` | `[jsonl]` | Any of `jsonl`, `csv`, `parquet`; empty for snapshot only |
+| `export.timezone` | – | IANA time zone of the local days; unset follows the archive, and a new archive takes Home Assistant's |
+| `export.formats` | `["jsonl"]` | Any of `jsonl`, `csv`, `parquet`; `[]` for snapshot only |
 | `requests.batch_size` | `15` | Entities per history request |
 | `requests.sleep_between_requests` | `0.7` | Seconds between requests |
 | `requests.sleep_between_days` | `5.0` | Seconds between days |
-| `requests.timeout` | `120` | HTTP timeout per request, in seconds |
-| `requests.max_retries` | `3` | Retries on timeouts and 5xx |
-| `requests.backoff` | `[2, 5, 15]` | Seconds to wait between retries |
+| `requests.timeout` | `120` | HTTP read timeout per request, in seconds |
+| `requests.max_retries` | `3` | Retries after a timeout, a lost connection, HTTP 429 or 500–504 |
+| `requests.backoff` | `[2, 5, 15]` | Seconds to wait between retries; the last value repeats |
 | `history_request.minimal_response` | `false` | Ask HA for a reduced payload |
 | `history_request.no_attributes` | `false` | Ask HA to omit attributes |
 | `history_request.significant_changes_only` | `false` | Ask HA for significant changes only |
@@ -230,7 +247,7 @@ existing setup does not have to change.
 | `entities.include_unavailable` | `true` | Request history for `unavailable` entities |
 | `entities.exclude_domains` | `[]` | Entity domains to skip |
 | `entities.exclude_patterns` | `[]` | Glob patterns of entity IDs to skip |
-| `recorder.purge_keep_days` | unset | Block new exports at the known Recorder boundary |
+| `recorder.purge_keep_days` | – | Recorder retention of Home Assistant (10 unless changed there); blocks days at that boundary |
 | `storage.temp_dir` | platform temp | Working directory during a run |
 | `storage.locked_file_retries` | `5` | Retries when another program locks an output file |
 | `storage.locked_file_retry_sleep` | `2.0` | Seconds between those retries |
@@ -266,30 +283,42 @@ recorded in every schema 1.4 manifest.
   line, a manifest, an error message, or an export file. It is not part of the
   configuration object at all, so it cannot reach a log through one.
 - `hhe config get`/`list` report a stored token as `<set>`, never its value.
-- The token lives in `credentials.yaml`, separate from `config.yaml`, created
+- The token lives in `credentials.toml`, separate from `config.toml`, created
   with owner-only permissions (`0600` on Linux and macOS; on Windows it
   inherits the user-profile ACL). `hhe doctor` checks and reports this. A token
-  written into `config.yaml` by hand is refused with an explanation.
-- `HHE_TOKEN` (or `HA_TOKEN`) in the environment takes precedence over the
-  stored token, which keeps CI and one-off shells free of any file.
+  written into `config.toml` by hand is refused with an explanation.
+- `HHE_TOKEN` in the environment takes precedence over the stored token, which
+  keeps CI and one-off shells free of any file.
 - A token is never accepted as a command-line value. Use the hidden prompt with
-  `hhe config set homeassistant.token`, or pipe an intentional stdin source with
-  `Get-Content <token-file> | hhe config set homeassistant.token --stdin` on
-  PowerShell.
+  `hhe config set homeassistant.token`, or pipe it in with
+  `hhe config set homeassistant.token --stdin < token-file`
+  (`Get-Content token-file | hhe config set homeassistant.token --stdin` in
+  PowerShell).
+- HTTPS certificates are always verified. For a certificate of your own
+  authority, name its PEM file in `homeassistant.ca_bundle`.
+- Redirects are not followed, so the token never travels to another address.
 - Failed API responses are reported by status code and endpoint only; response
   bodies are never logged or stored, because they can contain private data.
+- The log file of a run lists entity IDs and, after an unexpected internal
+  error, its traceback. Review a log before you share it.
 
 ## Command reference
 
 ```
 hhe [--version] [--help]
 hhe export  [selection] [output] [tuning]
-hhe init    [--force] [--non-interactive --url … --output-dir … --format … --timezone …]
+hhe init    [--force] [--non-interactive] [--url …] [--output-dir …] [--format …]
+            [--timezone …] [--purge-keep-days …]
 hhe config  get KEY | set KEY [VALUE] [--stdin] | unset KEY | list [--origin] | path | edit
 hhe doctor  [--offline] [--config FILE]
 ```
 
 Every invocation names its command; there is no implicit one.
+
+`hhe init --non-interactive` asks nothing: the URL comes from `--url` or
+`HHE_URL`, the token from `HHE_TOKEN` or standard input. `--force` replaces an
+existing configuration instead of updating it. `hhe doctor` changes nothing; a
+directory that does not exist yet is judged by its nearest existing parent.
 
 ### `hhe export`
 
@@ -313,7 +342,7 @@ exported — which is what a daily run wants:
 | `--dry-run` | Show the plan and the entity count; fetch no history |
 | `--force` | Re-export days that already have a successful manifest |
 | `--config FILE` | Use exactly this configuration file |
-| `--timezone TZ`, `--batch-size N`, `--sleep-between-requests S`, `--sleep-between-days S`, `--timeout S`, `--max-retries N` | Override the matching setting |
+| `--timezone ZONE`, `--batch-size N`, `--sleep-between-requests S`, `--sleep-between-days S`, `--timeout N`, `--max-retries N` | Override the matching setting |
 | `--log-level LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
 `--format none` runs in snapshot-only mode: HHE records the current entity list
@@ -339,14 +368,22 @@ replaces the files. Nothing else reaches into an unfinished day: a range or
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | Runtime failure — authentication, connectivity, a failed day |
+| `1` | A day failed, or the run could not proceed (for example, another export holds the archive) |
 | `2` | Usage or configuration problem |
+| `3` | Home Assistant rejected the access token |
+| `4` | Home Assistant is unreachable or unavailable, answered unusably, or the TLS check failed |
+| `70` | Unexpected internal error; the traceback is in the log file |
 | `130` | Interrupted with Ctrl-C |
+
+A failed day does not stop the run; the next day is exported. A rejected
+token, an unavailable Home Assistant, a TLS failure or an internal error ends
+the run after the running day is recorded as failed.
 
 ## Output
 
 ```
 <output_dir>/
+  hhe-archive.json              the time zone of the archive
   exports/daily/2026/06/
     2026-06-15.jsonl            one JSON object per state change
     2026-06-15.parquet          typed, compressed, ~15x smaller than JSONL
@@ -411,32 +448,54 @@ Legacy schema 1.1–1.3 manifests remain readable and an existing legacy
 `status: ok` remains a completed day. Malformed, unknown, or contradictory
 manifests fail closed and are not overwritten, including with `--force`.
 
+### The time zone of an archive
+
+Every day of an archive is a local calendar day in one time zone, recorded in
+`hhe-archive.json`. A new archive takes `export.timezone`, or else the time zone
+of Home Assistant. An existing archive without that file takes the time zone
+its manifests name, after every manifest is checked; an archive whose days use
+more than one time zone is reported instead. A configured time zone that
+differs from the archive's stops the run with an explanation.
+
 ### One run at a time
 
-A run holds a lock on its output directory and works in its own temporary
-directory, so two runs cannot interfere. All requested formats are written and
-validated first. A crash-recoverable day transaction then publishes the
-artifacts and the manifest last; a failed force-export restores the previous
-generation byte-for-byte.
+A run holds a lock on its output directory (`.hhe-archive.lock`) and works in
+its own temporary directory, so two runs cannot interfere. The operating system
+releases the lock when the process ends, also after a crash. All requested
+formats are written and validated first. A crash-recoverable day transaction
+then publishes the artifacts and the manifest last; a failed force-export
+restores the previous generation byte-for-byte, and files of formats no longer
+requested are removed with the new generation. Network file systems (SMB,
+NFS) may not honour the lock.
 
 ## Troubleshooting
 
 Run `hhe doctor` first — it checks configuration, credentials, directories,
 formats, and connectivity, and prints the command that fixes each problem.
 
-**`No Home Assistant URL configured.` / `No Home Assistant access token configured.`**
+**`No Home Assistant URL is configured.` / `No Home Assistant access token is configured.`**
 Nothing is set up yet. Run `hhe init`, or set the values directly with
 `hhe config set homeassistant.url …` and `hhe config set homeassistant.token`.
 
-**`Authentication failed: Home Assistant rejected the access token (HTTP 401).`**
+**`Home Assistant rejected the access token (HTTP 401).`**
 The token is wrong, expired, or was revoked. Create a new one under Profile →
 Security → Long-Lived Access Tokens and store it with
 `hhe config set homeassistant.token`.
 
-**`Cannot reach Home Assistant at …`**
-The address is not reachable from this machine, or Home Assistant did not
-answer in time. Check the URL with `hhe config get homeassistant.url`, try it in
-a browser, and raise `--timeout` if the instance is simply slow.
+**`Home Assistant is not available at …` / `Home Assistant did not answer in time.`**
+The address is not reachable from this machine, Home Assistant is starting or
+overloaded, or it did not answer in time. Check the URL with
+`hhe config get homeassistant.url`, try it in a browser, and raise `--timeout`
+or lower `--batch-size` if the instance is simply slow.
+
+**`The HTTPS certificate of Home Assistant could not be verified.`**
+The certificate is signed by an authority this machine does not trust, has
+expired, or names another host. For your own authority, set
+`hhe config set homeassistant.ca_bundle <path-to-ca.pem>`.
+
+**`export.timezone is …, but this archive's days are in …`**
+The archive keeps the time zone of its days. Remove the setting with
+`hhe config unset export.timezone`, or export into a new output directory.
 
 **`Parquet output is enabled but pyarrow is not installed.`**
 Run `pipx inject ha-history-exporter pyarrow`, or drop Parquet from the format
@@ -447,8 +506,8 @@ A typo in the configuration file. The message names the file, the line, and the
 closest valid key; `hhe config list` shows all of them.
 
 **`Another export is already running for this output directory.`**
-Wait for the other run. If none is running, the message names the lock file to
-remove.
+Wait for the other run; the message names it. The lock ends with that process,
+so nothing needs to be removed by hand.
 
 **`Recorder retention blocks one or more requested days.`**
 Set `recorder.purge_keep_days` to the value used by your Home Assistant
@@ -479,7 +538,7 @@ Program:   %USERPROFILE%\.local\bin\hhe.exe
 Arguments: export --last-days 2
 ```
 
-The stored `credentials.yaml` means the scheduled task needs no environment
+The stored `credentials.toml` means the scheduled task needs no environment
 variables and no token in a script file. An export run never asks a question,
 so it cannot block waiting for an answer nobody is there to give.
 

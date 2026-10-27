@@ -51,8 +51,12 @@ def test_only_today_named_alone_asks_for_the_running_day() -> None:
 
 
 def test_a_range_must_not_run_backwards() -> None:
+    with pytest.raises(ValueError, match="starts after it ends"):
+        DaySelection(start=TODAY, end=YESTERDAY)
+    with pytest.raises(ValueError, match="starts after it ends"):
+        DaySelection(start=RelativeDay.TODAY, end=RelativeDay.YESTERDAY)
     with pytest.raises(UsageError, match="starts after it ends"):
-        DaySelection(start=TODAY, end=YESTERDAY).resolve(TODAY)
+        DaySelection(start=RelativeDay.TODAY, end=YESTERDAY).resolve(TODAY)
 
 
 @pytest.mark.parametrize(

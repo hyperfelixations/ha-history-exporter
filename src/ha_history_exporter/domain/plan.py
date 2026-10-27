@@ -113,6 +113,8 @@ class RelativeDay(StrEnum):
 
 type DaySpec = date | RelativeDay
 
+_RANK = {RelativeDay.YESTERDAY: 0, RelativeDay.TODAY: 1}
+
 
 def parse_day(text: str) -> DaySpec:
     """``YYYY-MM-DD``, ``today`` or ``yesterday``; raises ValueError otherwise."""
@@ -167,6 +169,14 @@ class DaySelection:
             raise ValueError("last_days is a positive count without start and end")
         if (self.start is None) != (self.end is None):
             raise ValueError("a range needs a start and an end")
+        start, end = self.start, self.end
+        backwards = (
+            isinstance(start, RelativeDay)
+            and isinstance(end, RelativeDay)
+            and _RANK[start] > _RANK[end]
+        ) or (isinstance(start, date) and isinstance(end, date) and start > end)
+        if backwards:
+            raise ValueError(f"The range starts after it ends ({start} > {end}).")
 
     @classmethod
     def single(cls, day: DaySpec) -> DaySelection:

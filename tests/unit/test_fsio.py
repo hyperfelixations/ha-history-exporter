@@ -152,23 +152,6 @@ def test_is_within_accepts_a_linked_subdirectory_on_another_disk(tmp_path: Path)
     assert fsio.is_within(root, link / "daily" / "2026" / "x.jsonl")
 
 
-def test_replace_durable_flushes_both_directories(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = tmp_path / "staging" / "file"
-    target = tmp_path / "final" / "file"
-    source.parent.mkdir()
-    target.parent.mkdir()
-    source.write_bytes(b"x")
-    flushed: list[str] = []
-    monkeypatch.setattr(fsio, "fsync_dir", lambda path: flushed.append(path.name))
-
-    fsio.replace_durable(source, target)
-
-    assert target.read_bytes() == b"x"
-    assert flushed == ["final", "staging"]
-
-
 @pytest.mark.skipif(os.name != "nt", reason="drive letters exist on Windows only")
 def test_is_within_rejects_another_drive() -> None:
     assert not fsio.is_within(Path("C:/archive"), Path("D:/archive/exports"))

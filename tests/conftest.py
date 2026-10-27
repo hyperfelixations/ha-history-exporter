@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from collections.abc import Iterator
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 
 import pytest
 
 from ha_history_exporter.settings import paths, registry
-from tests.helpers import FakeCliClient
 
 _HOST_CONFIGURATION_ENV_VARS = (*registry.BY_ENV, registry.TOKEN_ENV, *registry.OTHER_ENV)
 
 
 @pytest.fixture(autouse=True)
-def isolated_user_environment(tmp_path, monkeypatch: pytest.MonkeyPatch):
+def isolated_user_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Isolate every test from real credentials, user files, and project files.
 
     One fixture owns the whole environment so no ordering between autouse
@@ -44,15 +44,7 @@ def isolated_user_environment(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
-def reset_fake_cli_client():
-    """Restore the shared CLI client stand-in before every test."""
-    FakeCliClient.reset()
-    yield
-    FakeCliClient.reset()
-
-
-@pytest.fixture(autouse=True)
-def restore_root_logger():
+def restore_root_logger() -> Iterator[None]:
     """Keep logging configured by one CLI invocation out of later tests."""
     root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)

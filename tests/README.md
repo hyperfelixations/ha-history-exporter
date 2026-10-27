@@ -5,30 +5,36 @@ instance.
 
 ## Safety contract
 
-- Tests must never use a real `HA_URL` or `HA_TOKEN`.
-- The autouse environment fixture removes every declared HHE variable by its
-  public name before every test. It never inventories the host environment.
+- Tests never use a real `HHE_URL` or `HHE_TOKEN`.
+- The autouse environment fixture removes every HHE variable the key registry
+  declares by its public name before every test. It never inventories the host
+  environment.
 - Pytest runs with `--disable-socket`; any attempted network connection fails
-  immediately.
-- HTTP behavior is simulated with in-memory responses.
-- Export integration tests use a `FakeHomeAssistantClient`.
+  immediately. Only the system tests in `tests/system/` open a socket, to a
+  stand-in for Home Assistant on `127.0.0.1`.
+- Home Assistant is simulated in memory behind the `HistorySource` protocol
+  (`tests/support/fake_source.py`); the REST source is tested against a
+  scripted transport.
 - All files are written below pytest's temporary directories.
-- Tests must never examine, read, or write a production configuration or
-  History Export directory.
+- Tests never examine, read, or write a production configuration or archive.
 
 ## Test layers
 
-- Pure unit tests for configuration, time handling, planning, manifests,
-  snapshots, writers, and validators
-- HTTP contract tests with synthetic responses and exceptions
-- Export and CLI integration tests with synthetic clients and temporary output
-- Green contract tests for the currently supported planner behavior. A newly
-  requested local format never triggers an implicit Home Assistant recapture;
-  explicit local format derivation remains a future feature.
+- `tests/unit/`: domain, file primitives, formats, settings, source, archive
+  and command-line parts, each on its own.
+- `tests/integration/`: the use cases and the commands in-process, with an
+  in-memory Home Assistant, a fixed clock and injected terminal services.
+- `tests/contract/`: the output contract as golden files, driven through the
+  single seam `tests/support/harness.produce()`, and every command HHE
+  suggests in a message checked against the parser and the key registry.
+- `tests/system/`: `python -m ha_history_exporter` in a process of its own.
+
+Regenerate golden files only for a reviewed, intended output change:
+`python tools/refresh_golden.py`.
 
 ## Run locally
 
-```powershell
+```bash
 python -m pip install -r requirements-dev.txt
 python -m pip install -e ".[parquet]"
 python -m pytest --cov=ha_history_exporter --cov-report=term-missing

@@ -16,9 +16,10 @@ from pathlib import Path
 import pytest
 
 from ha_history_exporter.cli.parser import build_parser
-from ha_history_exporter.settings import schema
+from ha_history_exporter.settings.registry import BY_PATH, TOKEN_KEY
+from ha_history_exporter.settings.validators import Formats, ParseContext
 
-PACKAGE = Path(__file__).parents[1] / "src" / "ha_history_exporter"
+PACKAGE = Path(__file__).parents[2] / "src" / "ha_history_exporter"
 
 #: How a suggestion may name the program.
 PROGRAMS = ("hhe", "ha-history-exporter", "python -m ha_history_exporter")
@@ -78,13 +79,13 @@ def strip_program(tokens: list[str]) -> list[str]:
 CASES = suggested_commands()
 
 
-def test_the_package_suggests_commands_at_all():
+def test_the_package_suggests_commands_at_all() -> None:
     """A collector that silently finds nothing would pass every check below."""
     assert len(CASES) >= 30
 
 
 @pytest.mark.parametrize(("where", "command"), CASES, ids=[c[0] for c in CASES])
-def test_a_suggested_command_is_one_hhe_accepts(where, command):
+def test_a_suggested_command_is_one_hhe_accepts(where: str, command: str) -> None:
     tokens = strip_program(shlex.split(command))
     if not tokens:
         return  # the bare program name, used in help texts
@@ -103,9 +104,9 @@ def test_a_suggested_command_is_one_hhe_accepts(where, command):
         and not rest[0].startswith(PLACEHOLDER)
     )
     if names_a_key:
-        assert rest[0] in schema.BY_PATH, f"{where}: unknown key {rest[0]!r}"
+        assert rest[0] in {*BY_PATH, TOKEN_KEY}, f"{where}: unknown key {rest[0]!r}"
 
     if "--format" in rest:
         value = rest[rest.index("--format") + 1]
         if not value.startswith(PLACEHOLDER):
-            schema.format_set(value, "--format")
+            Formats().from_text(value, ParseContext(Path.cwd(), {}))

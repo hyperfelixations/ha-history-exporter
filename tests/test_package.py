@@ -25,7 +25,7 @@ SUITE_INPUTS = (
 )
 
 
-def test_new_manifests_use_schema_1_4():
+def test_new_manifests_use_schema_1_4() -> None:
     assert SCHEMA_VERSION == "1.4"
 
 
@@ -47,7 +47,7 @@ def manifest_covers(manifest: str, relative_path: str) -> bool:
     return False
 
 
-def test_the_source_distribution_ships_what_the_test_suite_reads():
+def test_the_source_distribution_ships_what_the_test_suite_reads() -> None:
     """MANIFEST.in promises an sdist that can be verified on its own.
 
     Several tests read repository files that live outside the package. Left
