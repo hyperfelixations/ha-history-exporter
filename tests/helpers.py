@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, ClassVar
+from zoneinfo import ZoneInfo
 
 import requests
 
+from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
 from ha_history_exporter.settings import (
@@ -51,14 +53,14 @@ def make_config(
     return Config(
         homeassistant=HomeAssistantSettings(url=SYNTHETIC_URL),
         export=ExportSettings(
-            output_dir=str(root / "output"),
-            timezone="Europe/Berlin",
+            output_dir=root / "output",
+            timezone=ZoneInfo("Europe/Berlin"),
             formats=frozenset(formats),
         ),
         requests=RequestSettings(
             batch_size=batch_size,
-            sleep_between_requests=0,
-            sleep_between_days=0,
+            sleep_between_requests=0.0,
+            sleep_between_days=0.0,
             timeout=120,
             max_retries=0,
             backoff=(),
@@ -67,9 +69,9 @@ def make_config(
         entities=EntitySettings(),
         recorder=RecorderSettings(purge_keep_days=purge_keep_days),
         storage=StorageSettings(
-            temp_dir=str(root / "temp"),
+            temp_dir=root / "temp",
             locked_file_retries=0,
-            locked_file_retry_sleep=0,
+            locked_file_retry_sleep=0.0,
         ),
     )
 
@@ -80,7 +82,11 @@ def day_path(cfg: Config, day: date, suffix: str) -> Path:
     Single adaptation point for the frozen output contract: tests state the
     expected path, this function knows which object currently builds it.
     """
-    return cfg.layout.day_file(day, suffix)
+    return layout(cfg).day_file(day, suffix)
+
+
+def layout(cfg: Config) -> ArchiveLayout:
+    return ArchiveLayout(cfg.export.output_dir)
 
 
 def make_export_plan(day: date) -> ExportPlan:

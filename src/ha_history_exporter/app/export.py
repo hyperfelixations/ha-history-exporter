@@ -8,7 +8,6 @@ import socket
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..archive.layout import ArchiveLayout
@@ -39,7 +38,7 @@ def plan_export(
     partial_day: date | None = None,
 ) -> ExportPlan:
     """Decide every requested day from its manifest, the calendar and the retention."""
-    layout = ArchiveLayout(Path(cfg.export.output_dir))
+    layout = ArchiveLayout(cfg.export.output_dir)
 
     def completed(day: date) -> str | None:
         loaded = load_manifest(layout, DayWindow.full(day, tz).identity())
@@ -134,7 +133,7 @@ def run_export(
     clock = clock or SystemClock()
     started = clock.now()
     run_id = new_run_id(started.astimezone(UTC))
-    layout = ArchiveLayout(Path(cfg.export.output_dir))
+    layout = ArchiveLayout(cfg.export.output_dir)
     holder = (
         f"run_id: {run_id}\npid: {os.getpid()}\nhost: {socket.gethostname()}\n"
         f"started_at: {started.astimezone(UTC).isoformat()}\n"
@@ -143,7 +142,7 @@ def run_export(
     any_failed = False
     with ArchiveSession(
         layout,
-        cfg.resolved_temp_dir,
+        cfg.storage.temp_dir,
         run_id,
         holder=holder,
         retries=cfg.storage.locked_file_retries,

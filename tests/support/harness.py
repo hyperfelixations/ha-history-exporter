@@ -89,7 +89,7 @@ def produce(scenario: Scenario, root: Path) -> Production:
     )
     cfg = replace(
         cfg,
-        export=replace(cfg.export, timezone=scenario.timezone),
+        export=replace(cfg.export, timezone=ZoneInfo(scenario.timezone)),
         history_request=HistoryRequestSettings(skip_initial_state=scenario.skip_initial_state),
     )
     client = FakeHomeAssistantClient(
@@ -122,8 +122,8 @@ def produce(scenario: Scenario, root: Path) -> Production:
             now=scenario.now,
         )
     except HHEError as exc:
-        return Production(Path(cfg.export.output_dir), None, type(exc), client.calls)
-    return Production(Path(cfg.export.output_dir), exit_code, None, client.calls)
+        return Production(cfg.export.output_dir, None, type(exc), client.calls)
+    return Production(cfg.export.output_dir, exit_code, None, client.calls)
 
 
 def produce_snapshot(states: list[dict[str, Any]], output_dir: Path) -> Path:
@@ -142,7 +142,7 @@ def stored_status(output_dir: Path, day: date, timezone: str = "Europe/Berlin") 
 
     Raises the implementation's error for a manifest that cannot be trusted.
     """
-    cfg = make_config(output_dir.parent)
-    cfg = replace(cfg, export=replace(cfg.export, output_dir=str(output_dir), timezone=timezone))
-    loaded = load_manifest(cfg.layout, DayWindow.full(day, ZoneInfo(timezone)).identity())
+    loaded = load_manifest(
+        ArchiveLayout(output_dir), DayWindow.full(day, ZoneInfo(timezone)).identity()
+    )
     return None if loaded is None else loaded.status.value

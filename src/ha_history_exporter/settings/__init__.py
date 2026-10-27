@@ -1,4 +1,4 @@
-"""Configuration layer: paths, schema, sources, resolution, secrets."""
+"""Configuration: the key registry, its sources, resolution and the credentials."""
 
 from __future__ import annotations
 
@@ -12,10 +12,11 @@ from .model import (
     RequestSettings,
     StorageSettings,
 )
-from .resolver import ResolvedSettings, discover_config_file, resolve
+from .resolver import Connection, ResolvedSettings, resolve
 
 __all__ = [
     "Config",
+    "Connection",
     "EntitySettings",
     "ExportSettings",
     "HistoryRequestSettings",
@@ -24,6 +25,5 @@ __all__ = [
     "RequestSettings",
     "ResolvedSettings",
     "StorageSettings",
-    "discover_config_file",
     "resolve",
 ]

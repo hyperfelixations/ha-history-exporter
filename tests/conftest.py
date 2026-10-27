@@ -7,18 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from ha_history_exporter.settings import paths, schema
+from ha_history_exporter.settings import paths, registry
 from tests.helpers import FakeCliClient
 
-_HOST_CONFIGURATION_ENV_VARS = tuple(
-    dict.fromkeys(
-        [
-            *(key.env_var for key in schema.KEYS),
-            *schema.LEGACY_ENV_VARS,
-            paths.ENV_CONFIG_DIR,
-        ]
-    )
-)
+_HOST_CONFIGURATION_ENV_VARS = (*registry.BY_ENV, registry.TOKEN_ENV, *registry.OTHER_ENV)
 
 
 @pytest.fixture(autouse=True)
@@ -91,5 +83,5 @@ def without_pyarrow(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def synthetic_ha_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Install unmistakably synthetic credentials for config-loading tests."""
-    monkeypatch.setenv("HA_URL", "http://home-assistant.invalid")
-    monkeypatch.setenv("HA_TOKEN", "synthetic-test-token")
+    monkeypatch.setenv("HHE_URL", "http://home-assistant.invalid")
+    monkeypatch.setenv("HHE_TOKEN", "synthetic-test-token")

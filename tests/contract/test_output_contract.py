@@ -119,7 +119,7 @@ def test_day_file_paths_are_zero_padded(
 ) -> None:
     cfg = make_config(tmp_path)
     path = day_path(cfg, day, suffix)
-    assert path.relative_to(Path(cfg.export.output_dir)).as_posix() == expected
+    assert path.relative_to(cfg.export.output_dir).as_posix() == expected
 
 
 def test_manifest_field_order_matches_schema_1_4(produced: Path) -> None:

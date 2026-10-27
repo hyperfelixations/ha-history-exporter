@@ -29,7 +29,7 @@ def plan(cfg: Config, *, today: date = TODAY, force: bool = False) -> ExportPlan
 
 
 def output(cfg: Config) -> Path:
-    return Path(cfg.export.output_dir)
+    return cfg.export.output_dir
 
 
 def test_a_successful_manifest_skips_the_day_even_without_its_files(tmp_path: Path) -> None:

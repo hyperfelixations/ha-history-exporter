@@ -22,10 +22,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
   "requests>=2.31.0",
-  "PyYAML>=6.0",
   "platformdirs>=4.2",
   "tzdata>=2024.1",
 ]
@@ -70,6 +70,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106", "S603", "S607"]
+# setting() returns dataclasses.field() with the key metadata.
+"src/ha_history_exporter/settings/model.py" = ["RUF009"]
 
 [tool.ruff.format]
 line-ending = "lf"

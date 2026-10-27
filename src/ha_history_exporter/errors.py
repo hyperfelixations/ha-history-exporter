@@ -11,6 +11,7 @@ response body.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -37,6 +38,20 @@ class Remedy:
 
     description: str
     command: str | None = None
+
+
+def env_assignment(name: str, value: str) -> str:
+    """The shell command that sets *name* for the current session on this platform."""
+    if os.name == "nt":
+        return f'$env:{name} = "{value}"'
+    return f'export {name}="{value}"'
+
+
+def stdin_from_file(placeholder: str, command: str) -> str:
+    """*command* reading standard input from the file *placeholder* on this platform."""
+    if os.name == "nt":
+        return f"Get-Content {placeholder} | {command}"
+    return f"{command} < {placeholder}"
 
 
 class HHEError(Exception):

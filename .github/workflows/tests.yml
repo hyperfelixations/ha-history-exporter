@@ -24,10 +24,7 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-
-    env:
-      HA_URL: ""
-      HA_TOKEN: ""
+          - "3.15"
 
     steps:
       - name: Check out repository

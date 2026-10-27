@@ -34,6 +34,7 @@ PINNED_TOOLS = {
     "pytest-socket",
     "ruff",
     "twine",
+    "PyYAML",
     "types-PyYAML",
     "types-requests",
 }
