@@ -319,6 +319,5 @@ def test_the_token_never_reaches_a_url_a_log_line_or_an_error(
 
 def test_closing_the_source_closes_the_session() -> None:
     session = ScriptedSession()
-    with source(session):
-        pass
+    source(session).close()
     assert session.closed

@@ -418,7 +418,7 @@ class Formats:
                 "must be a list of output formats",
                 details=f"Valid formats: {', '.join(FORMAT_ORDER)}; [] for snapshot only.",
             )
-        if "none" in value:
+        if any(item.strip().lower() == "none" for item in value):
             raise InvalidValue(
                 "must not contain none", details="An empty list [] means snapshot only."
             )

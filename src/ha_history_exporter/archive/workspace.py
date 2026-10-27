@@ -56,11 +56,11 @@ def open_workspace(temp_root: Path, run_id: str) -> Workspace:
     return Workspace(run_id=run_id, work_dir=work_dir, lock=lock)
 
 
-def cleanup_stale(temp_root: Path, now: float | None = None) -> int:
+def cleanup_stale(temp_root: Path) -> int:
     """Remove the directories of finished or crashed runs; return how many."""
     if not temp_root.is_dir():
         return 0
-    cutoff = (time.time() if now is None else now) - ORPHAN_AFTER
+    cutoff = time.time() - ORPHAN_AFTER
     removed = 0
     for candidate in sorted(temp_root.glob(f"{RUN_PREFIX}*")):
         if not candidate.is_dir():

@@ -51,7 +51,7 @@ def verify_archive(
     reader = ArchiveReader.open(
         ArchiveLayout(cfg.export.output_dir), configured=cfg.export.timezone
     )
-    span = requested_range(reader, selection, clock)
+    span = requested_range(reader, selection, clock.now())
     stored = reader.artifacts()
     manifests = set(reader.manifest_days())
     days = sorted(

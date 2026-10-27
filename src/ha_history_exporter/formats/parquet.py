@@ -8,32 +8,22 @@ optional dependency and is imported only when Parquet is read or written.
 from __future__ import annotations
 
 import functools
-import json
 from collections.abc import Iterator
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
-from ..domain.records import HistoryRecord, JsonValue
+from ..domain.records import HistoryRecord
 from ..domain.stored import stored_record
 from ..errors import ValidationError
 from ..fsio import ensure_dir, fsync_file
+from .base import TABLE_COLUMNS, json_object
 
 if TYPE_CHECKING:  # pragma: no cover
     import pyarrow as pa
 
 ROW_GROUP_SIZE = 200_000
 COMPRESSION = "snappy"
-
-_COLUMNS = (
-    "entity_id",
-    "state",
-    "last_changed",
-    "last_updated",
-    "attributes_json",
-    "local_offset",
-    "extra_json",
-)
 
 
 @functools.cache
@@ -61,7 +51,7 @@ class ParquetWriter:
         ensure_dir(path.parent)
         self._path = path
         self._writer: Any = pq.ParquetWriter(str(path), schema(), compression=COMPRESSION)
-        self._columns: dict[str, list[Any]] = {name: [] for name in _COLUMNS}
+        self._columns: dict[str, list[Any]] = {name: [] for name in TABLE_COLUMNS}
 
     def write(self, record: HistoryRecord) -> None:
         if self._writer is None:
@@ -84,7 +74,7 @@ class ParquetWriter:
             return
         table = pa.table(self._columns, schema=schema())
         self._writer.write_table(table)
-        self._columns = {name: [] for name in _COLUMNS}
+        self._columns = {name: [] for name in TABLE_COLUMNS}
 
     def close(self) -> None:
         if self._writer is None:
@@ -106,18 +96,6 @@ class ParquetWriter:
         traceback: TracebackType | None,
     ) -> None:
         self.close()
-
-
-def _json_object(value: str | None, column: str, location: str) -> dict[str, JsonValue] | None:
-    if value is None:
-        return None
-    try:
-        decoded = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"{location}: {column} is not valid JSON.") from exc
-    if decoded is not None and not isinstance(decoded, dict):
-        raise ValidationError(f"{location}: {column} must contain an object or null.")
-    return decoded
 
 
 def read_parquet(stream: BinaryIO, name: str) -> Iterator[HistoryRecord]:
@@ -148,9 +126,9 @@ def read_parquet(stream: BinaryIO, name: str) -> Iterator[HistoryRecord]:
                     "state": row["state"],
                     "last_changed": row["last_changed"].isoformat(),
                     "last_updated": row["last_updated"].isoformat(),
-                    "attributes": _json_object(row["attributes_json"], "attributes_json", location),
+                    "attributes": json_object(row["attributes_json"], "attributes_json", location),
                     "local_offset": row["local_offset"],
                 },
                 location=location,
-                extra=_json_object(row["extra_json"], "extra_json", location) or {},
+                extra=json_object(row["extra_json"], "extra_json", location) or {},
             )

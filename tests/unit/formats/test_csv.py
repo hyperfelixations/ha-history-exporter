@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from ha_history_exporter.errors import ValidationError
-from ha_history_exporter.formats.csv import COLUMNS, CsvWriter, read_csv
+from ha_history_exporter.formats.base import TABLE_COLUMNS as COLUMNS
+from ha_history_exporter.formats.csv import CsvWriter, read_csv
 from tests.support.records import make_record
 
 VALID = [

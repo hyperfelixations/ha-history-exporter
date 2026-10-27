@@ -25,7 +25,7 @@ def archive_status(cfg: Config, selection: DaySelection | None, *, clock: Clock)
     )
     manifests = reader.manifest_days()
     state = archive_state(reader)
-    span = requested_range(reader, selection, clock)
+    span = requested_range(reader, selection, clock.now())
     if span is None:
         if not manifests:
             return StatusResult(state, ())

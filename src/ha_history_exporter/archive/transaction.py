@@ -136,7 +136,7 @@ def _entry(raw: Any) -> Entry:
 
 
 def _decode_v1(data: dict[str, Any]) -> Journal:
-    """Journals of the first protocol: replace entries only, manifest last."""
+    """Journal version 1: replace entries only, manifest last."""
     phases = {
         "prepared": Phase.PREPARED,
         "backed_up": Phase.BACKED_UP,

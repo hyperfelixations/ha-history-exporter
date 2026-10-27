@@ -20,7 +20,7 @@ from ...app.setup import write_setup
 from ...errors import HHEError, Remedy, UsageError
 from ...formats import missing_requirements
 from ...settings import ResolvedSettings, paths, resolve, secrets, user_file
-from ...settings.registry import BY_PATH, TOKEN_ENV
+from ...settings.registry import BY_PATH, TOKEN_ENV, URL_ENV
 from ...settings.sources import invalid
 from ...settings.validators import InvalidValue, ParseContext, TomlValue
 from ...source.transport import plaintext_warning
@@ -124,7 +124,7 @@ def _url(setup: _Setup, current: ResolvedSettings) -> str:
     if raw is None:
         if not setup.interactive:
             if configured is None:
-                raise _missing("--url or HHE_URL")
+                raise _missing(f"--url or {URL_ENV}")
             raw = configured
         else:
             raw = setup.ask("Home Assistant URL", configured or DEFAULT_URL)
@@ -160,7 +160,7 @@ def _token(setup: _Setup, credentials_file: Path) -> str:
 def _verify(setup: _Setup, url: str, token: str) -> ZoneInfo | None:
     """Home Assistant's time zone, after proving that URL and token work."""
     services = setup.services
-    probe_environ = {**services.environ, "HHE_URL": url, TOKEN_ENV: token}
+    probe_environ = {**services.environ, URL_ENV: url, TOKEN_ENV: token}
     say(f"  -> Contacting {url} ...")
     try:
         probe = resolve(environ=probe_environ, cwd=services.cwd)

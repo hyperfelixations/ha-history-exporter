@@ -20,7 +20,7 @@ from typing import Any
 from ..errors import ConfigError, CredentialsError, Remedy, env_assignment
 from . import paths, secrets, sources
 from .model import Config
-from .registry import KEYS, TOKEN_ENV, TOKEN_KEY, build_config, unknown_environment
+from .registry import KEYS, TOKEN_ENV, TOKEN_KEY, URL_ENV, build_config, unknown_environment
 from .sources import DEFAULT, Entry, Origin
 
 
@@ -180,7 +180,7 @@ def missing_url(config_file: Path | str) -> CredentialsError:
             ),
             Remedy(
                 "Or set it for this shell session:",
-                env_assignment("HHE_URL", "http://homeassistant.local:8123"),
+                env_assignment(URL_ENV, "http://homeassistant.local:8123"),
             ),
         ),
         context={"config_file": str(config_file)},

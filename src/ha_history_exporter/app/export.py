@@ -4,8 +4,8 @@
 2. Without asking Home Assistant, the archive's zone is known when the
    archive has a descriptor or days, or ``export.timezone`` is set; if nothing
    is to be exported then, the run ends here.
-3. Home Assistant is asked for its API, its configuration and the current
-   states; the archive's zone follows (:func:`descriptor.determine`).
+3. Home Assistant is asked for its API and its configuration, the archive's
+   zone follows (:func:`descriptor.determine`), then the current states.
 4. A dry run plans and reports; it writes nothing.
 5. Otherwise the archive session opens (lock, recovery, descriptor), the log
    file of the run starts, the plan is made under the lock, the entity
@@ -164,7 +164,7 @@ def run_export(
                 sleep=sleep,
                 clock=clock,
             )
-            days = _export_days(context, plan, run, layout, sleep)
+            days = _export_days(context, plan, run)
             return ExportResult(
                 zone, plan, entities, days, snapshot_file=snapshot_file, log_file=log_file
             )
@@ -257,13 +257,7 @@ def _entities(cfg: Config, states: Sequence[StateObject]) -> EntitySummary:
     )
 
 
-def _export_days(
-    ctx: CaptureContext,
-    plan: ExportPlan,
-    run: RunContext,
-    layout: ArchiveLayout,
-    sleep: Callable[[float], None],
-) -> tuple[DayResult, ...]:
+def _export_days(ctx: CaptureContext, plan: ExportPlan, run: RunContext) -> tuple[DayResult, ...]:
     days = plan.days_to_export
     partial = frozenset(plan.partial_days)
     if partial:
@@ -295,7 +289,7 @@ def _export_days(
             format_iso(window.end),
         )
         outcome = capture_day(ctx, window)
-        _log_run(layout, outcome.manifest)
+        _log_run(ctx.layout, outcome.manifest)
         results.append(
             DayResult(
                 day,
@@ -313,7 +307,7 @@ def _export_days(
                 day,
             )
         if index < len(days) - 1:
-            sleep(ctx.cfg.requests.sleep_between_days)
+            ctx.sleep(ctx.cfg.requests.sleep_between_days)
     return tuple(results)
 
 

@@ -10,6 +10,7 @@ carry the key's documentation and default.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .. import __version__
 from ..settings.registry import BY_OPTION, Key
@@ -115,12 +116,16 @@ def build_parser(prog: str = "hhe") -> argparse.ArgumentParser:
         help="Check the installation and the archive, read-only.",
         description="Run every self-check and print concrete remedies; changes nothing.",
     )
-    doctor.add_argument("--config", metavar="FILE", help="Check exactly this configuration file.")
+    _add_config_option(doctor, "Check exactly this configuration file.")
     doctor.add_argument(
         "--offline", action="store_true", help="Skip every check that contacts Home Assistant."
     )
     _add_json(doctor)
     return parser
+
+
+def _add_config_option(parser: argparse.ArgumentParser, help_text: str) -> None:
+    parser.add_argument("--config", metavar="FILE", type=Path, help=help_text)
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
@@ -140,9 +145,7 @@ def _add_log_level(parser: argparse.ArgumentParser) -> None:
 
 def _add_archive_arguments(parser: argparse.ArgumentParser) -> None:
     """The archive and the days a command that works on stored days reads."""
-    parser.add_argument(
-        "--config", metavar="FILE", help="Read exactly this file instead of the user configuration."
-    )
+    _add_config_option(parser, "Read exactly this file instead of the user configuration.")
     key = BY_OPTION["--output-dir"]
     parser.add_argument(
         "--output-dir", dest=_dest("--output-dir"), metavar=_metavar(key), help=_option_help(key)
@@ -168,9 +171,7 @@ def _option_help(key: Key) -> str:
 
 
 def _add_export_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--config", metavar="FILE", help="Read exactly this file instead of the user configuration."
-    )
+    _add_config_option(parser, "Read exactly this file instead of the user configuration.")
     add_day_options(parser)
     parser.add_argument(
         "--dry-run", action="store_true", help="Show the plan; fetch and write nothing."
@@ -223,7 +224,7 @@ def _add_init_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_config_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--config", metavar="FILE", help="Read exactly this configuration file.")
+    _add_config_option(parser, "Read exactly this configuration file.")
     actions = parser.add_subparsers(dest="action", metavar="ACTION", required=True)
 
     get = actions.add_parser("get", help="Print one effective value.")

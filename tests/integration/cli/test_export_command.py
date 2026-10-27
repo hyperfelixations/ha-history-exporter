@@ -134,7 +134,9 @@ def test_a_defect_exits_with_seventy_and_leaves_its_traceback_in_the_log_only(
     assert terminal.run("export") == 70
     assert "Traceback" not in terminal.stderr
     assert "unexpected internal error" in terminal.stderr
-    log = next(layout(terminal).logs_dir.iterdir()).read_text(encoding="utf-8")
+    log_file = next(layout(terminal).logs_dir.iterdir())
+    assert f"Log file: {log_file}" in terminal.stderr
+    log = log_file.read_text(encoding="utf-8")
     assert "Traceback" in log
     assert "ZeroDivisionError" in log
 

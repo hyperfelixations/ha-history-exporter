@@ -24,8 +24,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
-from typing import Literal, Protocol, Self
+from typing import Literal, Protocol
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -56,7 +55,6 @@ _UNAVAILABLE_STATUS = frozenset({429, 502, 503, 504})
 _RETRIED_FAILURE_STATUS = frozenset({500})
 _TRANSIENT = (
     requests.exceptions.ConnectionError,
-    requests.exceptions.Timeout,
     requests.exceptions.ChunkedEncodingError,
     requests.exceptions.ContentDecodingError,
 )
@@ -97,13 +95,6 @@ class _Problem:
     reason: str
     retryable: bool
     status: int | None = None
-
-
-class _Failed(Exception):
-    def __init__(self, error: HHEError, stats: CallStats) -> None:
-        super().__init__(error.summary)
-        self.error = error
-        self.stats = stats
 
 
 class RestHistorySource:
@@ -168,10 +159,7 @@ class RestHistorySource:
     ) -> HistoryCall:
         path = f"{HISTORY_ENDPOINT}/{quote(window.query_start.isoformat(), safe=':')}"
         params = history_params(window, entity_ids, query)
-        try:
-            body, stats = self._get(HISTORY_ENDPOINT, path, params)
-        except _Failed as failure:
-            raise HistoryFetchError(failure.error, failure.stats) from None
+        body, stats = self._get(HISTORY_ENDPOINT, path, params)
         try:
             data = _decode(body, HISTORY_ENDPOINT)
         except HAAPIError as error:
@@ -186,23 +174,12 @@ class RestHistorySource:
     def close(self) -> None:
         self._session.close()
 
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.close()
-
     # ── transport ────────────────────────────────────────────────────────────
 
     def _json(self, endpoint: str) -> object:
         try:
             body, _ = self._get(endpoint, endpoint, None)
-        except _Failed as failure:
+        except HistoryFetchError as failure:
             raise failure.error from None
         return _decode(body, endpoint)
 
@@ -239,7 +216,9 @@ class RestHistorySource:
                 problem = _Problem("failed", f"the request failed ({type(exc).__name__})", False)
 
             if not problem.retryable or attempts > self._retry.max_retries:
-                raise _Failed(self._error(endpoint, problem, attempts), CallStats(attempts))
+                raise HistoryFetchError(
+                    self._error(endpoint, problem, attempts), CallStats(attempts)
+                )
             delay = self._retry.delay(attempts - 1, retry_after)
             logger.warning(
                 "%s: %s (attempt %d of %d); retrying in %.1f s.",

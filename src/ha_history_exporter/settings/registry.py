@@ -68,6 +68,7 @@ BY_PATH: Mapping[str, Key] = {key.path: key for key in KEYS}
 BY_ENV: Mapping[str, Key] = {key.env_var: key for key in KEYS}
 SECTIONS: tuple[str, ...] = tuple(_section_types())
 BY_OPTION: Mapping[str, Key] = {key.setting.cli: key for key in KEYS if key.setting.cli}
+URL_ENV = BY_PATH["homeassistant.url"].env_var
 
 
 def build_config(values: Mapping[str, Any]) -> Config:

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from ..archive.reader import ArchiveReader
-from ..domain.clock import Clock
 from ..domain.plan import DaySelection
 from .results import ArchiveState
 
@@ -22,12 +21,14 @@ def archive_state(reader: ArchiveReader) -> ArchiveState:
 
 
 def requested_range(
-    reader: ArchiveReader, selection: DaySelection | None, clock: Clock
+    reader: ArchiveReader, selection: DaySelection | None, now: datetime
 ) -> tuple[date, date] | None:
-    """The first and last day *selection* names in the archive's calendar; None for all."""
+    """The first and last day *selection* names at *now* in the archive's calendar.
+
+    None stands for every day.
+    """
     if selection is None:
         return None
-    now = clock.now()
     today = (now.astimezone(reader.zone.zone) if reader.zone else now.astimezone()).date()
     requested = selection.resolve(today)
     return requested.start, requested.end

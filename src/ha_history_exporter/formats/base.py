@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import io
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +13,19 @@ from types import TracebackType
 from typing import BinaryIO, Protocol, Self
 
 from ..domain.formats import Format
-from ..domain.records import HistoryRecord
+from ..domain.records import HistoryRecord, JsonValue
+from ..errors import ValidationError
+
+#: The columns of the tabular formats, CSV and Parquet, in file order.
+TABLE_COLUMNS = (
+    "entity_id",
+    "state",
+    "last_changed",
+    "last_updated",
+    "attributes_json",
+    "local_offset",
+    "extra_json",
+)
 
 
 class RecordWriter(Protocol):
@@ -86,3 +99,16 @@ def sha256_of(stream: BinaryIO, chunk_size: int = 1024 * 1024) -> tuple[str, int
         digest.update(block)
         size += len(block)
     return digest.hexdigest(), size
+
+
+def json_object(value: str | None, column: str, location: str) -> dict[str, JsonValue] | None:
+    """Decode a JSON-text column that holds an object or null; None for no value."""
+    if value is None:
+        return None
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"{location}: {column} is not valid JSON.") from exc
+    if decoded is not None and not isinstance(decoded, dict):
+        raise ValidationError(f"{location}: {column} must contain an object or null.")
+    return decoded

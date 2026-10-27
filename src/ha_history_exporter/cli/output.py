@@ -46,6 +46,10 @@ def say(text: str = "", *, stream: TextIO | None = None) -> None:
     print(text, file=stream or sys.stdout)
 
 
+def say_interrupted(stream: TextIO) -> None:
+    stream.write("\nInterrupted.\n")
+
+
 def use_color(stream: TextIO, environ: Mapping[str, str]) -> bool:
     if environ.get("NO_COLOR") or environ.get("HHE_NO_COLOR"):
         return False

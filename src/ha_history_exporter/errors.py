@@ -15,6 +15,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
+from pathlib import Path
 
 #: Context keys the console renderer is allowed to print. Anything else is
 #: dropped, so an accidental secret can never reach the terminal through the
@@ -23,13 +24,11 @@ CONTEXT_LABELS: dict[str, str] = {
     "config_file": "Configuration file",
     "credentials_file": "Credentials file",
     "output_dir": "Output directory",
-    "temp_dir": "Temporary directory",
     "log_file": "Log file",
     "url": "Home Assistant URL",
     "endpoint": "Endpoint",
     "status": "HTTP status",
     "day": "Day",
-    "documentation": "Documentation",
 }
 
 
@@ -155,21 +154,35 @@ class TLSError(HHEError):
 
 
 class InternalError(HHEError):
-    """A defect: an exception HHE does not expect. Its traceback is in the log file."""
+    """A defect: an exception HHE does not expect. Its traceback goes to a log file."""
 
     exit_code = ExitCode.INTERNAL
     code = ErrorCode.UNEXPECTED
+    #: What the defect stopped, for example ``the export of 2026-07-28``.
+    activity = ""
 
     @classmethod
-    def during(cls, activity: str) -> InternalError:
-        return cls(
+    def during(cls, activity: str, log_file: Path | None = None) -> InternalError:
+        """The error for a defect in *activity* whose traceback is in *log_file*."""
+        if log_file is None:
+            where = "Its traceback could not be saved."
+            context = {}
+        else:
+            where = (
+                "Its traceback is in the log file named below; it may name entities, "
+                "so review it before sharing it in a bug report."
+            )
+            context = {"log_file": str(log_file)}
+        error = cls(
             f"An unexpected internal error stopped {activity}.",
             details=(
-                "This is a defect in HHE or a condition of this machine it does not "
-                "foresee. The traceback is in the log file of the run; it may name "
-                "entities, so review it before sharing it in a bug report."
+                f"This is a defect in HHE or a condition of this machine it does not foresee. "
+                f"{where}"
             ),
+            context=context,
         )
+        error.activity = activity
+        return error
 
 
 class ValidationError(HHEError):
@@ -194,14 +207,10 @@ class ErrorRecord:
     summary: str
 
 
-def safe_error_record(
-    exc: BaseException,
-    *,
-    unexpected_summary: str = "Unexpected internal error.",
-) -> ErrorRecord:
+def safe_error_record(exc: BaseException) -> ErrorRecord:
     """Return stable metadata without persisting arbitrary exception text."""
     if isinstance(exc, HHEError):
         return ErrorRecord(code=exc.code, summary=exc.summary)
     if isinstance(exc, KeyboardInterrupt):
         return ErrorRecord(code=ErrorCode.INTERRUPTED, summary="The run was interrupted.")
-    return ErrorRecord(code=ErrorCode.UNEXPECTED, summary=unexpected_summary)
+    return ErrorRecord(code=ErrorCode.UNEXPECTED, summary="Unexpected internal error.")

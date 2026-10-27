@@ -88,7 +88,7 @@ def run_convert(
     if not reader.manifest_days():
         logger.info("The archive in %s holds no day yet; nothing to convert.", layout.root)
         return ConvertResult(request.formats, ())
-    span = requested_range(reader, request.selection, clock)
+    span = requested_range(reader, request.selection, run.started_at)
 
     with ArchiveSession(
         layout,

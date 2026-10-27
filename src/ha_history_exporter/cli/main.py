@@ -17,7 +17,7 @@ from collections.abc import Callable
 from ..errors import ExitCode, HHEError, InternalError
 from .commands import config, convert, doctor, export, init, status, verify
 from .logging import FILE_ONLY, CommandLogging
-from .output import error_document, print_json, render_error
+from .output import error_document, print_json, render_error, say_interrupted
 from .parser import build_parser
 from .services import Services
 
@@ -36,16 +36,22 @@ def main(
     logs = CommandLogging(level, services.stderr, buffered=args.command in _WRITERS)
     try:
         return int(_HANDLERS[args.command](args, services, logs))
+    except InternalError as exc:
+        # The use case logged the traceback into the run's log file.
+        logger.error("%s", exc.summary, extra=FILE_ONLY)
+        return _failed(InternalError.during(exc.activity, logs.log_file), args, services)
     except HHEError as exc:
         logger.error("%s", exc.summary, extra=FILE_ONLY)
         return _failed(exc, args, services)
     except KeyboardInterrupt:
         logger.warning("Interrupted.", extra=FILE_ONLY)
-        services.stderr.write("\nInterrupted.\n")
+        say_interrupted(services.stderr)
         return int(ExitCode.INTERRUPTED)
     except Exception:
+        log_file = logs.traceback_file(services.clock.now())
         logger.exception("Unexpected internal error.", extra=FILE_ONLY)
-        return _failed(InternalError.during(f"{prog} {args.command}"), args, services)
+        error = InternalError.during(f"{prog} {args.command}", log_file)
+        return _failed(error, args, services)
     finally:
         logs.close()
 

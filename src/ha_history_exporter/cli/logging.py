@@ -2,18 +2,23 @@
 
 Records logged before the log file exists are kept in a bounded buffer and
 written into the file when it is attached; when the buffer overflows, the
-oldest records go and the file says how many. Tracebacks reach the log file
-only, never the terminal. See internal dev doc § "Errors and exit codes".
+oldest records go and the file says how many. Tracebacks reach a log file
+only, never the terminal: the run's, or for a command without one a crash log
+in HHE's directory of the system's temporary files. See internal dev doc
+§ "Errors and exit codes".
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
 from .. import fsio
+from ..settings import paths
 
 FORMAT = "%(asctime)s %(levelname)-8s %(name)s %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -106,6 +111,19 @@ class CommandLogging:
                 handler.handle(record)
         self._add(handler)
         self.log_file = path
+
+    def traceback_file(self, now: datetime) -> Path | None:
+        """The file that receives a defect's traceback: the run's log, else a new crash log.
+
+        None when no file can be written.
+        """
+        if self.log_file is None:
+            name = f"crash-{now:%Y%m%d-%H%M%S}-{os.getpid()}.log"
+            try:
+                self.attach_file(paths.default_temp_root() / name)
+            except OSError:
+                return None
+        return self.log_file
 
     def close(self) -> None:
         root = logging.getLogger()

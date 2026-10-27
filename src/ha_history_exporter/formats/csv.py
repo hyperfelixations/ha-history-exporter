@@ -8,27 +8,17 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
 from types import TracebackType
 from typing import BinaryIO, Self
 
-from ..domain.records import HistoryRecord, JsonValue
+from ..domain.records import HistoryRecord
 from ..domain.stored import stored_record
 from ..errors import ValidationError
 from ..fsio import ensure_dir
-
-COLUMNS = (
-    "entity_id",
-    "state",
-    "last_changed",
-    "last_updated",
-    "attributes_json",
-    "local_offset",
-    "extra_json",
-)
+from .base import TABLE_COLUMNS, json_object
 
 
 class CsvWriter:
@@ -36,7 +26,7 @@ class CsvWriter:
         ensure_dir(path.parent)
         self._handle: io.TextIOWrapper | None = path.open("w", encoding="utf-8", newline="")
         self._writer = csv.writer(self._handle)
-        self._writer.writerow(COLUMNS)
+        self._writer.writerow(TABLE_COLUMNS)
 
     def write(self, record: HistoryRecord) -> None:
         if self._handle is None:
@@ -75,18 +65,6 @@ class CsvWriter:
         self.close()
 
 
-def _json_object(value: str, column: str, location: str) -> dict[str, JsonValue] | None:
-    if value == "":
-        return None
-    try:
-        decoded = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"{location}: {column} is not valid JSON.") from exc
-    if decoded is not None and not isinstance(decoded, dict):
-        raise ValidationError(f"{location}: {column} must contain an object or null.")
-    return decoded
-
-
 def read_csv(stream: BinaryIO, name: str) -> Iterator[HistoryRecord]:
     text = io.TextIOWrapper(stream, encoding="utf-8", newline="")
     try:
@@ -94,28 +72,29 @@ def read_csv(stream: BinaryIO, name: str) -> Iterator[HistoryRecord]:
         header = next(reader, None)
         if header is None:
             raise ValidationError(f"{name}: the CSV file is empty.")
-        if tuple(header) != COLUMNS:
+        if tuple(header) != TABLE_COLUMNS:
             raise ValidationError(f"{name}: the CSV header does not match the HHE schema.")
         for row in reader:
             location = f"{name}, line {reader.line_num}"
-            if len(row) != len(COLUMNS):
+            if len(row) != len(TABLE_COLUMNS):
                 raise ValidationError(
-                    f"{location}: the row has {len(row)} values; the schema has {len(COLUMNS)}."
+                    f"{location}: the row has {len(row)} values; "
+                    f"the schema has {len(TABLE_COLUMNS)}."
                 )
-            values = dict(zip(COLUMNS, row, strict=True))
+            values = dict(zip(TABLE_COLUMNS, row, strict=True))
             yield stored_record(
                 {
                     "entity_id": values["entity_id"],
                     "state": values["state"],
                     "last_changed": values["last_changed"],
                     "last_updated": values["last_updated"],
-                    "attributes": _json_object(
-                        values["attributes_json"], "attributes_json", location
+                    "attributes": json_object(
+                        values["attributes_json"] or None, "attributes_json", location
                     ),
                     "local_offset": values["local_offset"],
                 },
                 location=location,
-                extra=_json_object(values["extra_json"], "extra_json", location) or {},
+                extra=json_object(values["extra_json"] or None, "extra_json", location) or {},
             )
     finally:
         text.detach()

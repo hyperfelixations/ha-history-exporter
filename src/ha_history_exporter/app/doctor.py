@@ -32,7 +32,7 @@ from .verify import Depth, verify_day
 
 OK, WARN, FAIL = CheckStatus.OK, CheckStatus.WARN, CheckStatus.FAIL
 LOW_DISK_GIB = 5
-#: The lock file of earlier versions; HHE no longer uses it.
+#: A lock file name HHE does not use; reported, never touched.
 FOREIGN_LOCK = ".hhe.lock"
 
 

@@ -194,7 +194,7 @@ names `HHE_URL` and `HHE_TOKEN`. HHE reports a variable that starts with
 | `requests.sleep_between_requests` | `0.7` | `HHE_REQUESTS_SLEEP_BETWEEN_REQUESTS` | `--sleep-between-requests` | Pause between history requests, in seconds. |
 | `requests.sleep_between_days` | `5` | `HHE_REQUESTS_SLEEP_BETWEEN_DAYS` | `--sleep-between-days` | Pause between exported days, in seconds. |
 | `requests.timeout` | `120` | `HHE_REQUESTS_TIMEOUT` | `--timeout` | HTTP read timeout per request, in seconds. |
-| `requests.max_retries` | `3` | `HHE_REQUESTS_MAX_RETRIES` | `--max-retries` | Retries of a request after a timeout, a lost connection, HTTP 429 or 500-504. |
+| `requests.max_retries` | `3` | `HHE_REQUESTS_MAX_RETRIES` | `--max-retries` | Retries of a request after a timeout, a lost connection, HTTP 429, 500 or 502-504. |
 | `requests.backoff` | `[2, 5, 15]` | `HHE_REQUESTS_BACKOFF` |  | Wait times between retries, in seconds; the last one repeats. |
 | `history_request.minimal_response` | `false` | `HHE_HISTORY_REQUEST_MINIMAL_RESPONSE` |  | Ask Home Assistant for a reduced history payload. |
 | `history_request.no_attributes` | `false` | `HHE_HISTORY_REQUEST_NO_ATTRIBUTES` |  | Ask Home Assistant to omit entity attributes. |
@@ -452,7 +452,7 @@ restores the previous files of that day. `status`, `verify`, `doctor` and
 | `2` | usage or configuration problem |
 | `3` | Home Assistant rejected the access token |
 | `4` | Home Assistant is unreachable or unavailable, answered unusably, or the TLS check failed |
-| `70` | unexpected internal error; the traceback is in the log file |
+| `70` | unexpected internal error; the message names the log file that holds the traceback |
 | `130` | interrupted with Ctrl-C |
 
 When a day fails, the export continues with the next day. A rejected token, an

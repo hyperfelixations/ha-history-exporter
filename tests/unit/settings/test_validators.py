@@ -162,8 +162,9 @@ def test_formats_in_a_document_and_as_text(tmp_path: Path) -> None:
     assert Formats().display(frozenset()) == "none"
     with pytest.raises(InvalidValue, match="does not know the output format 'xml'"):
         Formats().from_text("jsonl,xml", ctx)
-    with pytest.raises(InvalidValue, match="must not contain none"):
-        Formats().from_toml(["none"], ctx)
+    for spelling in ("none", "NONE", " None "):
+        with pytest.raises(InvalidValue, match="must not contain none"):
+            Formats().from_toml([spelling], ctx)
     with pytest.raises(InvalidValue, match="list of output formats"):
         Formats().from_toml("jsonl", ctx)
 
