@@ -14,14 +14,15 @@ from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from ha_history_exporter.archive.store import load_manifest
+from ha_history_exporter.domain.window import DayIdentity
 from ha_history_exporter.entity_snapshot import build_snapshot, save_snapshot
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
 from ha_history_exporter.exporter import run_export
-from ha_history_exporter.manifest import load_existing
 from ha_history_exporter.planner import DayDecision, ExportPlan
 from ha_history_exporter.runtime.workspace import new_run_id
 from ha_history_exporter.settings import HistoryRequestSettings
-from ha_history_exporter.time_utils import format_iso, local_day_bounds, to_utc
+from ha_history_exporter.time_utils import local_day_bounds
 from tests.helpers import FakeHomeAssistantClient, make_config
 
 FailureKind = Literal["unreachable", "api", "auth"]
@@ -140,14 +141,7 @@ def stored_status(output_dir: Path, day: date, timezone: str = "Europe/Berlin") 
     """
     cfg = make_config(output_dir.parent)
     cfg = replace(cfg, export=replace(cfg.export, output_dir=str(output_dir), timezone=timezone))
-    start, end = local_day_bounds(day, ZoneInfo(timezone))
-    loaded = load_existing(
-        day=day,
-        tz_name=timezone,
-        start_local=format_iso(start),
-        end_local=format_iso(end),
-        start_utc=format_iso(to_utc(start)),
-        end_utc=format_iso(to_utc(end)),
-        cfg=cfg,
-    )
-    return None if loaded is None else loaded.status
+    zone = ZoneInfo(timezone)
+    start, end = local_day_bounds(day, zone)
+    loaded = load_manifest(cfg.layout, DayIdentity.of(day, zone, start, end))
+    return None if loaded is None else loaded.status.value

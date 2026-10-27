@@ -7,55 +7,27 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ha_history_exporter import manifest, planner
+from ha_history_exporter import planner
+from ha_history_exporter.domain.formats import Format
+from ha_history_exporter.domain.manifest import ManifestStatus
 from ha_history_exporter.errors import ConfigError, ExportError
 from ha_history_exporter.settings import RecorderSettings
 from tests.helpers import make_config
+from tests.support.manifests import manifest14
+from tests.support.manifests import write_manifest as support_write
 
 BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 28)
 
 
 def write_manifest(cfg, *, status="ok", output_files=None):
-    item = manifest.create(
+    selected = output_files or {"jsonl": f"{DAY}.jsonl", "csv": None, "parquet": None}
+    manifest = manifest14(
         DAY,
-        "Europe/Berlin",
-        "2026-07-28T00:00:00+02:00",
-        "2026-07-29T00:00:00+02:00",
-        "2026-07-27T22:00:00+00:00",
-        "2026-07-28T22:00:00+00:00",
-        cfg,
+        status=ManifestStatus(status),
+        formats=[Format(name) for name, filename in selected.items() if filename is not None],
     )
-    item.status = status
-    item.state_object_count = 4
-    item.entity_count_requested = 1
-    item.entity_count_with_history = 1
-    selected = output_files or {
-        "jsonl": f"{DAY}.jsonl",
-        "csv": None,
-        "parquet": None,
-    }
-    if status == "ok":
-        item.output_files = selected
-        item.artifacts = {
-            name: (
-                {
-                    "filename": filename,
-                    "size_bytes": 100,
-                    "sha256": "a" * 64,
-                    "row_count": 4,
-                    "logical_sha256": "b" * 64,
-                }
-                if filename is not None
-                else None
-            )
-            for name, filename in selected.items()
-        }
-    elif status == "failed":
-        item.error = "Synthetic export failure."
-        item.error_code = "export_failed"
-    manifest.save(item, cfg, 0, 0)
-    return cfg.layout.day_file(DAY, "manifest.json")
+    return support_write(Path(cfg.export.output_dir), manifest)
 
 
 def patch_calendar(monkeypatch):

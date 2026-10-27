@@ -15,7 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import fsio
-from .time_utils import format_iso
+from .domain.window import format_iso
 
 logger = logging.getLogger(__name__)
 

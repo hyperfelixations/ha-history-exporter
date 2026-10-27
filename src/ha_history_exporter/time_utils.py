@@ -121,8 +121,3 @@ def parse_date_arg(s: str, tz: ZoneInfo) -> date:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
         return date.fromisoformat(s)
     raise ValueError(f"Unrecognised date argument: '{s}'. Use YYYY-MM-DD, 'yesterday', or 'today'.")
-
-
-def format_iso(dt: datetime) -> str:
-    """Return an ISO-8601 string with UTC offset (no microseconds)."""
-    return dt.replace(microsecond=0).isoformat()

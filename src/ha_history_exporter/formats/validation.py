@@ -14,22 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..domain.formats import FORMAT_ORDER, Format
+from ..domain.manifest import Artifact
 from ..domain.records import HistoryRecord, LogicalDigest
 from ..domain.stored import RecordContract, check_against_request
 from ..errors import ValidationError
 from . import FORMATS
 from .base import HashingReader, sha256_of
-
-
-@dataclass(frozen=True)
-class ArtifactMetadata:
-    """Physical and logical evidence for one artifact, as the manifest records it."""
-
-    filename: str
-    size_bytes: int
-    sha256: str
-    row_count: int
-    logical_sha256: str
 
 
 @dataclass(frozen=True)
@@ -45,7 +35,7 @@ def inspect_artifact(
     fmt: Format,
     *,
     contract: RecordContract | None = None,
-) -> ArtifactMetadata:
+) -> Artifact:
     """Decode *path* completely and report what it holds.
 
     With a *contract*, every record must belong to that request.
@@ -86,7 +76,7 @@ def inspect_artifact(
     except UnicodeDecodeError as exc:
         raise ValidationError(f"{label} file {path.name} is not valid UTF-8.") from exc
 
-    return ArtifactMetadata(
+    return Artifact(
         filename=path.name,
         size_bytes=size,
         sha256=sha256,
@@ -100,9 +90,9 @@ def validate_artifacts(
     *,
     contract: RecordContract,
     expected: CaptureSummary,
-) -> dict[Format, ArtifactMetadata]:
+) -> dict[Format, Artifact]:
     """Inspect every artifact and prove it holds exactly the captured records."""
-    artifacts: dict[Format, ArtifactMetadata] = {}
+    artifacts: dict[Format, Artifact] = {}
     for fmt in FORMAT_ORDER:
         if fmt not in paths:
             continue

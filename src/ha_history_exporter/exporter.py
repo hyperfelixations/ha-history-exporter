@@ -2,59 +2,62 @@
 
 One run owns one working directory and one lock on the output directory; see
 :mod:`ha_history_exporter.runtime.workspace`. For each day in the export plan:
-  1. Stream state objects from HA history into the working directory, line by
-     line — no in-memory accumulation.
-  2. Derive requested formats from JSONL and validate every prepared artifact.
-  3. Prepare the successful manifest in the working directory.
-  4. Publish all artifacts and the manifest as one crash-recoverable day
-     transaction, making the manifest visible last.
-  5. Append a line to the run log (metadata/export_runs.jsonl).
+  1. Stream the day's history into every requested format at once.
+  2. Read every artifact back and prove it holds exactly the captured records.
+  3. Build the day manifest and publish artifacts and manifest as one
+     crash-recoverable day transaction, the manifest last.
+  4. Append a line to the run log (metadata/export_runs.jsonl).
 
-Recovery:
-  - An interrupted run leaves its working directory behind; a later run removes
-    it once it is older than the staleness threshold.
-  - An interrupted publication is rolled back before a new run starts, so an
-    earlier successful day generation remains byte-for-byte intact.
+An interrupted publication is rolled back before a new run starts, so an
+earlier successful day generation remains byte-for-byte intact.
 """
 
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import manifest as mf
+from . import __version__, fsio
+from .archive.store import load_manifest
 from .domain.formats import FORMAT_ORDER, Format
+from .domain.manifest import (
+    Artifact,
+    FailedBatch,
+    Manifest14,
+    ManifestStatus,
+    Retention,
+    RetentionStatus,
+    StoredManifest,
+)
 from .domain.query import HistoryQuery
 from .domain.records import LogicalDigest
 from .domain.stored import RecordContract
+from .domain.window import DayIdentity, format_iso
 from .domain.wire import iter_normalized_history
 from .errors import (
     AuthError,
     ConfigError,
+    ErrorRecord,
     ExportError,
     Remedy,
     safe_error_record,
 )
 from .formats import FORMATS, missing_requirements
-from .formats.validation import ArtifactMetadata, CaptureSummary, validate_artifacts
+from .formats.validation import CaptureSummary, validate_artifacts
 from .ha_client import HomeAssistantClient
 from .planner import ExportPlan
 from .runtime.transaction import DayTransaction
 from .runtime.workspace import Workspace, open_workspace
 from .settings import Config
-from .time_utils import (
-    format_iso,
-    local_day_bounds,
-    partial_day_bounds,
-    to_utc,
-)
+from .time_utils import local_day_bounds, partial_day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,67 @@ def run_export(
         workspace.close()
 
 
+@dataclass
+class _DayProgress:
+    """What one day's attempt has established so far; becomes its manifest."""
+
+    identity: DayIdentity
+    started_at: str
+    started_monotonic: float
+    request_count: int = 0
+    failed_request_count: int = 0
+    retried_request_count: int = 0
+    state_object_count: int = 0
+    entity_count_with_history: int = 0
+    zero_history_entities: tuple[str, ...] = ()
+    failed_batches: list[FailedBatch] = field(default_factory=list)
+    artifacts: dict[Format, Artifact] = field(default_factory=dict)
+
+
+def _manifest(
+    cfg: Config,
+    progress: _DayProgress,
+    *,
+    status: ManifestStatus,
+    partial: bool,
+    entity_count_total: int,
+    entity_count_requested: int,
+    tz: ZoneInfo,
+    error: ErrorRecord | None = None,
+) -> Manifest14:
+    keep_days = cfg.recorder.purge_keep_days
+    if partial:
+        retention = Retention(RetentionStatus.PARTIAL_CURRENT, keep_days)
+    elif keep_days is not None:
+        retention = Retention(RetentionStatus.KNOWN_SAFE, keep_days)
+    else:
+        retention = Retention(RetentionStatus.UNKNOWN, None)
+    return Manifest14(
+        identity=progress.identity,
+        status=status,
+        export_started_at=progress.started_at,
+        export_finished_at=format_iso(datetime.now(tz)),
+        duration_seconds=round(time.monotonic() - progress.started_monotonic, 1),
+        entity_count_current=entity_count_total,
+        entity_count_requested=entity_count_requested,
+        entity_count_with_history=progress.entity_count_with_history,
+        entity_count_zero_history=len(progress.zero_history_entities),
+        state_object_count=progress.state_object_count,
+        batch_size_entities=cfg.requests.batch_size,
+        request_count=progress.request_count,
+        failed_request_count=progress.failed_request_count,
+        retried_request_count=progress.retried_request_count,
+        query=_query(cfg),
+        retention=retention,
+        artifacts=progress.artifacts if error is None else {},
+        zero_history_entities=progress.zero_history_entities,
+        failed_batches=tuple(progress.failed_batches),
+        error=None if error is None else error.summary,
+        error_code=None if error is None else error.code,
+        script_version=__version__,
+    )
+
+
 def _run_days(
     cfg: Config,
     days: list[date],
@@ -168,58 +232,35 @@ def _run_days(
         else:
             start_dt, end_dt = local_day_bounds(day, tz)
         day_str = str(day)
+        identity = DayIdentity.of(day, tz, start_dt, end_dt)
 
         logger.info(
             "== Day %d/%d: %s  [%s -> %s] ==",
             day_idx + 1,
             len(days),
             day_str,
-            format_iso(start_dt),
-            format_iso(end_dt),
+            identity.start_local,
+            identity.end_local,
         )
 
-        existing_manifest = mf.load_existing(
-            day=day,
-            tz_name=cfg.export.timezone,
-            start_local=format_iso(start_dt),
-            end_local=format_iso(end_dt),
-            start_utc=format_iso(to_utc(start_dt)),
-            end_utc=format_iso(to_utc(end_dt)),
-            cfg=cfg,
+        # The previous manifest stays untouched until the new generation commits.
+        existing_manifest = load_manifest(cfg.layout, identity)
+        progress = _DayProgress(
+            identity=identity,
+            started_at=format_iso(datetime.now(tz)),
+            started_monotonic=time.monotonic(),
         )
-        # Create a new attempt from the active request. The previous manifest
-        # stays untouched until the whole new generation commits.
-        m = mf.create(
-            day=day,
-            tz_name=cfg.export.timezone,
-            start_local=format_iso(start_dt),
-            end_local=format_iso(end_dt),
-            start_utc=format_iso(to_utc(start_dt)),
-            end_utc=format_iso(to_utc(end_dt)),
-            cfg=cfg,
-        )
-        m.entity_count_current = entity_count_total
-        m.entity_count_requested = len(entity_ids)
-        m.batch_size_entities = cfg.requests.batch_size
-        m.history_request_options = {
-            "minimal_response": cfg.history_request.minimal_response,
-            "no_attributes": cfg.history_request.no_attributes,
-            "significant_changes_only": cfg.history_request.significant_changes_only,
-            "skip_initial_state": cfg.history_request.skip_initial_state,
-        }
-        m.capture_profile = mf.capture_profile(cfg.history_request)
-        m.retention = {
-            "status": (
-                "partial_current"
-                if is_partial
-                else "known_safe"
-                if cfg.recorder.purge_keep_days is not None
-                else "unknown"
-            ),
-            "purge_keep_days": cfg.recorder.purge_keep_days,
-        }
-        m.mark_started(tz)
 
+        build = functools.partial(
+            _manifest,
+            cfg,
+            progress,
+            partial=is_partial,
+            entity_count_total=entity_count_total,
+            entity_count_requested=len(entity_ids),
+            tz=tz,
+        )
+        manifest: Manifest14 | None = None
         try:
             finalized = _export_day(
                 cfg=cfg,
@@ -229,24 +270,21 @@ def _run_days(
                 end_dt=end_dt,
                 entity_ids=entity_ids,
                 client=client,
-                manifest=m,
+                progress=progress,
                 tz=tz,
                 workspace=workspace,
                 sleep=sleep,
             )
-            m.mark_finished(tz, status="partial" if is_partial else "ok")
+            manifest = build(status=ManifestStatus.PARTIAL if is_partial else ManifestStatus.OK)
             manifest_temp = workspace.work_dir / f"{day_str}.manifest.json"
-            mf.write_file(m, manifest_temp)
+            fsio.atomic_write(manifest_temp, manifest.encode())
             DayTransaction(
                 workspace=workspace,
                 day=day_str,
                 artifacts=[
-                    (
-                        finalized.prepared[fmt],
-                        cfg.layout.day_file(day, fmt.value),
-                    )
+                    (finalized[fmt], cfg.layout.day_file(day, fmt.value))
                     for fmt in FORMAT_ORDER
-                    if fmt in finalized.prepared
+                    if fmt in finalized
                 ],
                 manifest=(manifest_temp, cfg.layout.day_file(day, "manifest.json")),
                 locked_file_retries=cfg.storage.locked_file_retries,
@@ -255,45 +293,24 @@ def _run_days(
             logger.info(
                 "Day %s done - %d state objects, %d/%d entities had history.",
                 day_str,
-                m.state_object_count,
-                m.entity_count_with_history,
+                progress.state_object_count,
+                progress.entity_count_with_history,
                 len(entity_ids),
             )
 
         except AuthError as exc:
             logger.error("Day %s aborted due to an authentication error.", day_str)
-            m.mark_finished(tz, status="failed")
-            error = safe_error_record(exc)
-            m.error_code = error.code
-            m.error = error.summary
-            m.output_files = {fmt.value: None for fmt in FORMAT_ORDER}
-            m.artifacts = {fmt.value: None for fmt in FORMAT_ORDER}
-            if existing_manifest is None:
-                mf.save(
-                    m,
-                    cfg,
-                    cfg.storage.locked_file_retries,
-                    cfg.storage.locked_file_retry_sleep,
-                )
+            manifest = build(status=ManifestStatus.FAILED, error=safe_error_record(exc))
+            _save_failure(cfg, day, manifest, existing_manifest)
             raise  # fatal for the whole run
         except Exception as exc:
-            error = safe_error_record(exc)
             logger.error("Day %s failed (%s).", day_str, type(exc).__name__)
-            m.mark_finished(tz, status="failed")
-            m.error_code = error.code
-            m.error = error.summary
-            m.output_files = {fmt.value: None for fmt in FORMAT_ORDER}
-            m.artifacts = {fmt.value: None for fmt in FORMAT_ORDER}
-            if existing_manifest is None:
-                mf.save(
-                    m,
-                    cfg,
-                    cfg.storage.locked_file_retries,
-                    cfg.storage.locked_file_retry_sleep,
-                )
+            manifest = build(status=ManifestStatus.FAILED, error=safe_error_record(exc))
+            _save_failure(cfg, day, manifest, existing_manifest)
             any_error = True
         finally:
-            _append_run_log(cfg, day_str, m)
+            if manifest is not None:
+                _append_run_log(cfg, day_str, manifest)
 
         if day_idx < len(days) - 1:
             logger.debug(
@@ -303,6 +320,20 @@ def _run_days(
             sleep(cfg.requests.sleep_between_days)
 
     return 1 if any_error else 0
+
+
+def _save_failure(
+    cfg: Config, day: date, manifest: Manifest14, existing: StoredManifest | None
+) -> None:
+    """Record a failed attempt, unless the day already has a manifest to keep."""
+    if existing is not None:
+        return
+    fsio.atomic_write(
+        cfg.layout.day_file(day, "manifest.json"),
+        manifest.encode(),
+        retries=cfg.storage.locked_file_retries,
+        retry_sleep=cfg.storage.locked_file_retry_sleep,
+    )
 
 
 # ── Day-level export ──────────────────────────────────────────────────────────
@@ -316,12 +347,15 @@ def _export_day(
     end_dt: datetime,
     entity_ids: list[str],
     client: HomeAssistantClient,
-    manifest: mf.DayManifest,
+    progress: _DayProgress,
     tz: ZoneInfo,
     workspace: Workspace,
     sleep: Callable[[float], None] = time.sleep,
-) -> _FinalizedDay:
-    """Fetch one day into the working directory and validate every artifact."""
+) -> dict[Format, Path]:
+    """Fetch one day into the working directory and validate every artifact.
+
+    Returns the prepared artifact of every requested format.
+    """
     work_dir = workspace.work_dir
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -338,14 +372,14 @@ def _export_day(
         end_dt=end_dt,
         entity_ids=entity_ids,
         client=client,
-        manifest=manifest,
+        progress=progress,
         tz=tz,
         sleep=sleep,
     )
 
-    manifest.retried_request_count = fetched.retried
+    progress.retried_request_count = fetched.retried
     if fetched.failed_batches:
-        manifest.failed_batches = fetched.failed_batches
+        progress.failed_batches = fetched.failed_batches
         raise ExportError(
             f"{len(fetched.failed_batches)} batch(es) failed for {day_str}.",
             details=(
@@ -377,27 +411,22 @@ def _export_day(
             context={"day": day_str},
         )
 
-    finalized = _finalize_day(
-        cfg=cfg,
-        day=day,
-        temp=temp,
-        fetched=fetched,
-        requested_entity_ids=entity_ids,
-        start_dt=start_dt,
-        end_dt=end_dt,
-        tz=tz,
+    progress.artifacts = validate_artifacts(
+        temp,
+        contract=RecordContract(
+            requested_entity_ids=frozenset(entity_ids),
+            start=start_dt.astimezone(UTC),
+            end=end_dt.astimezone(UTC),
+            allow_start_state=not cfg.history_request.skip_initial_state,
+            timezone=tz,
+        ),
+        expected=CaptureSummary(rows=fetched.state_count, logical_sha256=fetched.logical_sha256),
     )
 
     zero_history = sorted(set(entity_ids) - fetched.entities_with_history)
-    manifest.state_object_count = fetched.state_count
-    manifest.entity_count_with_history = len(fetched.entities_with_history)
-    manifest.entity_count_zero_history = len(zero_history)
-    manifest.zero_history_entities = zero_history
-    manifest.output_files = {fmt.value: finalized.written.get(fmt) for fmt in FORMAT_ORDER}
-    manifest.artifacts = {
-        fmt.value: asdict(finalized.artifacts[fmt]) if fmt in finalized.artifacts else None
-        for fmt in FORMAT_ORDER
-    }
+    progress.state_object_count = fetched.state_count
+    progress.entity_count_with_history = len(fetched.entities_with_history)
+    progress.zero_history_entities = tuple(zero_history)
 
     if zero_history:
         logger.debug(
@@ -406,7 +435,7 @@ def _export_day(
             len(zero_history),
         )
 
-    return finalized
+    return temp
 
 
 @dataclass
@@ -416,17 +445,8 @@ class _FetchedDay:
     state_count: int = 0
     logical_sha256: str = ""
     entities_with_history: set[str] = field(default_factory=set)
-    failed_batches: list[dict[str, object]] = field(default_factory=list)
+    failed_batches: list[FailedBatch] = field(default_factory=list)
     retried: int = 0
-
-
-@dataclass
-class _FinalizedDay:
-    """Validated artifacts and the formats published from them."""
-
-    written: dict[Format, str]
-    prepared: dict[Format, Path]
-    artifacts: dict[Format, ArtifactMetadata]
 
 
 def _query(cfg: Config) -> HistoryQuery:
@@ -446,7 +466,7 @@ def _fetch_day_rows(
     end_dt: datetime,
     entity_ids: list[str],
     client: HomeAssistantClient,
-    manifest: mf.DayManifest,
+    progress: _DayProgress,
     tz: ZoneInfo,
     sleep: Callable[[float], None],
 ) -> _FetchedDay:
@@ -480,10 +500,10 @@ def _fetch_day_rows(
                     **query.options(),
                 )
                 result.retried += client.total_retries - retries_before
-                manifest.request_count += 1
+                progress.request_count += 1
 
             except AuthError:
-                manifest.failed_request_count += 1
+                progress.failed_request_count += 1
                 raise
             except Exception as exc:
                 error = safe_error_record(
@@ -492,14 +512,14 @@ def _fetch_day_rows(
                 )
                 logger.error("  Batch %d failed (%s).", batch_idx, type(exc).__name__)
                 result.failed_batches.append(
-                    {
-                        "batch_index": batch_idx,
-                        "entity_count": len(batch),
-                        "error_code": error.code,
-                        "error": error.summary,
-                    }
+                    FailedBatch(
+                        batch_index=batch_idx,
+                        entity_count=len(batch),
+                        error_code=error.code,
+                        error=error.summary,
+                    )
                 )
-                manifest.failed_request_count += 1
+                progress.failed_request_count += 1
                 # Continue with remaining batches - day will be marked failed at end.
                 if batch_idx < total_batches:
                     sleep(cfg.requests.sleep_between_requests)
@@ -526,38 +546,6 @@ def _fetch_day_rows(
     return result
 
 
-def _finalize_day(
-    cfg: Config,
-    day: date,
-    temp: dict[Format, Path],
-    fetched: _FetchedDay,
-    requested_entity_ids: list[str],
-    start_dt: datetime,
-    end_dt: datetime,
-    tz: ZoneInfo,
-) -> _FinalizedDay:
-    """Prove that every prepared artifact holds exactly the captured records.
-
-    Nothing reaches a final path before this read-back has passed.
-    """
-    artifacts = validate_artifacts(
-        temp,
-        contract=RecordContract(
-            requested_entity_ids=frozenset(requested_entity_ids),
-            start=start_dt.astimezone(UTC),
-            end=end_dt.astimezone(UTC),
-            allow_start_state=not cfg.history_request.skip_initial_state,
-            timezone=tz,
-        ),
-        expected=CaptureSummary(rows=fetched.state_count, logical_sha256=fetched.logical_sha256),
-    )
-    return _FinalizedDay(
-        written={fmt: cfg.layout.day_file(day, fmt.value).name for fmt in temp},
-        prepared=dict(temp),
-        artifacts=artifacts,
-    )
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -566,22 +554,22 @@ def _chunks[T](lst: list[T], n: int) -> Iterator[list[T]]:
         yield lst[i : i + n]
 
 
-def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:
+def _append_run_log(cfg: Config, day_str: str, manifest: Manifest14) -> None:
     """Append one line to metadata/export_runs.jsonl."""
+    entry = {
+        "day": day_str,
+        "status": manifest.status.value,
+        "started_at": manifest.export_started_at,
+        "finished_at": manifest.export_finished_at,
+        "state_object_count": manifest.state_object_count,
+        "entity_count_requested": manifest.entity_count_requested,
+        "entity_count_with_history": manifest.entity_count_with_history,
+        "duration_seconds": manifest.duration_seconds,
+    }
     try:
-        cfg.layout.metadata_dir.mkdir(parents=True, exist_ok=True)
-        log_path = cfg.layout.metadata_dir / "export_runs.jsonl"
-        entry = {
-            "day": day_str,
-            "status": m.status,
-            "started_at": m.export_started_at,
-            "finished_at": m.export_finished_at,
-            "state_object_count": m.state_object_count,
-            "entity_count_requested": m.entity_count_requested,
-            "entity_count_with_history": m.entity_count_with_history,
-            "duration_seconds": m.duration_seconds,
-        }
-        with log_path.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception as exc:
+        fsio.append_durable(
+            cfg.layout.metadata_dir / "export_runs.jsonl",
+            (json.dumps(entry, ensure_ascii=False) + "\n").encode("utf-8"),
+        )
+    except OSError as exc:
         logger.warning("Could not append to export_runs.jsonl (%s).", type(exc).__name__)

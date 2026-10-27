@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -12,7 +13,15 @@ from ha_history_exporter.cli.commands import export as export_command
 from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.errors import AuthError
 from tests.helpers import FakeCliClient, state_row
-from tests.test_manifest import valid_data
+
+LEGACY_1_3 = (
+    Path(__file__).parent
+    / "contract"
+    / "fixtures"
+    / "legacy_manifests"
+    / "schema-1.3"
+    / "2026-07-28.manifest.json"
+)
 
 
 def write_config(tmp_path: Path) -> Path:
@@ -233,10 +242,7 @@ def test_main_short_circuits_existing_day_before_client(tmp_path, monkeypatch):
     set_synthetic_env(monkeypatch)
     export = tmp_path / "output" / "exports" / "daily" / "2026" / "07"
     export.mkdir(parents=True)
-    (export / "2026-07-28.manifest.json").write_text(
-        json.dumps(valid_data("1.3")),
-        encoding="utf-8",
-    )
+    shutil.copy2(LEGACY_1_3, export / "2026-07-28.manifest.json")
 
     class ForbiddenClient:
         def __init__(self, **kwargs):

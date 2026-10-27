@@ -1,10 +1,39 @@
-"""Local calendar time: UTC offsets as stored in every record."""
+"""Local calendar time: day identities and the UTC offsets stored in every record."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import TypeGuard
 from zoneinfo import ZoneInfo
+
+
+def format_iso(instant: datetime) -> str:
+    """ISO 8601 with offset and whole seconds, as manifests record boundaries."""
+    return instant.replace(microsecond=0).isoformat()
+
+
+@dataclass(frozen=True)
+class DayIdentity:
+    """The textual boundaries that identify one exported day in its manifest."""
+
+    day: date
+    timezone: str
+    start_local: str
+    end_local: str
+    start_utc: str
+    end_utc: str
+
+    @classmethod
+    def of(cls, day: date, timezone: ZoneInfo, start: datetime, end: datetime) -> DayIdentity:
+        return cls(
+            day=day,
+            timezone=timezone.key,
+            start_local=format_iso(start),
+            end_local=format_iso(end),
+            start_utc=format_iso(start.astimezone(UTC)),
+            end_utc=format_iso(end.astimezone(UTC)),
+        )
 
 
 def offset_label(instant: datetime, timezone: ZoneInfo) -> str:

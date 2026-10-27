@@ -15,16 +15,16 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-from . import manifest as mf
+from .archive.store import load_manifest
+from .domain.manifest import ManifestStatus
+from .domain.window import DayIdentity
 from .errors import ConfigError, Remedy
 from .settings import Config
 from .time_utils import (
-    format_iso,
     is_day_complete,
     iter_days,
     latest_complete_day,
     local_day_bounds,
-    to_utc,
     today_local,
 )
 
@@ -234,15 +234,7 @@ def _check_existing(day: date, cfg: Config, tz: ZoneInfo | None = None) -> str |
     """
     timezone = tz or ZoneInfo(cfg.export.timezone)
     start, end = local_day_bounds(day, timezone)
-    loaded = mf.load_existing(
-        day=day,
-        tz_name=cfg.export.timezone,
-        start_local=format_iso(start),
-        end_local=format_iso(end),
-        start_utc=format_iso(to_utc(start)),
-        end_utc=format_iso(to_utc(end)),
-        cfg=cfg,
-    )
-    if loaded is None or loaded.status != "ok":
+    loaded = load_manifest(cfg.layout, DayIdentity.of(day, timezone, start, end))
+    if loaded is None or loaded.status is not ManifestStatus.OK:
         return None
     return f"manifest.json status=ok, {loaded.state_object_count} state objects"

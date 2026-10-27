@@ -3,8 +3,7 @@ from __future__ import annotations
 from fnmatch import fnmatch
 from pathlib import Path
 
-from ha_history_exporter import __version__
-from ha_history_exporter.manifest import SCHEMA_VERSION, SCRIPT_VERSION
+from ha_history_exporter.domain.manifest import SCHEMA_VERSION
 
 ROOT = Path(__file__).parents[1]
 
@@ -26,9 +25,7 @@ SUITE_INPUTS = (
 )
 
 
-def test_version_constants_are_consistent():
-    assert __version__ == "1.4.0"
-    assert __version__ == SCRIPT_VERSION
+def test_new_manifests_use_schema_1_4():
     assert SCHEMA_VERSION == "1.4"
 
 

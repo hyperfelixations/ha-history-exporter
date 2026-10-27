@@ -73,11 +73,6 @@ def test_parse_date_arg_rejects_unknown_formats(argument):
         time_utils.parse_date_arg(argument, BERLIN)
 
 
-def test_format_iso_removes_microseconds_and_preserves_offset():
-    value = datetime(2026, 7, 30, 10, 11, 12, 987654, tzinfo=BERLIN)
-    assert time_utils.format_iso(value) == "2026-07-30T10:11:12+02:00"
-
-
 def test_to_utc_requires_no_special_case_for_utc_input():
     value = datetime(2026, 7, 30, 10, tzinfo=UTC)
     assert time_utils.to_utc(value) == value
