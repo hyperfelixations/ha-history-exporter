@@ -52,6 +52,9 @@ where = ["src"]
 include = ["ha_history_exporter*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+ha_history_exporter = ["schemas/*.json"]
+
 [tool.setuptools.dynamic]
 version = { attr = "ha_history_exporter.__version__" }
 

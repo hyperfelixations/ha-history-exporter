@@ -21,6 +21,7 @@ SDIST_REQUIRED = (
     "README.md",
     "pyproject.toml",
     "src/ha_history_exporter/__init__.py",
+    "src/ha_history_exporter/schemas/manifest-1.4.schema.json",
     "tests/conftest.py",
     "tests/contract/golden",
 )
@@ -90,6 +91,7 @@ environment = Path(sys.prefix).resolve()
 assert metadata.version("ha-history-exporter") == ha_history_exporter.__version__
 assert module.is_relative_to(environment), (module, environment)
 assert not module.is_relative_to(repository), (module, repository)
+assert module.with_name("schemas").joinpath("manifest-1.4.schema.json").is_file()
 """
         _run([str(python), "-c", contract, str(repository)], cwd=workdir)
         for name in ("hhe", "ha-history-exporter"):
