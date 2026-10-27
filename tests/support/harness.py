@@ -24,7 +24,8 @@ from ha_history_exporter.domain.snapshot import snapshot_document
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
 from ha_history_exporter.settings import HistoryRequestSettings
-from tests.helpers import FakeHomeAssistantClient, make_config
+from tests.helpers import make_config
+from tests.support.fake_source import FakeHistorySource, HistoryRequest
 
 FailureKind = Literal["unreachable", "api", "auth"]
 
@@ -66,7 +67,7 @@ class Production:
     output_dir: Path
     exit_code: int | None
     error: type[BaseException] | None = None
-    history_calls: list[dict[str, Any]] = field(default_factory=list)
+    history_calls: list[HistoryRequest] = field(default_factory=list)
 
 
 def _exception(failure: Failure) -> HHEError:
@@ -92,11 +93,9 @@ def produce(scenario: Scenario, root: Path) -> Production:
         export=replace(cfg.export, timezone=ZoneInfo(scenario.timezone)),
         history_request=HistoryRequestSettings(skip_initial_state=scenario.skip_initial_state),
     )
-    client = FakeHomeAssistantClient(
-        [
-            _exception(response) if isinstance(response, Failure) else response
-            for response in scenario.responses
-        ]
+    source = FakeHistorySource(
+        _exception(response) if isinstance(response, Failure) else response
+        for response in scenario.responses
     )
     plan = ExportPlan(
         requested_start=scenario.days[0],
@@ -116,14 +115,14 @@ def produce(scenario: Scenario, root: Path) -> Production:
             plan=plan,
             entity_ids=list(scenario.entity_ids),
             entity_count_total=scenario.entity_count_total,
-            client=client,
+            source=source,
             tz=ZoneInfo(scenario.timezone),
             sleep=lambda _seconds: None,
             now=scenario.now,
         )
     except HHEError as exc:
-        return Production(cfg.export.output_dir, None, type(exc), client.calls)
-    return Production(cfg.export.output_dir, exit_code, None, client.calls)
+        return Production(cfg.export.output_dir, None, type(exc), source.calls)
+    return Production(cfg.export.output_dir, exit_code, None, source.calls)
 
 
 def produce_snapshot(states: list[dict[str, Any]], output_dir: Path) -> Path:

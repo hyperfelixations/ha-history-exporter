@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any, ClassVar
 from zoneinfo import ZoneInfo
-
-import requests
 
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.domain.formats import Format
@@ -116,46 +112,6 @@ def state_row(
     }
 
 
-class FakeHomeAssistantClient:
-    """In-memory client used by exporter integration tests."""
-
-    def __init__(
-        self,
-        responses: Iterable[list[list[dict[str, Any]]] | Exception],
-    ) -> None:
-        self._responses = iter(responses)
-        self.calls: list[dict[str, Any]] = []
-        self.total_requests = 0
-        self.total_retries = 0
-
-    def get_history(
-        self,
-        start_dt: datetime,
-        end_dt: datetime,
-        entity_ids: list[str],
-        minimal_response: bool = False,
-        no_attributes: bool = False,
-        significant_changes_only: bool = False,
-        skip_initial_state: bool = True,
-    ) -> list[list[dict[str, Any]]]:
-        self.calls.append(
-            {
-                "start_dt": start_dt,
-                "end_dt": end_dt,
-                "entity_ids": entity_ids,
-                "minimal_response": minimal_response,
-                "no_attributes": no_attributes,
-                "significant_changes_only": significant_changes_only,
-                "skip_initial_state": skip_initial_state,
-            }
-        )
-        self.total_requests += 1
-        response = next(self._responses)
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-
 class FakeCliClient:
     """In-memory stand-in for HomeAssistantClient at the CLI boundary.
 
@@ -206,44 +162,3 @@ class FakeCliClient:
         self.history_calls.append(kwargs)
         self.total_requests += 1
         return type(self).history_payload
-
-
-@dataclass
-class FakeResponse:
-    status_code: int = 200
-    payload: Any = None
-    text: str = ""
-    json_error: Exception | None = None
-
-    @property
-    def ok(self) -> bool:
-        return 200 <= self.status_code < 400
-
-    def json(self):
-        if self.json_error is not None:
-            raise self.json_error
-        return self.payload
-
-
-class SequenceGet:
-    """Callable Session.get replacement that records calls."""
-
-    def __init__(
-        self,
-        responses: Iterable[FakeResponse | Exception | Callable[..., FakeResponse]],
-    ) -> None:
-        self._responses = iter(responses)
-        self.calls: list[tuple[str, dict[str, Any]]] = []
-
-    def __call__(self, url: str, **kwargs) -> FakeResponse:
-        self.calls.append((url, kwargs))
-        response = next(self._responses)
-        if isinstance(response, Exception):
-            raise response
-        if callable(response):
-            return response(url, **kwargs)
-        return response
-
-
-def timeout_error() -> requests.Timeout:
-    return requests.Timeout("synthetic timeout")

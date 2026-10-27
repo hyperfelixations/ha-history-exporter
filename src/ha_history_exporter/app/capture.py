@@ -13,9 +13,9 @@ import contextlib
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .. import __version__, fsio
@@ -38,28 +38,14 @@ from ..domain.query import HistoryQuery
 from ..domain.records import LogicalDigest
 from ..domain.stored import RecordContract
 from ..domain.window import DayIdentity, DayWindow, format_iso
-from ..domain.wire import WirePayload, iter_normalized_history
+from ..domain.wire import iter_normalized_history
 from ..errors import AuthError, ErrorRecord, ExportError, Remedy, safe_error_record
 from ..formats import FORMATS
 from ..formats.validation import CaptureSummary, validate_artifacts
 from ..settings import Config
+from ..source.protocol import HistoryFetchError, HistorySource
 
 logger = logging.getLogger(__name__)
-
-
-class HistoryClient(Protocol):
-    total_retries: int
-
-    def get_history(
-        self,
-        start_dt: datetime,
-        end_dt: datetime,
-        entity_ids: list[str],
-        minimal_response: bool = ...,
-        no_attributes: bool = ...,
-        significant_changes_only: bool = ...,
-        skip_initial_state: bool = ...,
-    ) -> WirePayload: ...
 
 
 @dataclass(frozen=True)
@@ -69,7 +55,7 @@ class CaptureContext:
     cfg: Config
     layout: ArchiveLayout
     workspace: Workspace
-    client: HistoryClient
+    source: HistorySource
     tz: ZoneInfo
     entity_ids: Sequence[str]
     entity_count_total: int
@@ -113,7 +99,6 @@ class _Fetched:
 
     rows: int = 0
     logical_sha256: str = ""
-    retries: int = 0
     entities_with_history: set[str] = field(default_factory=set)
 
 
@@ -216,7 +201,6 @@ def _capture(ctx: CaptureContext, window: DayWindow, progress: _Progress) -> dic
         path.unlink(missing_ok=True)
 
     fetched = _fetch(ctx, window, temp, progress)
-    progress.retried_request_count = fetched.retries
 
     if progress.failed_batches:
         raise ExportError(
@@ -288,23 +272,14 @@ def _fetch(
         for index, batch in enumerate(batches, start=1):
             logger.debug("  Batch %d/%d (%d entities) ...", index, len(batches), len(batch))
             try:
-                retries_before = ctx.client.total_retries
-                payload = ctx.client.get_history(
-                    start_dt=window.query_start,
-                    end_dt=window.end_utc,
-                    entity_ids=batch,
-                    **query.options(),
-                )
-                fetched.retries += ctx.client.total_retries - retries_before
-                progress.request_count += 1
-            except AuthError:
+                call = ctx.source.history(window, batch, query)
+            except HistoryFetchError as failure:
+                progress.retried_request_count += failure.stats.retries
                 progress.failed_request_count += 1
-                raise
-            except Exception as exc:
-                error = safe_error_record(
-                    exc, unexpected_summary="Unexpected error while fetching this batch."
-                )
-                logger.error("  Batch %d failed (%s).", index, type(exc).__name__)
+                if isinstance(failure.error, AuthError):
+                    raise failure.error from None
+                error = safe_error_record(failure.error)
+                logger.error("  Batch %d failed: %s", index, failure.error.summary)
                 progress.failed_batches.append(
                     FailedBatch(
                         batch_index=index,
@@ -313,10 +288,11 @@ def _fetch(
                         error=error.summary,
                     )
                 )
-                progress.failed_request_count += 1
             else:
+                progress.retried_request_count += call.stats.retries
+                progress.request_count += 1
                 for record in iter_normalized_history(
-                    payload,
+                    call.payload,
                     requested_entity_ids=batch,
                     window=window,
                     query=query,

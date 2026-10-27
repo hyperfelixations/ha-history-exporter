@@ -22,7 +22,8 @@ from ..domain.window import DayWindow, format_iso
 from ..errors import ConfigError, Remedy
 from ..formats import missing_requirements
 from ..settings import Config
-from .capture import CaptureContext, HistoryClient, capture_day, run_log_entry
+from ..source.protocol import HistorySource
+from .capture import CaptureContext, capture_day, run_log_entry
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def run_export(
     plan: ExportPlan,
     entity_ids: Sequence[str],
     entity_count_total: int,
-    client: HistoryClient,
+    source: HistorySource,
     tz: ZoneInfo,
     sleep: Callable[[float], None] = time.sleep,
     now: datetime | None = None,
@@ -153,7 +154,7 @@ def run_export(
             cfg=cfg,
             layout=layout,
             workspace=session.workspace,
-            client=client,
+            source=source,
             tz=tz,
             entity_ids=tuple(entity_ids),
             entity_count_total=entity_count_total,

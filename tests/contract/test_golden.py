@@ -128,7 +128,8 @@ def test_each_day_is_requested_from_one_microsecond_before_its_start(
 ) -> None:
     """Home Assistant returns ``start < last_updated < end``; the day is ``[start, end)``."""
     calls = productions["midnight"].history_calls
-    assert [(call["start_dt"].isoformat(), call["end_dt"].isoformat()) for call in calls] == [
+    windows = [call.window for call in calls]
+    assert [(w.query_start.isoformat(), w.end_utc.isoformat()) for w in windows] == [
         ("2026-10-22T21:59:59.999999+00:00", "2026-10-23T22:00:00+00:00"),
         ("2026-10-23T21:59:59.999999+00:00", "2026-10-24T22:00:00+00:00"),
     ]
