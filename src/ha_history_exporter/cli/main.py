@@ -15,9 +15,9 @@ import logging
 from collections.abc import Callable
 
 from ..errors import ExitCode, HHEError, InternalError
-from .commands import config, doctor, export, init
+from .commands import config, convert, doctor, export, init, status, verify
 from .logging import FILE_ONLY, CommandLogging
-from .output import render_error
+from .output import error_document, print_json, render_error
 from .parser import build_parser
 from .services import Services
 
@@ -33,32 +33,40 @@ def main(
     except SystemExit as exit_:
         return int(exit_.code or 0)
     level = getattr(logging, getattr(args, "log_level", "WARNING"))
-    logs = CommandLogging(level, services.stderr, buffered=args.command == "export")
+    logs = CommandLogging(level, services.stderr, buffered=args.command in _WRITERS)
     try:
         return int(_HANDLERS[args.command](args, services, logs))
     except HHEError as exc:
         logger.error("%s", exc.summary, extra=FILE_ONLY)
-        render_error(exc, stream=services.stderr, environ=services.environ)
-        return int(exc.exit_code)
+        return _failed(exc, args, services)
     except KeyboardInterrupt:
         logger.warning("Interrupted.", extra=FILE_ONLY)
         services.stderr.write("\nInterrupted.\n")
         return int(ExitCode.INTERRUPTED)
     except Exception as exc:
         logger.error("Unexpected internal error.", exc_info=exc, extra=FILE_ONLY)
-        render_error(
-            InternalError.during(f"{prog} {args.command}"),
-            stream=services.stderr,
-            environ=services.environ,
-        )
-        return int(ExitCode.INTERNAL)
+        return _failed(InternalError.during(f"{prog} {args.command}"), args, services)
     finally:
         logs.close()
 
 
+def _failed(exc: HHEError, args: argparse.Namespace, services: Services) -> int:
+    """Report *exc* on standard error, and as a document with ``--json``."""
+    render_error(exc, stream=services.stderr, environ=services.environ)
+    if getattr(args, "json", False):
+        print_json(error_document(args.command, exc))
+    return int(exc.exit_code)
+
+
 _HANDLERS: dict[str, Callable[[argparse.Namespace, Services, CommandLogging], int]] = {
     "config": config.run,
+    "convert": convert.run,
     "doctor": doctor.run,
     "export": export.run,
     "init": init.run,
+    "status": status.run,
+    "verify": verify.run,
 }
+
+#: Commands that write an archive and keep a log file of the run there.
+_WRITERS = frozenset({"export", "convert"})

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .. import fsio
 from .lock import FileLock, LockHeld
 
 RUN_PREFIX = "run-"
@@ -45,7 +46,7 @@ class Workspace:
 
 def open_workspace(temp_root: Path, run_id: str) -> Workspace:
     work_dir = temp_root / f"{RUN_PREFIX}{run_id}"
-    work_dir.mkdir(parents=True, exist_ok=False)
+    fsio.create_dir(work_dir)
     lock = FileLock(work_dir / RUN_LOCK, f"run_id: {run_id}\npid: {os.getpid()}\n")
     try:
         lock.acquire()

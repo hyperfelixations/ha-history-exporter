@@ -2,8 +2,8 @@
 
 1. The run starts: the clock is read once (:class:`RunContext`).
 2. Without asking Home Assistant, the archive's zone is known when the
-   archive has a descriptor or ``export.timezone`` is set; if nothing is to be
-   exported then, the run ends here.
+   archive has a descriptor or days, or ``export.timezone`` is set; if nothing
+   is to be exported then, the run ends here.
 3. Home Assistant is asked for its API, its configuration and the current
    states; the archive's zone follows (:func:`descriptor.determine`).
 4. A dry run plans and reports; it writes nothing.
@@ -42,6 +42,7 @@ from ..errors import ConfigError, Remedy
 from ..formats import missing_requirements
 from ..settings import Config
 from ..source.protocol import HistorySource, StateObject
+from ..source.transport import plaintext_warning
 from .capture import CaptureContext, capture_day, run_log_entry
 from .context import RunContext
 from .results import DayResult, EntitySummary, ExportResult
@@ -85,16 +86,19 @@ def run_export(
         raise _missing_pyarrow()
     recorded = descriptor.load(layout)
 
-    known = recorded.timezone if recorded is not None else cfg.export.timezone
-    if known is not None and not request.dry_run and not cfg.snapshot_only:
-        zone = descriptor.determine(
-            layout, recorded, configured=cfg.export.timezone, home_assistant=known
-        )
-        preview = plan_export(cfg, layout, request, zone=zone.zone, today=run.today(zone.zone))
-        if not preview.days_to_export:
-            _nothing_to_export(preview)
-            return ExportResult(zone, preview)
+    if not request.dry_run and not cfg.snapshot_only:
+        known = descriptor.known(layout, recorded, configured=cfg.export.timezone)
+        if known is not None:
+            preview = plan_export(
+                cfg, layout, request, zone=known.zone, today=run.today(known.zone)
+            )
+            if not preview.days_to_export:
+                _nothing_to_export(preview)
+                return ExportResult(known, preview)
 
+    warning = plaintext_warning(cfg.homeassistant.url) if cfg.homeassistant.url else None
+    if warning is not None:
+        logger.warning("%s", warning)
     with contextlib.closing(connect()) as source:
         logger.info("Checking the Home Assistant API ...")
         source.check_api()

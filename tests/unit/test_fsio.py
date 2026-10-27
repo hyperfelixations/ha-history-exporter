@@ -70,6 +70,28 @@ def test_ensure_dir_names_every_new_directory_durably_in_its_parent(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes only")
+def test_new_directories_are_private_and_existing_ones_keep_their_mode(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    old_umask = os.umask(0o022)
+    try:
+        fsio.ensure_dir(shared / "a" / "b")
+        fsio.create_dir(shared / "c")
+    finally:
+        os.umask(old_umask)
+    assert shared.stat().st_mode & 0o777 == 0o755
+    for name in ("a", "a/b", "c"):
+        assert (shared / name).stat().st_mode & 0o777 == 0o700, name
+
+
+def test_create_dir_refuses_an_existing_directory(tmp_path: Path) -> None:
+    fsio.create_dir(tmp_path / "parent" / "run")
+    with pytest.raises(FileExistsError):
+        fsio.create_dir(tmp_path / "parent" / "run")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes only")
 def test_atomic_write_applies_the_mode_to_a_new_file(tmp_path: Path) -> None:
     target = tmp_path / "secret"
     fsio.atomic_write(target, b"x", mode=0o600)

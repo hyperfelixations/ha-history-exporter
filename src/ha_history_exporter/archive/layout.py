@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from ..domain.formats import FORMAT_ORDER, Format
+
 DESCRIPTOR_NAME = "hhe-archive.json"
 LOCK_NAME = ".hhe-archive.lock"
 STAGING_NAME = ".hhe-staging"
@@ -60,6 +62,20 @@ class ArchiveLayout:
             if path == self.manifest_file(day):
                 found.append((day, path))
         yield from sorted(found)
+
+    def artifact_paths(self) -> Iterator[tuple[date, Format, Path]]:
+        """Every stored day artifact in day and format order, declared or not."""
+        found = []
+        for fmt in FORMAT_ORDER:
+            for path in self.daily_root.glob(f"*/*/*.{fmt.value}"):
+                try:
+                    day = date.fromisoformat(path.name.removesuffix(f".{fmt.value}"))
+                except ValueError:
+                    continue
+                if path == self.day_file(day, fmt.value):
+                    found.append((day, FORMAT_ORDER.index(fmt), fmt, path))
+        for day, _, fmt, path in sorted(found):
+            yield day, fmt, path
 
     @property
     def metadata_dir(self) -> Path:

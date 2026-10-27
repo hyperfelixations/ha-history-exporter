@@ -9,7 +9,7 @@ internal dev doc § "Record contract".
 from __future__ import annotations
 
 import io
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,10 +35,12 @@ def inspect_artifact(
     fmt: Format,
     *,
     contract: RecordContract | None = None,
+    each: Callable[[HistoryRecord], None] | None = None,
 ) -> Artifact:
     """Decode *path* completely and report what it holds.
 
-    With a *contract*, every record must belong to that request.
+    With a *contract*, every record must belong to that request. *each*
+    receives every record as it is decoded.
     """
     spec = FORMATS[fmt]
     label = fmt.value.upper()
@@ -49,6 +51,8 @@ def inspect_artifact(
             if contract is not None:
                 check_against_request(record, contract, location=f"{path.name}, record {index}")
             digest.add(record)
+            if each is not None:
+                each(record)
 
     try:
         with path.open("rb") as raw:

@@ -156,3 +156,14 @@ def test_a_recorded_descriptor_is_never_rewritten(layout: ArchiveLayout) -> None
         recorded
     )
     assert not layout.descriptor_file.exists()
+
+
+def test_without_home_assistant_only_a_known_zone_is_established(layout: ArchiveLayout) -> None:
+    assert descriptor.known(layout, None, configured=None) is None
+    with pytest.raises(ValueError, match="needs Home Assistant"):
+        establish(layout, None, configured=None, home_assistant=None, now=NOW)
+    write_manifest(layout.root, manifest14(DAY))
+    adopted = descriptor.known(layout, None, configured=None)
+    assert adopted is not None and adopted.source is ZoneSource.ADOPTED
+    written = establish(layout, None, configured=None, home_assistant=None, now=NOW)
+    assert written.timezone == BERLIN

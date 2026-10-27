@@ -8,16 +8,27 @@ terminal and only when neither ``NO_COLOR`` nor ``HHE_NO_COLOR`` holds a value
 
 from __future__ import annotations
 
+import json
 import math
 import sys
 import textwrap
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
-from ..app.results import EntitySummary, ExportResult
+from ..app.results import (
+    ArchiveState,
+    ArtifactStatus,
+    Check,
+    CheckStatus,
+    ConversionOutcome,
+    ConvertResult,
+    DayState,
+    EntitySummary,
+    ExportResult,
+    StatusResult,
+    VerifyResult,
+)
 from ..archive.descriptor import ArchiveZone, ZoneSource
 from ..domain.plan import DayAction, ExportPlan
 from ..errors import CONTEXT_LABELS, HHEError
@@ -156,20 +167,6 @@ def print_export_result(result: ExportResult) -> None:
         say(f"Log file: {result.log_file}")
 
 
-class CheckStatus(StrEnum):
-    OK = "ok"
-    WARN = "warn"
-    FAIL = "fail"
-
-
-@dataclass(frozen=True)
-class Check:
-    status: CheckStatus
-    label: str
-    detail: str = ""
-    remedy: str = ""
-
-
 _MARKS = {CheckStatus.OK: "[ ok ]", CheckStatus.WARN: "[warn]", CheckStatus.FAIL: "[fail]"}
 
 
@@ -192,3 +189,120 @@ def print_checks(checks: Iterable[Check]) -> None:
         say(f"No problems, {warnings} warning(s).")
     else:
         say("Everything checks out.")
+
+
+def print_json(document: Mapping[str, Any]) -> None:
+    """One JSON document on standard output, for programs that read it."""
+    say(json.dumps(document, indent=2, ensure_ascii=False))
+
+
+def error_document(command: str, exc: HHEError) -> dict[str, Any]:
+    """The ``--json`` document of a command that ended with an error."""
+    return {
+        "command": command,
+        "exit_code": int(exc.exit_code),
+        "error": {
+            "code": exc.code.value,
+            "summary": exc.summary,
+            "details": exc.details,
+            "remedies": [
+                {"description": remedy.description, "command": remedy.command}
+                for remedy in exc.remedies
+            ],
+        },
+    }
+
+
+def _archive_lines(state: ArchiveState) -> list[str]:
+    zone = state.zone
+    shown = "not known yet" if zone is None else f"{zone.zone.key} ({_ZONE_ORIGIN[zone.source]})"
+    lines = [f"Archive    : {state.output_dir}", f"Time zone  : {shown}"]
+    if not state.described and zone is not None:
+        lines.append("  The next export or conversion records the time zone in hhe-archive.json.")
+    if state.pending_transactions:
+        lines.append(
+            f"  {state.pending_transactions} interrupted day transaction(s) wait for the next "
+            "export or conversion to restore them; their days may look damaged until then."
+        )
+    if state.running is not None:
+        lines.append(f"  An export is running ({state.running}); its current day may change.")
+    return lines
+
+
+_DAY_STATES = (
+    DayState.OK,
+    DayState.PARTIAL,
+    DayState.FAILED,
+    DayState.PENDING,
+    DayState.INVALID,
+    DayState.MISSING,
+)
+
+
+def print_status(result: StatusResult) -> None:
+    lines = _archive_lines(result.archive)
+    if not result.days:
+        say("\n".join([*lines, "", "No day is exported yet."]))
+        return
+    lines += ["", f"Days {result.days[0].day} to {result.days[-1].day}:", ""]
+    for month, days in result.months():
+        counts = [
+            f"{sum(d.state is state for d in days)} {state.value}"
+            for state in _DAY_STATES
+            if any(d.state is state for d in days)
+        ]
+        lines.append(f"{month}  {', '.join(counts)}")
+        for state in _DAY_STATES[1:]:
+            named = [f"{d.day:%d}" for d in days if d.state is state]
+            if named:
+                lines.append(f"         {state.value}: {', '.join(named)}")
+    say("\n".join(lines))
+
+
+def print_verify(result: VerifyResult) -> None:
+    lines = [*_archive_lines(result.archive), ""]
+    for day in result.days:
+        if day.invalid is not None:
+            lines.append(f"{day.day}  invalid manifest: {day.invalid}")
+            continue
+        notable = [
+            check
+            for check in day.artifacts
+            if check.status is not ArtifactStatus.OK or check.detail is not None
+        ]
+        for check in notable:
+            detail = f" - {check.detail}" if check.detail else ""
+            lines.append(f"{day.day}  {check.format.value:<8}{check.status.value}{detail}")
+    counts = ", ".join(
+        f"{result.count(status)} {status.value}"
+        for status in ArtifactStatus
+        if result.count(status)
+    )
+    checked = "decoded and checksummed" if result.deep else "checksummed"
+    lines.append(f"{len(result.days)} day(s) {checked}: {counts or 'no artifacts'}.")
+    if result.invalid_days:
+        lines.append(f"{len(result.invalid_days)} manifest(s) are invalid.")
+    lines.append(
+        "Problems found." if result.exit_code else "Every stored artifact matches its manifest."
+    )
+    say("\n".join(lines))
+
+
+def print_convert(result: ConvertResult) -> None:
+    lines = []
+    for day in result.days:
+        if day.outcome is ConversionOutcome.CONVERTED:
+            added = ", ".join(fmt.value for fmt in day.added)
+            source = day.source.value if day.source else "?"
+            lines.append(f"{day.day}  converted  {added} from {source}")
+        elif day.outcome is not ConversionOutcome.PRESENT:
+            lines.append(f"{day.day}  {day.outcome.value:<10} {day.reason or ''}".rstrip())
+    summary = ", ".join(
+        f"{result.count(outcome)} {outcome.value}"
+        for outcome in ConversionOutcome
+        if result.count(outcome)
+    )
+    lines.append(f"{len(result.days)} day(s): {summary or 'nothing to convert'}.")
+    if result.log_file is not None:
+        lines.append(f"Log file: {result.log_file}")
+    say("\n".join(lines))

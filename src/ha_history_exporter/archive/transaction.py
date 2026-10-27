@@ -347,6 +347,12 @@ def _remove_empty_parents(directory: Path, stop: Path) -> None:
         current = current.parent
 
 
+def pending(layout: ArchiveLayout) -> int:
+    """The journals of interrupted transactions that the next writer recovers."""
+    root = layout.journal_root
+    return sum(1 for _ in root.glob("*.json")) if root.is_dir() else 0
+
+
 def recover(layout: ArchiveLayout, retries: int = 0, retry_sleep: float = 0.0) -> int:
     """Finish every interrupted transaction; call only while holding the archive lock.
 

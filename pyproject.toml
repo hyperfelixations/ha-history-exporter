@@ -94,6 +94,9 @@ addopts = [
   "--import-mode=importlib",
 ]
 testpaths = ["tests"]
+markers = [
+  "parquet: needs the optional pyarrow; deselect with -m 'not parquet' where it is absent",
+]
 
 [tool.coverage.run]
 branch = true

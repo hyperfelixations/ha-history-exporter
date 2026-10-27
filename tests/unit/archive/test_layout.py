@@ -86,3 +86,25 @@ def test_the_layout_is_an_immutable_value() -> None:
         LAYOUT.root = ROOT / "elsewhere"  # type: ignore[misc]
     assert ArchiveLayout(ROOT) == ArchiveLayout(ROOT)
     assert ArchiveLayout(ROOT) != ArchiveLayout(ROOT / "other")
+
+
+def test_artifact_paths_lists_day_files_only(tmp_path: Path) -> None:
+    layout = ArchiveLayout(tmp_path)
+    for name in (
+        "2026/07/2026-07-28.csv",
+        "2026/07/2026-07-28.jsonl",
+        "2026/07/2026-07-27.parquet",
+        "2026/07/2026-07-28.manifest.json",
+        "2026/07/2026-08-01.jsonl",
+        "2026/07/notes.csv",
+        "2026/07/.2026-07-28.jsonl.1a2b.tmp",
+    ):
+        path = layout.daily_root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+    found = [(day.isoformat(), fmt.value) for day, fmt, _ in layout.artifact_paths()]
+    assert found == [
+        ("2026-07-27", "parquet"),
+        ("2026-07-28", "jsonl"),
+        ("2026-07-28", "csv"),
+    ]

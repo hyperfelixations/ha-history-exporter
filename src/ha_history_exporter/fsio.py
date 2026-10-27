@@ -19,6 +19,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _BINARY = getattr(os, "O_BINARY", 0)
+#: The mode of every directory HHE creates; the umask can only narrow it.
+DIRECTORY_MODE = 0o700
 
 
 def fsync_file(path: Path) -> None:
@@ -43,15 +45,27 @@ def fsync_dir(path: Path) -> None:
 
 
 def ensure_dir(path: Path) -> None:
-    """Create *path* and its missing parents, each durably named in its parent."""
+    """Create *path* and its missing parents, each durably named in its parent.
+
+    New directories are private to the account (:data:`DIRECTORY_MODE` on
+    POSIX), because they hold the history of a home; existing ones keep
+    their mode.
+    """
     missing = []
     current = path
     while not current.is_dir() and current.parent != current:
         missing.append(current)
         current = current.parent
     for directory in reversed(missing):
-        directory.mkdir(exist_ok=True)
+        directory.mkdir(mode=DIRECTORY_MODE, exist_ok=True)
         fsync_dir(directory.parent)
+
+
+def create_dir(path: Path) -> None:
+    """Create *path*, which must not exist yet; missing parents as :func:`ensure_dir`."""
+    ensure_dir(path.parent)
+    path.mkdir(mode=DIRECTORY_MODE)
+    fsync_dir(path.parent)
 
 
 def replace(

@@ -50,7 +50,7 @@ class ArchiveSession:
         *,
         holder: str,
         configured_zone: ZoneInfo | None,
-        home_assistant_zone: ZoneInfo,
+        home_assistant_zone: ZoneInfo | None,
         now: datetime,
         retries: int = 0,
         retry_sleep: float = 0.0,

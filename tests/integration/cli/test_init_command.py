@@ -127,3 +127,13 @@ def test_an_invalid_answer_is_named(terminal: Terminal) -> None:
         terminal.run("init", "--non-interactive", "--url", URL, "--timezone", "Mars/Olympus") == 2
     )
     assert "export.timezone from the setup is not a known IANA time zone" in terminal.stderr
+
+
+def test_plain_http_to_a_public_host_is_stored_with_a_warning(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ["HHE_TOKEN"] = TOKEN
+    url = "http://ha.example.net:8123"
+    assert terminal.run("init", "--non-interactive", "--url", url, "--purge-keep-days", "14") == 0
+    assert "the access token travels unencrypted" in capsys.readouterr().out
+    assert written(terminal)["homeassistant"] == {"url": url}

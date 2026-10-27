@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date
 from pathlib import Path
 
 import pytest
 
+from ha_history_exporter.archive.descriptor import establish
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.archive.lock import FileLock
 from ha_history_exporter.errors import AuthError
@@ -99,3 +102,49 @@ def test_a_configured_zone_the_archive_does_not_use_fails(
     terminal.environ["HHE_EXPORT_TIMEZONE"] = "UTC"
     assert terminal.run("doctor", "--offline") == 1
     assert "export.timezone is UTC" in capsys.readouterr().out
+
+
+def test_the_days_of_the_archive_are_checked_without_checksums(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    layout = archive(terminal)
+    write_manifest(layout.root, manifest14())
+    establish(layout, None, configured=None, home_assistant=None, now=terminal.now)
+    write_manifest(layout.root, manifest14(date(2026, 7, 27))).write_bytes(b"{")
+    layout.day_file(date(2026, 7, 28), "csv").write_text("stale", encoding="utf-8")
+    journal = layout.journal_root / "run-2026-07-28.json"
+    journal.parent.mkdir()
+    journal.write_text("{}", encoding="utf-8")
+
+    assert terminal.run("doctor", "--offline") == 1
+
+    output = capsys.readouterr().out
+    assert "[fail] manifests" in output
+    assert "1 invalid, first 2026-07-27" in output
+    assert "1 file(s) that no manifest declares, first 2026-07-28" in output
+    assert "1 declared file(s) missing, first 2026-07-28" in output
+    assert "1 day(s); the next export or conversion restores them" in output
+    assert journal.exists()
+
+
+def test_plain_http_to_a_public_host_is_a_warning(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ["HHE_URL"] = "http://ha.example.net:8123"
+    assert terminal.run("doctor", "--offline") == 0
+    output = capsys.readouterr().out
+    assert "[warn] plain http" in output
+    assert "the access token travels unencrypted" in output
+
+
+def test_doctor_as_json(terminal: Terminal, capsys: pytest.CaptureFixture[str]) -> None:
+    assert terminal.run("doctor", "--offline", "--json") == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["command"] == "doctor"
+    assert parsed["exit_code"] == 0
+    assert {
+        "status": "ok",
+        "label": "home assistant",
+        "detail": "not contacted (--offline)",
+        "remedy": "",
+    } in parsed["checks"]

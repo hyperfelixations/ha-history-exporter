@@ -1,7 +1,7 @@
 """The command-line grammar.
 
-Every invocation names its command: ``export``, ``init``, ``config`` or
-``doctor``. The program name is passed in rather than taken from
+Every invocation names its command: ``export``, ``convert``, ``verify``,
+``status``, ``init``, ``config`` or ``doctor``. The program name is passed in rather than taken from
 ``sys.argv[0]``, so help and usage show what the user typed. The export
 options that override a configuration key come from the key registry and
 carry the key's documentation and default.
@@ -14,6 +14,7 @@ import argparse
 from .. import __version__
 from ..settings.registry import BY_OPTION, Key
 from ..settings.validators import Formats, Integer, OptionalValue, PathValue, Seconds, Zone
+from .days import add_day_options
 
 EPILOG = """\
 Examples:
@@ -22,6 +23,8 @@ Examples:
   {prog} export --date 2026-06-15 --force
   {prog} export --start-date 2026-06-01 --end-date yesterday
   {prog} export --last-days 30 --format parquet
+  {prog} verify                          check every stored day
+  {prog} convert --format parquet        derive Parquet from the stored days
 
 The Home Assistant URL and access token come from the configuration, or from
 the HHE_URL and HHE_TOKEN environment variables.
@@ -51,6 +54,48 @@ def build_parser(prog: str = "hhe") -> argparse.ArgumentParser:
     )
     _add_export_arguments(export)
 
+    convert = commands.add_parser(
+        "convert",
+        help="Derive formats from the stored days, without Home Assistant.",
+        description=(
+            "Add output formats to days that are already exported, from an artifact "
+            "they have. Without a day selection, every day of the archive is converted."
+        ),
+    )
+    _add_archive_arguments(convert)
+    convert.add_argument(
+        "--format",
+        metavar="LIST",
+        required=True,
+        help="The formats to add: any of jsonl, csv, parquet.",
+    )
+    _add_log_level(convert)
+
+    verify = commands.add_parser(
+        "verify",
+        help="Check the stored days against their manifests, read-only.",
+        description=(
+            "Compare every artifact with its manifest and report files no manifest "
+            "declares. Without a day selection, every day of the archive is checked."
+        ),
+    )
+    _add_archive_arguments(verify)
+    verify.add_argument(
+        "--deep",
+        action="store_true",
+        help="Also decode every artifact and compare its records with the manifest.",
+    )
+
+    status = commands.add_parser(
+        "status",
+        help="Show which days the archive holds, month by month.",
+        description=(
+            "List exported, partial, failed, invalid and missing days. Without a day "
+            "selection, the range runs from the first to the last exported day."
+        ),
+    )
+    _add_archive_arguments(status)
+
     init = commands.add_parser(
         "init",
         help="Guided first-time setup.",
@@ -74,7 +119,36 @@ def build_parser(prog: str = "hhe") -> argparse.ArgumentParser:
     doctor.add_argument(
         "--offline", action="store_true", help="Skip every check that contacts Home Assistant."
     )
+    _add_json(doctor)
     return parser
+
+
+def _add_json(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json", action="store_true", help="Print the result as one JSON document instead."
+    )
+
+
+def _add_log_level(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Log level (default: %(default)s).",
+    )
+
+
+def _add_archive_arguments(parser: argparse.ArgumentParser) -> None:
+    """The archive and the days a command that works on stored days reads."""
+    parser.add_argument(
+        "--config", metavar="FILE", help="Read exactly this file instead of the user configuration."
+    )
+    key = BY_OPTION["--output-dir"]
+    parser.add_argument(
+        "--output-dir", dest=_dest("--output-dir"), metavar=_metavar(key), help=_option_help(key)
+    )
+    add_day_options(parser)
+    _add_json(parser)
 
 
 _METAVARS = {PathValue: "DIR", Zone: "ZONE", Formats: "LIST", Integer: "N", Seconds: "S"}
@@ -97,13 +171,7 @@ def _add_export_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--config", metavar="FILE", help="Read exactly this file instead of the user configuration."
     )
-    days = parser.add_mutually_exclusive_group()
-    days.add_argument("--date", metavar="DAY", help="One day: YYYY-MM-DD, yesterday or today.")
-    days.add_argument("--start-date", metavar="DAY", help="First day of a range (with --end-date).")
-    days.add_argument(
-        "--last-days", metavar="N", help="The N most recent complete days, ending yesterday."
-    )
-    parser.add_argument("--end-date", metavar="DAY", help="Last day of a range, inclusive.")
+    add_day_options(parser)
     parser.add_argument(
         "--dry-run", action="store_true", help="Show the plan; fetch and write nothing."
     )
@@ -114,12 +182,8 @@ def _add_export_arguments(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             option, dest=_dest(option), metavar=_metavar(key), help=_option_help(key)
         )
-    parser.add_argument(
-        "--log-level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Log level (default: %(default)s).",
-    )
+    _add_log_level(parser)
+    _add_json(parser)
 
 
 def _dest(option: str) -> str:

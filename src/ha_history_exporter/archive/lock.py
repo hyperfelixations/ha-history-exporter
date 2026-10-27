@@ -17,6 +17,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from .. import fsio
+
 _BINARY = getattr(os, "O_BINARY", 0)
 #: Windows byte-range lock position: beyond any content, below 2**31 for old CRTs.
 _WINDOWS_LOCK_OFFSET = 0x7FFF_0000
@@ -79,7 +81,7 @@ class FileLock:
 
     def acquire(self) -> None:
         """Take the lock or raise :class:`LockHeld`; write the holder text."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fsio.ensure_dir(self.path.parent)
         for _ in range(_ATTEMPTS):
             descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | _BINARY, 0o644)
             if not _try_lock(descriptor):

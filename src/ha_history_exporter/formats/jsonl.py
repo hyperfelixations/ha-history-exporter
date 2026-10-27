@@ -17,6 +17,7 @@ from typing import BinaryIO, Self
 from ..domain.records import HistoryRecord, encode_json
 from ..domain.stored import stored_record
 from ..errors import ValidationError
+from ..fsio import ensure_dir
 
 
 def jsonl_line(record: HistoryRecord) -> str:
@@ -35,7 +36,7 @@ def jsonl_line(record: HistoryRecord) -> str:
 
 class JsonlWriter:
     def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(path.parent)
         self._handle: io.TextIOWrapper | None = path.open("w", encoding="utf-8", newline="\n")
 
     def write(self, record: HistoryRecord) -> None:

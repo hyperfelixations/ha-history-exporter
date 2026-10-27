@@ -64,17 +64,22 @@ def stored_record(
 
 @dataclass(frozen=True)
 class RecordContract:
-    """The request a stored artifact must match."""
+    """The request a stored artifact must match.
 
-    requested_entity_ids: frozenset[str]
+    The requested entities are known while a day is captured; a day read back
+    from the archive later is checked against its window only.
+    """
+
     window: DayWindow
+    requested_entity_ids: frozenset[str] | None = None
 
 
 def check_against_request(
     record: HistoryRecord, contract: RecordContract, *, location: str
 ) -> None:
     """Reject a stored record that the request could not have produced."""
-    if record.entity_id not in contract.requested_entity_ids:
+    requested = contract.requested_entity_ids
+    if requested is not None and record.entity_id not in requested:
         raise ValidationError(f"{location}: the record belongs to an entity not requested.")
     if not contract.window.contains(record.last_updated):
         raise ValidationError(f"{location}: the record is outside the requested history window.")

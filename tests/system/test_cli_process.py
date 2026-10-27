@@ -86,6 +86,7 @@ def hhe(environ: dict[str, str], *argv: str) -> subprocess.CompletedProcess[str]
     return subprocess.run(
         [sys.executable, "-m", "ha_history_exporter", *argv],
         env=environ,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=120,
@@ -163,3 +164,33 @@ def test_a_second_process_on_the_same_archive_is_refused(
     assert result.returncode == 1
     assert "Another export is already running" in result.stderr
     assert "run_id: holding-test" in " ".join(result.stderr.split())
+
+
+def test_the_archive_commands_work_on_what_an_export_wrote(
+    environ: dict[str, str], home_assistant: str
+) -> None:
+    environ["HHE_URL"] = home_assistant
+    assert hhe(environ, "export", "--last-days", "2").returncode == 0
+    del environ["HHE_URL"]  # none of them needs Home Assistant
+
+    converted = hhe(environ, "convert", "--format", "csv", "--json")
+    assert converted.returncode == 0, converted.stderr
+    assert json.loads(converted.stdout)["summary"]["converted"] == 2
+    verified = hhe(environ, "verify", "--deep")
+    assert verified.returncode == 0, verified.stderr
+    assert "2 day(s) decoded and checksummed: 4 ok." in verified.stdout
+    status = hhe(environ, "status", "--json")
+    assert status.returncode == 0, status.stderr
+    assert len(json.loads(status.stdout)["months"]) >= 1
+
+
+def test_setup_without_questions_takes_the_token_from_the_environment(
+    environ: dict[str, str], home_assistant: str
+) -> None:
+    result = hhe(
+        environ, "init", "--non-interactive", "--url", home_assistant, "--purge-keep-days", "14"
+    )
+    assert result.returncode == 0, result.stderr
+    credentials = Path(environ[ENV_CONFIG_DIR]) / "credentials.toml"
+    assert TOKEN in credentials.read_text(encoding="utf-8")
+    assert TOKEN not in result.stdout + result.stderr

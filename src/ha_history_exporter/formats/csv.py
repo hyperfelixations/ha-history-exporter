@@ -18,6 +18,7 @@ from typing import BinaryIO, Self
 from ..domain.records import HistoryRecord, JsonValue
 from ..domain.stored import stored_record
 from ..errors import ValidationError
+from ..fsio import ensure_dir
 
 COLUMNS = (
     "entity_id",
@@ -32,7 +33,7 @@ COLUMNS = (
 
 class CsvWriter:
     def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(path.parent)
         self._handle: io.TextIOWrapper | None = path.open("w", encoding="utf-8", newline="")
         self._writer = csv.writer(self._handle)
         self._writer.writerow(COLUMNS)

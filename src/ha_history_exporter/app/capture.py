@@ -23,10 +23,9 @@ from pathlib import Path
 from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
-from .. import __version__, fsio
+from .. import __version__
 from ..archive.layout import ArchiveLayout
 from ..archive.store import load_manifest
-from ..archive.transaction import DayTransaction
 from ..archive.workspace import Workspace
 from ..domain.clock import Clock
 from ..domain.formats import FORMAT_ORDER, Format
@@ -59,6 +58,7 @@ from ..formats import FORMATS
 from ..formats.validation import CaptureSummary, validate_artifacts
 from ..settings import Config
 from ..source.protocol import HistoryFetchError, HistorySource
+from .publish import publish_day
 
 logger = logging.getLogger(__name__)
 
@@ -353,29 +353,9 @@ def _publish(
             for fmt, name in existing.output_files.items()
             if name is not None and fmt not in prepared
         ]
-    _commit(ctx, day, prepared, manifest, retire)
-
-
-def _commit(
-    ctx: CaptureContext,
-    day: date,
-    artifacts: dict[Format, Path],
-    manifest: Manifest14,
-    retire: list[Path],
-) -> None:
-    layout = ctx.layout
-    manifest_temp = ctx.workspace.work_dir / f"{day.isoformat()}.manifest.json"
-    fsio.atomic_write(manifest_temp, manifest.encode())
-    DayTransaction(
-        layout,
-        ctx.workspace.run_id,
-        day,
-        artifacts=[(path, layout.day_file(day, fmt.value)) for fmt, path in artifacts.items()],
-        manifest=(manifest_temp, layout.manifest_file(day)),
-        retire=retire,
-        retries=ctx.cfg.storage.locked_file_retries,
-        retry_sleep=ctx.cfg.storage.locked_file_retry_sleep,
-    ).commit()
+    publish_day(
+        ctx.layout, ctx.workspace, day, prepared, manifest, retire=retire, storage=ctx.cfg.storage
+    )
 
 
 def _save_failure(
@@ -387,7 +367,7 @@ def _save_failure(
         logger.info("Day %s keeps its %s manifest.", day, existing.status.value)
         return
     try:
-        _commit(ctx, day, {}, manifest, [])
+        publish_day(ctx.layout, ctx.workspace, day, {}, manifest, storage=ctx.cfg.storage)
     except (OSError, HHEError) as exc:
         logger.error("The failed attempt for %s could not be recorded: %s", day, exc)
 

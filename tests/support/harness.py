@@ -15,11 +15,14 @@ from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from ha_history_exporter.app.convert import ConvertRequest, run_convert
 from ha_history_exporter.app.export import ExportRequest, run_export
+from ha_history_exporter.app.results import ConvertResult
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.archive.metadata import write_snapshot
 from ha_history_exporter.archive.store import load_manifest
 from ha_history_exporter.archive.workspace import new_run_id
+from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.plan import DaySelection
 from ha_history_exporter.domain.snapshot import snapshot_document
 from ha_history_exporter.domain.window import DayWindow
@@ -154,3 +157,12 @@ def stored_status(output_dir: Path, day: date, timezone: str = "Europe/Berlin") 
         ArchiveLayout(output_dir), DayWindow.full(day, ZoneInfo(timezone)).identity()
     )
     return None if loaded is None else loaded.status.value
+
+
+def derive(root: Path, formats: frozenset[str], *, now: datetime) -> ConvertResult:
+    """Derive *formats* for every day that :func:`produce` wrote into *root*."""
+    cfg = make_config(root)
+    cfg = replace(cfg, export=replace(cfg.export, timezone=None))
+    return run_convert(
+        ConvertRequest(frozenset(Format(name) for name in formats)), cfg, clock=FixedClock(now)
+    )

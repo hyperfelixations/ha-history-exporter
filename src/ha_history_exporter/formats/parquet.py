@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Self
 from ..domain.records import HistoryRecord, JsonValue
 from ..domain.stored import stored_record
 from ..errors import ValidationError
-from ..fsio import fsync_file
+from ..fsio import ensure_dir, fsync_file
 
 if TYPE_CHECKING:  # pragma: no cover
     import pyarrow as pa
@@ -58,7 +58,7 @@ class ParquetWriter:
     def __init__(self, path: Path) -> None:
         import pyarrow.parquet as pq
 
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(path.parent)
         self._path = path
         self._writer: Any = pq.ParquetWriter(str(path), schema(), compression=COMPRESSION)
         self._columns: dict[str, list[Any]] = {name: [] for name in _COLUMNS}

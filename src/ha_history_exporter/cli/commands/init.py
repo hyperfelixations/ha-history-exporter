@@ -23,6 +23,7 @@ from ...settings import ResolvedSettings, paths, resolve, secrets, user_file
 from ...settings.registry import BY_PATH, TOKEN_ENV
 from ...settings.sources import invalid
 from ...settings.validators import InvalidValue, ParseContext, TomlValue
+from ...source.transport import plaintext_warning
 from ..logging import CommandLogging
 from ..output import say
 from ..services import Services
@@ -86,6 +87,9 @@ def run(args: argparse.Namespace, services: Services, logs: CommandLogging) -> i
     token = _token(setup, credentials_file)
     ha_zone = _verify(setup, url, token)
     values["homeassistant.url"] = url
+    warning = plaintext_warning(url)
+    if warning is not None:
+        say(f"  ! {warning}")
 
     output_dir = args.output_dir or setup.ask(
         "Output directory", str(current.config.export.output_dir)

@@ -142,14 +142,15 @@ def survey(layout: ArchiveLayout) -> dict[str, list[date]]:
     return zones
 
 
-def determine(
-    layout: ArchiveLayout,
-    recorded: ArchiveDescriptor | None,
-    *,
-    configured: ZoneInfo | None,
-    home_assistant: ZoneInfo,
-) -> ArchiveZone:
-    """The archive's time zone and where it comes from; writes nothing."""
+def known(
+    layout: ArchiveLayout, recorded: ArchiveDescriptor | None, *, configured: ZoneInfo | None
+) -> ArchiveZone | None:
+    """The archive's time zone as far as it is known without Home Assistant; writes nothing.
+
+    None stands for a new archive without a configured zone, whose zone Home
+    Assistant decides.
+    """
+    archive: ArchiveZone | None
     if recorded is not None:
         archive = ArchiveZone(recorded.timezone, ZoneSource.RECORDED)
     else:
@@ -177,7 +178,7 @@ def determine(
         elif configured is not None:
             archive = ArchiveZone(configured, ZoneSource.CONFIGURED)
         else:
-            archive = ArchiveZone(home_assistant, ZoneSource.HOME_ASSISTANT)
+            return None
     if configured is not None and configured.key != archive.zone.key:
         raise ConfigError(
             f"export.timezone is {configured.key}, but this archive's days are in "
@@ -198,18 +199,38 @@ def determine(
     return archive
 
 
-def establish(
+def determine(
     layout: ArchiveLayout,
     recorded: ArchiveDescriptor | None,
     *,
     configured: ZoneInfo | None,
     home_assistant: ZoneInfo,
+) -> ArchiveZone:
+    """The archive's time zone and where it comes from; writes nothing."""
+    archive = known(layout, recorded, configured=configured)
+    return archive or ArchiveZone(home_assistant, ZoneSource.HOME_ASSISTANT)
+
+
+def establish(
+    layout: ArchiveLayout,
+    recorded: ArchiveDescriptor | None,
+    *,
+    configured: ZoneInfo | None,
+    home_assistant: ZoneInfo | None,
     now: datetime,
 ) -> ArchiveDescriptor:
-    """The descriptor, written first when the archive has none; call under the lock."""
-    archive = determine(layout, recorded, configured=configured, home_assistant=home_assistant)
+    """The descriptor, written first when the archive has none; call under the lock.
+
+    Without *home_assistant*, only an archive whose zone is known otherwise can
+    be established.
+    """
+    archive = known(layout, recorded, configured=configured)
     if recorded is not None:
         return recorded
+    if archive is None:
+        if home_assistant is None:
+            raise ValueError("A new archive without a configured zone needs Home Assistant's.")
+        archive = ArchiveZone(home_assistant, ZoneSource.HOME_ASSISTANT)
     descriptor = ArchiveDescriptor(
         archive.zone, format_iso(now.astimezone(archive.zone)), CREATED_BY
     )
