@@ -10,10 +10,11 @@ internal dev doc § "Record contract".
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -48,10 +49,21 @@ class HistoryRecord:
     attributes: Mapping[str, JsonValue] | None
     local_offset: str
     extra: tuple[tuple[str, JsonValue], ...] = ()
-    attributes_json: str = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "attributes_json", encode_json(self.attributes))
+    @functools.cached_property
+    def attributes_json(self) -> str:
+        """The attributes as JSON text, encoded once for every format that stores it."""
+        return encode_json(self.attributes)
+
+    @functools.cached_property
+    def last_changed_text(self) -> str:
+        """``last_changed`` in ISO 8601, as the text formats and the digest store it."""
+        return self.last_changed.isoformat()
+
+    @functools.cached_property
+    def last_updated_text(self) -> str:
+        """``last_updated`` in ISO 8601, as the text formats and the digest store it."""
+        return self.last_updated.isoformat()
 
     @property
     def extra_json(self) -> str | None:
@@ -68,8 +80,8 @@ def canonical_line(record: HistoryRecord) -> bytes:
     canonical = {
         "entity_id": record.entity_id,
         "state": record.state,
-        "last_changed": record.last_changed.isoformat(),
-        "last_updated": record.last_updated.isoformat(),
+        "last_changed": record.last_changed_text,
+        "last_updated": record.last_updated_text,
         "attributes": record.attributes,
         "local_offset": record.local_offset,
         "extra": dict(record.extra),

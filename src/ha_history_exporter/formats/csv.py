@@ -45,8 +45,8 @@ class CsvWriter:
             (
                 record.entity_id,
                 record.state,
-                record.last_changed.isoformat(),
-                record.last_updated.isoformat(),
+                record.last_changed_text,
+                record.last_updated_text,
                 record.attributes_json,
                 record.local_offset,
                 record.extra_json or "",

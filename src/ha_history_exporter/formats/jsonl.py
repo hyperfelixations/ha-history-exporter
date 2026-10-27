@@ -14,24 +14,28 @@ from pathlib import Path
 from types import TracebackType
 from typing import BinaryIO, Self
 
-from ..domain.records import HistoryRecord, encode_json
+from ..domain.records import HistoryRecord, JsonValue, encode_json
 from ..domain.stored import stored_record
 from ..errors import ValidationError
 from ..fsio import ensure_dir
 
 
 def jsonl_line(record: HistoryRecord) -> str:
-    """The record's line, identical to ``json.dumps`` of its ordered mapping."""
-    parts = [
-        f'"entity_id": {encode_json(record.entity_id)}',
-        f'"state": {encode_json(record.state)}',
-        f'"last_changed": {encode_json(record.last_changed.isoformat())}',
-        f'"last_updated": {encode_json(record.last_updated.isoformat())}',
-        f'"attributes": {record.attributes_json}',
-    ]
-    parts.extend(f"{encode_json(key)}: {encode_json(value)}" for key, value in record.extra)
-    parts.append(f'"local_offset": {encode_json(record.local_offset)}')
-    return "{" + ", ".join(parts) + "}\n"
+    """The record's line: its ordered mapping, encoded once.
+
+    The attributes encode exactly as :attr:`HistoryRecord.attributes_json`,
+    because both use :func:`encode_json`'s settings.
+    """
+    row: dict[str, JsonValue] = {
+        "entity_id": record.entity_id,
+        "state": record.state,
+        "last_changed": record.last_changed_text,
+        "last_updated": record.last_updated_text,
+        "attributes": record.attributes,  # type: ignore[dict-item]
+        **dict(record.extra),
+        "local_offset": record.local_offset,
+    }
+    return encode_json(row) + "\n"
 
 
 class JsonlWriter:
