@@ -146,10 +146,14 @@ def run_export(
         cfg.storage.temp_dir,
         run_id,
         holder=holder,
+        configured_zone=cfg.export.timezone,
+        home_assistant_zone=tz,
+        now=started,
         retries=cfg.storage.locked_file_retries,
         retry_sleep=cfg.storage.locked_file_retry_sleep,
     ) as session:
         logger.debug("Run %s started.", run_id)
+        tz = session.descriptor.timezone
         ctx = CaptureContext(
             cfg=cfg,
             layout=layout,

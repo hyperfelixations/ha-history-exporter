@@ -1,7 +1,8 @@
 """Golden fixtures: what an export produced, reduced to its contract.
 
 Each scenario owns ``tests/contract/golden/<scenario>/``, which mirrors the
-contract part of the output directory: every day file below ``exports/`` and
+contract part of the output directory: the archive descriptor
+``hhe-archive.json``, every day file below ``exports/`` and
 ``metadata/export_runs.jsonl``. Text artifacts are stored as produced; values
 that depend on the moment of the run or on the Parquet encoder are replaced by
 ``VOLATILE``. A Parquet file is stored as its semantic profile.
@@ -31,13 +32,19 @@ VOLATILE_RUN_LOG_FIELDS = ("started_at", "finished_at", "duration_seconds")
 ENCODER_DEPENDENT_ARTIFACTS = frozenset({"parquet"})
 
 RUN_LOG = "metadata/export_runs.jsonl"
+DESCRIPTOR = "hhe-archive.json"
+VOLATILE_DESCRIPTOR_FIELDS = ("created_at", "created_by")
 SNAPSHOT_GOLDEN = GOLDEN_ROOT / "snapshot" / "entity_snapshot.json"
 PROFILE_SUFFIX = ".profile.json"
 
 
 def contract_files(output_dir: Path) -> dict[str, Path]:
     """Every produced file that belongs to the output contract, by relative path."""
-    files = {
+    files = {}
+    descriptor = output_dir / DESCRIPTOR
+    if descriptor.is_file():
+        files[DESCRIPTOR] = descriptor
+    files |= {
         path.relative_to(output_dir).as_posix(): path
         for path in sorted((output_dir / "exports").rglob("*"))
         if path.is_file()
@@ -65,6 +72,13 @@ def stable_manifest(text: str) -> str:
         if artifact is not None:
             artifact["size_bytes"] = VOLATILE
             artifact["sha256"] = VOLATILE
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def stable_descriptor(text: str) -> str:
+    data = json.loads(text)
+    for name in VOLATILE_DESCRIPTOR_FIELDS:
+        data[name] = VOLATILE
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -112,6 +126,8 @@ def golden_view(output_dir: Path) -> dict[str, bytes]:
     for relative, path in contract_files(output_dir).items():
         if relative == RUN_LOG:
             view[relative] = stable_run_log(text_of(path)).encode("utf-8")
+        elif relative == DESCRIPTOR:
+            view[relative] = stable_descriptor(text_of(path)).encode("utf-8")
         elif relative.endswith(".manifest.json"):
             view[relative] = stable_manifest(text_of(path)).encode("utf-8")
         elif relative.endswith(".jsonl"):

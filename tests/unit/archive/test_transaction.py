@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -124,14 +125,14 @@ def test_a_commit_copies_into_staging_when_the_work_directory_is_on_another_disk
 ) -> None:
     archive = Archive(tmp_path)
     copied: list[Path] = []
-    real_copy = transaction.shutil.copy2
+    real_copy = shutil.copy2
 
     def recording_copy(source: Path, destination: Path) -> object:
         copied.append(destination.parent)
         return real_copy(source, destination)
 
     monkeypatch.setattr(fsio, "same_device", lambda first, second: False)
-    monkeypatch.setattr(transaction.shutil, "copy2", recording_copy)
+    monkeypatch.setattr(shutil, "copy2", recording_copy)
     archive.transaction(["jsonl"]).commit()
 
     assert copied == [archive.layout.staging_dir(RUN)] * 2

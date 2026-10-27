@@ -3,6 +3,7 @@
 The visible part is the output contract that existing archives and analysis
 tooling rely on::
 
+    hhe-archive.json
     exports/daily/YYYY/MM/YYYY-MM-DD.{jsonl,csv,parquet,manifest.json}
     metadata/entity_snapshot_<local YYYYMMDDTHHMMSS>_<run id>.json
     metadata/export_runs.jsonl
@@ -14,10 +15,12 @@ staging and transaction journals. See internal dev doc § "Archive layout".
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+DESCRIPTOR_NAME = "hhe-archive.json"
 LOCK_NAME = ".hhe-archive.lock"
 STAGING_NAME = ".hhe-staging"
 JOURNAL_NAME = ".hhe-transactions"
@@ -27,6 +30,10 @@ MANIFEST_SUFFIX = "manifest.json"
 @dataclass(frozen=True)
 class ArchiveLayout:
     root: Path
+
+    @property
+    def descriptor_file(self) -> Path:
+        return self.root / DESCRIPTOR_NAME
 
     @property
     def daily_root(self) -> Path:
@@ -41,6 +48,18 @@ class ArchiveLayout:
 
     def manifest_file(self, day: date) -> Path:
         return self.day_file(day, MANIFEST_SUFFIX)
+
+    def manifest_paths(self) -> Iterator[tuple[date, Path]]:
+        """Every stored day manifest in day order; other files are not HHE's."""
+        found = []
+        for path in self.daily_root.glob(f"*/*/*.{MANIFEST_SUFFIX}"):
+            try:
+                day = date.fromisoformat(path.name.removesuffix(f".{MANIFEST_SUFFIX}"))
+            except ValueError:
+                continue
+            if path == self.manifest_file(day):
+                found.append((day, path))
+        yield from sorted(found)
 
     @property
     def metadata_dir(self) -> Path:
