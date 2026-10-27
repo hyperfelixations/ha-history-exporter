@@ -221,6 +221,14 @@ def test_a_snapshot_only_run_writes_the_snapshot_and_no_day(tmp_path: Path) -> N
     assert not export.layout.manifest_file(DAY).exists()
 
 
+def test_a_day_the_retention_blocks_ends_the_run_before_the_snapshot(tmp_path: Path) -> None:
+    run = Run(make_config(tmp_path, purge_keep_days=1))
+    with pytest.raises(ConfigError, match="Recorder retention blocks"):
+        run.export(FakeHistorySource(states=states(TEMPERATURE)))
+    assert not run.layout.metadata_dir.exists()
+    assert not run.layout.daily_root.exists()
+
+
 def test_an_empty_day_with_known_retention_is_published_empty(tmp_path: Path) -> None:
     export = run(tmp_path, ("jsonl", "csv"))
     assert export.export(source([[]])).exit_code is ExitCode.OK

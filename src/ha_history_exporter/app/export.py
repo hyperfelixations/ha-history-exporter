@@ -8,8 +8,9 @@
    states; the archive's zone follows (:func:`descriptor.determine`).
 4. A dry run plans and reports; it writes nothing.
 5. Otherwise the archive session opens (lock, recovery, descriptor), the log
-   file of the run starts, the entity snapshot is written, the plan is made
-   under the lock, and every day is captured and published.
+   file of the run starts, the plan is made under the lock, the entity
+   snapshot is written, and every day is captured and published. A plan that
+   the Recorder retention blocks ends the run before the snapshot.
 
 A rejected token, an unavailable Home Assistant, a TLS failure or a defect
 ends the run after the running day is recorded as failed; any other failure
@@ -134,6 +135,12 @@ def run_export(
             log_file = layout.log_file(local_start)
             hooks.attach_log(log_file)
             logger.info("Run %s writes to %s.", run.run_id, layout.root)
+            plan = None
+            if not cfg.snapshot_only:
+                plan = plan_export(
+                    cfg, layout, request, zone=archive_zone, today=run.today(archive_zone)
+                )
+                hooks.planned(plan, entities, zone)
             snapshot = snapshot_document(states, local_start)
             snapshot_file = write_snapshot(layout, snapshot, local_start, run.run_id)
             logger.info(
@@ -141,15 +148,11 @@ def run_export(
                 snapshot_file.name,
                 snapshot["entity_count"],
             )
-            if cfg.snapshot_only:
+            if plan is None:
                 logger.info("Snapshot only: no history is requested and no day is written.")
                 return ExportResult(
                     zone, None, entities, snapshot_file=snapshot_file, log_file=log_file
                 )
-            plan = plan_export(
-                cfg, layout, request, zone=archive_zone, today=run.today(archive_zone)
-            )
-            hooks.planned(plan, entities, zone)
             context = CaptureContext(
                 cfg=cfg,
                 layout=layout,

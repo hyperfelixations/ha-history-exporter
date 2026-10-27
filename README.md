@@ -286,10 +286,11 @@ hhe convert --format parquet
 hhe convert --format csv --last-days 30
 ```
 
-A day is converted when its manifest says `ok`. The source file is compared
-with its manifest first; the new files hold exactly the same records, and the
-manifest gains them. A day whose source is missing or changed is reported as
-`blocked`.
+A day is converted when its manifest (schema 1.4) says `ok`. The source file
+is compared with its manifest first; the new files hold exactly the same
+records, and the manifest gains them. A day whose source is missing or
+changed, and a day with a manifest of schema 1.1 to 1.3, which records no
+checksums, is reported as `blocked`.
 
 ### `hhe verify`
 
