@@ -8,7 +8,6 @@ reordering fails here as well.
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, datetime
 from pathlib import Path
 
@@ -161,11 +160,16 @@ def test_jsonl_row_shape_is_unchanged(produced: Path) -> None:
     assert rows[0]["local_offset"] == "+02:00"
 
 
-def test_jsonl_uses_the_platform_line_terminator(produced: Path) -> None:
-    raw = day_file(produced, NORMAL_DAY, "jsonl").read_bytes()
-    terminator = os.linesep.encode("ascii")
-    assert raw.endswith(terminator)
-    assert raw.count(terminator) == 5
+def test_json_outputs_end_every_line_with_lf_only(produced: Path) -> None:
+    jsonl = day_file(produced, NORMAL_DAY, "jsonl").read_bytes()
+    assert jsonl.endswith(b"\n")
+    assert jsonl.count(b"\n") == 5
+    for path in (
+        day_file(produced, NORMAL_DAY, "jsonl"),
+        day_file(produced, NORMAL_DAY, "manifest.json"),
+        produced / "metadata" / "export_runs.jsonl",
+    ):
+        assert b"\r" not in path.read_bytes(), path.name
 
 
 def test_csv_header_and_line_terminator_are_unchanged(produced: Path) -> None:

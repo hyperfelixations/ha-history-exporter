@@ -122,7 +122,7 @@ def save_snapshot(snapshot: dict, metadata_dir: Path, run_id: str | None = None)
     path = metadata_dir / filename
     tmp = path.with_name(path.name + ".tmp")
 
-    with tmp.open("w", encoding="utf-8") as f:
+    with tmp.open("w", encoding="utf-8", newline="\n") as f:
         json.dump(snapshot, f, indent=2, ensure_ascii=False)
 
     from .writers import atomic_replace

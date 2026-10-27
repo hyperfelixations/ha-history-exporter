@@ -609,7 +609,7 @@ def _append_run_log(cfg: Config, day_str: str, m: mf.DayManifest) -> None:
             "entity_count_with_history": m.entity_count_with_history,
             "duration_seconds": m.duration_seconds,
         }
-        with log_path.open("a", encoding="utf-8") as f:
+        with log_path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.warning("Could not append to export_runs.jsonl (%s).", type(exc).__name__)

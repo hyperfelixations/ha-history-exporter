@@ -541,7 +541,7 @@ def write_file(manifest: DayManifest, path: Path) -> None:
     )
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
         json.dump(data, handle, indent=2, ensure_ascii=False)
         handle.flush()
         os.fsync(handle.fileno())

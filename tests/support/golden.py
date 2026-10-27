@@ -26,9 +26,9 @@ VOLATILE_MANIFEST_FIELDS = (
 )
 VOLATILE_RUN_LOG_FIELDS = ("started_at", "finished_at", "duration_seconds")
 
-#: Artifacts whose bytes depend on the platform or the encoder version. Their
-#: size and SHA-256 are verified against the produced file instead.
-PLATFORM_DEPENDENT_ARTIFACTS = frozenset({"jsonl", "parquet"})
+#: Artifacts whose bytes depend on the encoder version. Their size and SHA-256
+#: are verified against the produced file instead.
+ENCODER_DEPENDENT_ARTIFACTS = frozenset({"parquet"})
 
 RUN_LOG = "metadata/export_runs.jsonl"
 SNAPSHOT_GOLDEN = GOLDEN_ROOT / "snapshot" / "entity_snapshot.json"
@@ -49,8 +49,10 @@ def contract_files(output_dir: Path) -> dict[str, Path]:
 
 
 def text_of(path: Path) -> str:
-    """Decode a JSON or JSONL artifact with LF line terminators."""
-    return path.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    """Decode a JSON or JSONL artifact; its line terminator is LF only."""
+    raw = path.read_bytes()
+    assert b"\r" not in raw, f"{path.name} contains a carriage return"
+    return raw.decode("utf-8")
 
 
 def stable_manifest(text: str) -> str:
@@ -58,7 +60,7 @@ def stable_manifest(text: str) -> str:
     data = json.loads(text)
     for name in VOLATILE_MANIFEST_FIELDS:
         data[name] = VOLATILE
-    for name in PLATFORM_DEPENDENT_ARTIFACTS:
+    for name in ENCODER_DEPENDENT_ARTIFACTS:
         artifact = data["artifacts"].get(name)
         if artifact is not None:
             artifact["size_bytes"] = VOLATILE

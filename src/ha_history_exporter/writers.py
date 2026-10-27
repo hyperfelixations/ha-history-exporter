@@ -65,7 +65,7 @@ class JsonlWriter:
 
     def __enter__(self) -> JsonlWriter:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._f = self._path.open("w", encoding="utf-8")
+        self._f = self._path.open("w", encoding="utf-8", newline="\n")
         return self
 
     def write(self, row: dict) -> None:
