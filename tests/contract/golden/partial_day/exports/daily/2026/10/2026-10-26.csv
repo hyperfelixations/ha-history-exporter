@@ -1,0 +1,2 @@
+entity_id,state,last_changed,last_updated,attributes_json,local_offset,extra_json
+sensor.kitchen_temperature,17.0,2026-10-26T06:00:00+00:00,2026-10-26T06:00:00+00:00,"{""friendly_name"": ""Küche Temperatur — über dem Herd"", ""unit_of_measurement"": ""°C"", ""device_class"": ""temperature""}",+01:00,

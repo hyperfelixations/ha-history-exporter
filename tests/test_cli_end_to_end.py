@@ -1,7 +1,7 @@
 """End-to-end behaviour of the command line, driven through cli.main().
 
 What an export *produces* is a stricter contract and lives in
-tests/test_output_contract.py, pinned against golden fixtures. This module
+tests/contract/, pinned against golden fixtures. This module
 covers the parts only reachable through the command line: the entity snapshot,
 the log directory, the resume short-circuit, and the exit codes.
 """

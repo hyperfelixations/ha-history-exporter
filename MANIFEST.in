@@ -11,5 +11,6 @@ include .github/dependabot.yml
 recursive-include .github/workflows *.yml
 recursive-include tools *.py
 recursive-include tests *.py *.md
-recursive-include tests/golden *.jsonl *.csv *.json
+recursive-include tests/contract/golden *.jsonl *.csv *.json
+recursive-include tests/contract/fixtures *.json
 global-exclude __pycache__/* *.py[cod]

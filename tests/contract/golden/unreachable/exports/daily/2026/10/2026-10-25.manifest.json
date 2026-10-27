@@ -8,16 +8,16 @@
   "end_local": "2026-10-26T00:00:00+01:00",
   "start_utc": "2026-10-24T22:00:00+00:00",
   "end_utc": "2026-10-25T23:00:00+00:00",
-  "export_started_at": null,
-  "export_finished_at": null,
-  "duration_seconds": null,
-  "entity_count_current": 7,
-  "entity_count_requested": 5,
-  "entity_count_with_history": 3,
+  "export_started_at": "<volatile>",
+  "export_finished_at": "<volatile>",
+  "duration_seconds": "<volatile>",
+  "entity_count_current": 3,
+  "entity_count_requested": 3,
+  "entity_count_with_history": 1,
   "entity_count_zero_history": 2,
-  "state_object_count": 4,
+  "state_object_count": 1,
   "batch_size_entities": 2,
-  "request_count": 3,
+  "request_count": 2,
   "failed_request_count": 0,
   "retried_request_count": 0,
   "history_request_options": {
@@ -38,39 +38,27 @@
   },
   "output_files": {
     "jsonl": "2026-10-25.jsonl",
-    "csv": "2026-10-25.csv",
-    "parquet": "2026-10-25.parquet"
+    "csv": null,
+    "parquet": null
   },
   "artifacts": {
     "jsonl": {
       "filename": "2026-10-25.jsonl",
-      "size_bytes": null,
-      "sha256": null,
-      "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
+      "size_bytes": "<volatile>",
+      "sha256": "<volatile>",
+      "row_count": 1,
+      "logical_sha256": "3edddc241103ce2a197b1e1fe845233ee46170fc018986165656777915ba4de1"
     },
-    "csv": {
-      "filename": "2026-10-25.csv",
-      "size_bytes": 904,
-      "sha256": "c168e8479cb582bde84ce12e3dac2a95923fd87c618b5e72accd85ca6462d66f",
-      "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
-    },
-    "parquet": {
-      "filename": "2026-10-25.parquet",
-      "size_bytes": null,
-      "sha256": null,
-      "row_count": 4,
-      "logical_sha256": "8de4740d76e949ce3e9feef21f99e494eae4d1599c2424a61a5695c976087fd3"
-    }
+    "csv": null,
+    "parquet": null
   },
   "zero_history_entities": [
-    "sensor.never_recorded",
+    "sensor.kitchen_temperature",
     "sensor.status_note"
   ],
   "failed_batches": [],
   "skipped_reason": null,
   "error": null,
   "error_code": null,
-  "script_version": null
+  "script_version": "<volatile>"
 }

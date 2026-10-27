@@ -1,0 +1,27 @@
+{
+  "created_at": "<volatile>",
+  "source": "/api/states",
+  "entity_count": 3,
+  "entity_count_unknown": 1,
+  "entity_count_unavailable": 1,
+  "entities": [
+    {
+      "entity_id": "binary_sensor.front_door",
+      "domain": "binary_sensor",
+      "state_at_snapshot": "unavailable",
+      "friendly_name": ""
+    },
+    {
+      "entity_id": "light.hall",
+      "domain": "light",
+      "state_at_snapshot": "unknown",
+      "friendly_name": "Hall"
+    },
+    {
+      "entity_id": "sensor.kitchen_temperature",
+      "domain": "sensor",
+      "state_at_snapshot": "21.5",
+      "friendly_name": "Küche Temperatur"
+    }
+  ]
+}

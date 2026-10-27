@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Regenerate the golden fixtures in tests/golden/.
+"""Regenerate the golden fixtures in tests/contract/golden/.
 
-The fixtures record what an export run actually produces. Regenerating them
-declares that the produced files changed on purpose, so run this only after
-that change was reviewed, and inspect the resulting diff line by line before
+Regenerating declares that the produced output changed on purpose. Run it only
+for a reviewed change and inspect the resulting diff file by file before
 committing it.
 
     python tools/refresh_golden.py
@@ -11,8 +10,6 @@ committing it.
 
 from __future__ import annotations
 
-import json
-import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -20,57 +17,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tests import test_output_contract as contract  # noqa: E402
+from tests.support import golden  # noqa: E402
+from tests.support.harness import produce, produce_snapshot  # noqa: E402
+from tests.support.scenarios import SCENARIOS, SNAPSHOT_STATES  # noqa: E402
 
 
 def main() -> int:
-    contract.GOLDEN.mkdir(parents=True, exist_ok=True)
-    workdir = Path(tempfile.mkdtemp(prefix="hhe-golden-"))
-    try:
-        output = contract.produce(workdir)
-
-        for day in (contract.NORMAL_DAY, contract.DST_DAY):
-            # JSONL is stored with LF: its terminator is os.linesep and would
-            # otherwise make the fixture depend on the generating platform. CSV
-            # is stored exactly as produced, because the csv dialect writes CRLF
-            # everywhere.
-            _write(
-                contract.GOLDEN / f"{day}.jsonl",
-                contract.day_file(output, day, "jsonl").read_bytes().replace(b"\r\n", b"\n"),
-            )
-            _write(
-                contract.GOLDEN / f"{day}.csv",
-                contract.day_file(output, day, "csv").read_bytes(),
-            )
-
-            _dump(
-                contract.GOLDEN / f"{day}.parquet.json",
-                contract.parquet_profile(contract.day_file(output, day, "parquet")),
-            )
-            _dump(
-                contract.GOLDEN / f"{day}.manifest.json",
-                contract.stable_manifest(contract.day_file(output, day, "manifest.json")),
-            )
-
-        _dump(
-            contract.GOLDEN / "export_runs.json",
-            contract.stable_run_log(output / "metadata" / "export_runs.jsonl"),
-        )
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
-
-    print("\nInspect the diff before committing:  git diff tests/golden/")
+    with tempfile.TemporaryDirectory(prefix="hhe-golden-") as workdir:
+        for scenario in SCENARIOS:
+            production = produce(scenario, Path(workdir) / scenario.name)
+            for path in golden.write_golden(scenario.name, production.output_dir):
+                print(f"wrote {path.relative_to(ROOT).as_posix()}")
+        snapshot = produce_snapshot(SNAPSHOT_STATES, Path(workdir) / "snapshot")
+        path = golden.write_snapshot_golden(snapshot)
+        print(f"wrote {path.relative_to(ROOT).as_posix()}")
+    print("\nInspect the diff before committing:  git diff tests/contract/golden/")
     return 0
-
-
-def _dump(path: Path, payload: object) -> None:
-    text = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=False)
-    _write(path, (text + "\n").encode("utf-8"))
-
-
-def _write(path: Path, data: bytes) -> None:
-    path.write_bytes(data)
-    print(f"wrote {path.name} ({len(data)} bytes)")
 
 
 if __name__ == "__main__":

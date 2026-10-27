@@ -8,29 +8,29 @@
   "end_local": "2026-10-25T00:00:00+02:00",
   "start_utc": "2026-10-23T22:00:00+00:00",
   "end_utc": "2026-10-24T22:00:00+00:00",
-  "export_started_at": null,
-  "export_finished_at": null,
-  "duration_seconds": null,
-  "entity_count_current": 7,
-  "entity_count_requested": 5,
-  "entity_count_with_history": 4,
-  "entity_count_zero_history": 1,
-  "state_object_count": 5,
+  "export_started_at": "<volatile>",
+  "export_finished_at": "<volatile>",
+  "duration_seconds": "<volatile>",
+  "entity_count_current": 3,
+  "entity_count_requested": 3,
+  "entity_count_with_history": 3,
+  "entity_count_zero_history": 0,
+  "state_object_count": 4,
   "batch_size_entities": 2,
-  "request_count": 3,
+  "request_count": 2,
   "failed_request_count": 0,
   "retried_request_count": 0,
   "history_request_options": {
     "minimal_response": false,
     "no_attributes": false,
     "significant_changes_only": false,
-    "skip_initial_state": true
+    "skip_initial_state": false
   },
   "capture_profile": {
     "response": "full",
     "attributes": "full",
     "state_changes": "all",
-    "initial_state": "omitted"
+    "initial_state": "included"
   },
   "retention": {
     "status": "known_safe",
@@ -44,32 +44,30 @@
   "artifacts": {
     "jsonl": {
       "filename": "2026-10-24.jsonl",
-      "size_bytes": null,
-      "sha256": null,
-      "row_count": 5,
-      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+      "size_bytes": "<volatile>",
+      "sha256": "<volatile>",
+      "row_count": 4,
+      "logical_sha256": "50443931c53621142270a9583562f81357b134ac307b80f9a43a59af5e992495"
     },
     "csv": {
       "filename": "2026-10-24.csv",
-      "size_bytes": 1110,
-      "sha256": "54f361a500e2c6ee297efb62e680e692d4917507242cc0f680b6348e8db1cd57",
-      "row_count": 5,
-      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+      "size_bytes": 870,
+      "sha256": "ee456070e8d886df3e0c6609b912ac62aa6bad9f786e825567d038d38022854d",
+      "row_count": 4,
+      "logical_sha256": "50443931c53621142270a9583562f81357b134ac307b80f9a43a59af5e992495"
     },
     "parquet": {
       "filename": "2026-10-24.parquet",
-      "size_bytes": null,
-      "sha256": null,
-      "row_count": 5,
-      "logical_sha256": "4261bfed9f503934fdfc5cdb64862dc428975893c03b1cd3d8b60d9d70f3384f"
+      "size_bytes": "<volatile>",
+      "sha256": "<volatile>",
+      "row_count": 4,
+      "logical_sha256": "50443931c53621142270a9583562f81357b134ac307b80f9a43a59af5e992495"
     }
   },
-  "zero_history_entities": [
-    "sensor.never_recorded"
-  ],
+  "zero_history_entities": [],
   "failed_batches": [],
   "skipped_reason": null,
   "error": null,
   "error_code": null,
-  "script_version": null
+  "script_version": "<volatile>"
 }

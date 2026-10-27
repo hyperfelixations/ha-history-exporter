@@ -1,0 +1,1 @@
+{"entity_id": "sensor.kitchen_temperature", "state": "17.0", "last_changed": "2026-10-26T06:00:00+00:00", "last_updated": "2026-10-26T06:00:00+00:00", "attributes": {"friendly_name": "Küche Temperatur — über dem Herd", "unit_of_measurement": "°C", "device_class": "temperature"}, "local_offset": "+01:00"}
