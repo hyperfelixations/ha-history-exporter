@@ -1,8 +1,9 @@
 # Beyond the package, the sdist carries what verifies it: the licence, the
-# README and the test suite with its fixtures. Repository policy (tests/repo),
+# README, the security policy and the test suite with its fixtures. Repository policy (tests/repo),
 # workflows and tools stay in the repository.
 include LICENSE
 include README.md
+include SECURITY.md
 recursive-include tests *.py *.md
 recursive-include tests/contract/golden *.jsonl *.csv *.json
 recursive-include tests/contract/fixtures *.json

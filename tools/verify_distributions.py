@@ -19,6 +19,7 @@ PACKAGE_NAME = "ha_history_exporter"
 SDIST_REQUIRED = (
     "LICENSE",
     "README.md",
+    "SECURITY.md",
     "pyproject.toml",
     "src/ha_history_exporter/__init__.py",
     "src/ha_history_exporter/schemas/manifest-1.4.schema.json",

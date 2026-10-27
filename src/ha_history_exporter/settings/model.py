@@ -137,7 +137,7 @@ class RequestSettings:
     )
     max_retries: int = setting(
         Integer(0),
-        "Retries of a request after a timeout, a lost connection, HTTP 429 or 502-504.",
+        "Retries of a request after a timeout, a lost connection, HTTP 429 or 500-504.",
         default=3,
         cli="--max-retries",
     )
