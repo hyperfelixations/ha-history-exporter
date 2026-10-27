@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -82,13 +83,26 @@ def test_a_lock_held_by_another_process_is_refused_and_named(tmp_path: Path) -> 
         assert caught.value.holder == "run_id: child\npid: child"
 
 
-def test_a_killed_holder_releases_the_lock_at_once(tmp_path: Path) -> None:
+def test_a_killed_holder_releases_the_lock(tmp_path: Path) -> None:
+    """Windows releases the locks of a terminated process asynchronously."""
     path = tmp_path / "archive.lock"
     with held_by_another_process(path) as child:
         child.kill()
         child.wait(timeout=30)
-        with FileLock(path, "run_id: next\n"):
+        lock = FileLock(path, "run_id: next\n")
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                lock.acquire()
+            except LockHeld:
+                assert time.monotonic() < deadline, "the lock outlived its holder"
+                time.sleep(0.05)
+            else:
+                break
+        try:
             assert path.read_text(encoding="utf-8") == "run_id: next\n"
+        finally:
+            lock.release()
 
 
 def test_a_lock_file_replaced_while_locking_is_locked_again(
