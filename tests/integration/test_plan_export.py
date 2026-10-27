@@ -16,7 +16,7 @@ from ha_history_exporter.domain.manifest import ManifestStatus
 from ha_history_exporter.domain.plan import DayAction, DaySelection, ExportPlan
 from ha_history_exporter.errors import ConfigError, ExportError
 from ha_history_exporter.settings import Config, RecorderSettings
-from tests.helpers import make_config
+from tests.support.builders import make_config
 from tests.support.manifests import DAY, manifest14, write_manifest
 
 BERLIN = ZoneInfo("Europe/Berlin")

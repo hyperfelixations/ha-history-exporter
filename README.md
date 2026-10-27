@@ -84,9 +84,8 @@ pipx inject ha-history-exporter pyarrow
 pip install "ha-history-exporter[parquet]"
 ```
 
-Requires Python 3.12 or newer. The test matrix covers Linux and Windows on
-Python 3.12 to 3.15. macOS uses the same Python interfaces but is not yet part
-of the continuous test matrix.
+Requires Python 3.12 or newer. The test matrix covers Linux, macOS and
+Windows on Python 3.12 to 3.15.
 
 ### From a clone
 

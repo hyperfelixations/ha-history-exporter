@@ -152,7 +152,7 @@ def capture_day(ctx: CaptureContext, window: DayWindow) -> DayOutcome:
         _save_failure(ctx, failed, existing)
         return DayOutcome(failed, exc if isinstance(exc, RUN_ENDING) else None)
     except Exception as exc:
-        logger.error("Day %s failed with an unexpected error.", day, exc_info=exc)
+        logger.exception("Day %s failed with an unexpected error.", day)
         failed = _manifest(ctx, identity, progress, partial, safe_error_record(exc))
         _save_failure(ctx, failed, existing)
         return DayOutcome(failed, InternalError.during(f"the export of {day}"))

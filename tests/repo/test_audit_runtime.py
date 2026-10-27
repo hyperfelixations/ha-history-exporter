@@ -6,7 +6,6 @@ access; whether an advisory exists is pip-audit's verdict in CI.
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -14,17 +13,13 @@ from types import ModuleType
 
 import pytest
 
-ROOT = Path(__file__).parents[1]
+from tests.repo import tooling
+
+pytestmark = pytest.mark.repo
 
 
 def load_tool() -> ModuleType:
-    path = ROOT / "tools" / "audit_runtime.py"
-    spec = importlib.util.spec_from_file_location("audit_runtime", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return tooling.load_tool("audit_runtime")
 
 
 def test_audit_command_inspects_only_the_given_environment() -> None:
@@ -70,7 +65,7 @@ def test_the_audit_runs_after_the_install_and_its_verdict_is_the_result(
 
     monkeypatch.setattr(tool.subprocess, "run", fake_run)
 
-    assert tool.audit_runtime(ROOT, []) == audit_exit_code
+    assert tool.audit_runtime(tooling.ROOT, []) == audit_exit_code
     kinds = [
         "install" if "install" in call else "audit" if "pip_audit" in call else "site"
         for call in calls
@@ -89,4 +84,4 @@ def test_a_failing_install_is_not_reported_as_a_clean_audit(
     monkeypatch.setattr(tool.subprocess, "run", fake_run)
 
     with pytest.raises(subprocess.CalledProcessError):
-        tool.audit_runtime(ROOT, [])
+        tool.audit_runtime(tooling.ROOT, [])

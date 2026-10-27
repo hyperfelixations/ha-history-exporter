@@ -11,7 +11,7 @@ from ha_history_exporter.domain.records import HistoryRecord
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.domain.wire import iter_normalized_history
 from ha_history_exporter.errors import ValidationError
-from tests.helpers import state_row
+from tests.support.builders import state_row
 
 BERLIN = ZoneInfo("Europe/Berlin")
 WINDOW = DayWindow.full(date(2026, 7, 28), BERLIN)

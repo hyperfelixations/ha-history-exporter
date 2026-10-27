@@ -1,0 +1,5 @@
+# The reusable checks are called as ./.github/workflows/checks.yml, which resolves at the running
+# commit without a checkout. actionlint does not accept the $/ form yet (rhysd/actionlint#711).
+rules:
+  self-repository:
+    disable: true

@@ -28,7 +28,7 @@ from ha_history_exporter.domain.snapshot import snapshot_document
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
 from ha_history_exporter.settings import EntitySettings, HistoryRequestSettings
-from tests.helpers import make_config
+from tests.support.builders import make_config
 from tests.support.clock import FixedClock
 from tests.support.fake_source import HistoryRequest, RecordedHistorySource
 

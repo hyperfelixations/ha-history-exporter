@@ -43,8 +43,8 @@ def main(
         logger.warning("Interrupted.", extra=FILE_ONLY)
         services.stderr.write("\nInterrupted.\n")
         return int(ExitCode.INTERRUPTED)
-    except Exception as exc:
-        logger.error("Unexpected internal error.", exc_info=exc, extra=FILE_ONLY)
+    except Exception:
+        logger.exception("Unexpected internal error.", extra=FILE_ONLY)
         return _failed(InternalError.during(f"{prog} {args.command}"), args, services)
     finally:
         logs.close()

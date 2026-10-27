@@ -12,11 +12,17 @@ from ha_history_exporter.cli.logging import FILE_ONLY, CommandLogging
 logger = logging.getLogger("hhe.test")
 
 
+def _defect() -> None:
+    raise ZeroDivisionError("synthetic defect")
+
+
 def _failure() -> BaseException:
+    """An exception that carries a traceback."""
     try:
-        raise ZeroDivisionError("synthetic defect")
+        _defect()
     except ZeroDivisionError as exc:
         return exc
+    raise AssertionError("the defect did not raise")
 
 
 def test_the_terminal_never_shows_a_traceback_and_the_file_always_does(tmp_path: Path) -> None:

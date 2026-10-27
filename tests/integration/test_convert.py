@@ -20,7 +20,7 @@ from ha_history_exporter.domain.plan import DaySelection
 from ha_history_exporter.domain.window import DayWindow
 from ha_history_exporter.errors import ConfigError, ExitCode
 from ha_history_exporter.settings import Config
-from tests.helpers import make_config
+from tests.support.builders import make_config
 from tests.support.clock import FixedClock
 from tests.support.harness import derive, produce
 from tests.support.scenarios import DST_DAY, FAILED_DAY, NORMAL_DAY, REFERENCE

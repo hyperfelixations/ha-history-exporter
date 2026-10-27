@@ -30,7 +30,7 @@ from ha_history_exporter.errors import (
     TLSError,
 )
 from ha_history_exporter.settings import Config
-from tests.helpers import make_config, state_row
+from tests.support.builders import make_config, state_row
 from tests.support.clock import FixedClock
 from tests.support.fake_source import Answer, FakeHistorySource, Retried
 

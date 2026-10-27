@@ -30,14 +30,33 @@ OUTCOMES: dict[str, int | type[BaseException]] = {
 }
 
 
+class _Productions(dict[str, Production]):
+    """Each scenario produced once, on first use; Parquet scenarios need pyarrow."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self.root = root
+
+    def __missing__(self, name: str) -> Production:
+        scenario = next(scenario for scenario in SCENARIOS if scenario.name == name)
+        self[name] = produce(scenario, self.root / name)
+        return self[name]
+
+
 @pytest.fixture(scope="module")
 def productions(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Production]:
-    root = tmp_path_factory.mktemp("scenarios")
-    return {scenario.name: produce(scenario, root / scenario.name) for scenario in SCENARIOS}
+    return _Productions(tmp_path_factory.mktemp("scenarios"))
 
 
-def _ids(scenarios: tuple[Scenario, ...]) -> list[str]:
-    return [scenario.name for scenario in scenarios]
+def _params(scenarios: tuple[Scenario, ...]) -> list[Any]:
+    return [
+        pytest.param(
+            scenario,
+            id=scenario.name,
+            marks=[pytest.mark.parquet] if "parquet" in scenario.formats else [],
+        )
+        for scenario in scenarios
+    ]
 
 
 def test_every_scenario_has_an_outcome_and_a_golden_directory() -> None:
@@ -46,7 +65,7 @@ def test_every_scenario_has_an_outcome_and_a_golden_directory() -> None:
         assert (golden.GOLDEN_ROOT / scenario.name).is_dir(), scenario.name
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=_ids(SCENARIOS))
+@pytest.mark.parametrize("scenario", _params(SCENARIOS))
 def test_scenario_ends_as_specified(productions: dict[str, Production], scenario: Scenario) -> None:
     production = productions[scenario.name]
     expected = OUTCOMES[scenario.name]
@@ -57,7 +76,7 @@ def test_scenario_ends_as_specified(productions: dict[str, Production], scenario
         assert production.error is expected
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=_ids(SCENARIOS))
+@pytest.mark.parametrize("scenario", _params(SCENARIOS))
 def test_contract_files_match_the_golden_directory(
     productions: dict[str, Production], scenario: Scenario
 ) -> None:
@@ -68,7 +87,7 @@ def test_contract_files_match_the_golden_directory(
         assert produced[relative] == data, f"{relative} differs from its golden fixture"
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=_ids(SCENARIOS))
+@pytest.mark.parametrize("scenario", _params(SCENARIOS))
 def test_manifests_and_run_log_keep_their_serialisation(
     productions: dict[str, Production], scenario: Scenario
 ) -> None:
@@ -84,7 +103,7 @@ def test_manifests_and_run_log_keep_their_serialisation(
                 assert line == json.dumps(json.loads(line), ensure_ascii=False)
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=_ids(SCENARIOS))
+@pytest.mark.parametrize("scenario", _params(SCENARIOS))
 def test_manifest_physical_metadata_matches_the_produced_artifacts(
     productions: dict[str, Production], scenario: Scenario
 ) -> None:

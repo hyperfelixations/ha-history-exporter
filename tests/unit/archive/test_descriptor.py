@@ -164,6 +164,7 @@ def test_without_home_assistant_only_a_known_zone_is_established(layout: Archive
         establish(layout, None, configured=None, home_assistant=None, now=NOW)
     write_manifest(layout.root, manifest14(DAY))
     adopted = descriptor.known(layout, None, configured=None)
-    assert adopted is not None and adopted.source is ZoneSource.ADOPTED
+    assert adopted is not None
+    assert adopted.source is ZoneSource.ADOPTED
     written = establish(layout, None, configured=None, home_assistant=None, now=NOW)
     assert written.timezone == BERLIN

@@ -125,7 +125,7 @@ def _entry(raw: Any) -> Entry:
     }:
         raise ValueError("malformed journal entry")
     if not isinstance(raw["had_original"], bool):
-        raise ValueError("malformed journal entry")
+        raise TypeError("malformed journal entry")
     return Entry(
         action=Action(raw["action"]),
         final=raw["final"],

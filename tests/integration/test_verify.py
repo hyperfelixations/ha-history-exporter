@@ -21,7 +21,7 @@ from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.plan import DaySelection
 from ha_history_exporter.errors import ExitCode
 from ha_history_exporter.settings import Config
-from tests.helpers import make_config
+from tests.support.builders import make_config
 from tests.support.clock import FixedClock
 from tests.support.harness import produce
 from tests.support.scenarios import DST_DAY, NORMAL_DAY, REFERENCE
@@ -176,7 +176,8 @@ def test_reading_neither_locks_nor_recovers_nor_adopts(archive: Config) -> None:
         assert state.running == "run_id: other, pid: 1"
         assert state.pending_transactions == 1
         assert not state.described
-        assert state.zone is not None and state.zone.zone == BERLIN
+        assert state.zone is not None
+        assert state.zone.zone == BERLIN
     assert journal.exists()
     assert not target.descriptor_file.exists()
 

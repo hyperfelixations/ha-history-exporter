@@ -10,7 +10,7 @@ import pytest
 
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.errors import AuthError, HAConnectionError
-from tests.helpers import state_row
+from tests.support.builders import state_row
 from tests.support.fake_source import FakeHistorySource
 from tests.support.terminal import Terminal, states
 

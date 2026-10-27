@@ -25,17 +25,28 @@ instance.
 - `tests/integration/`: the use cases and the commands in-process, with an
   in-memory Home Assistant, a fixed clock and injected terminal services.
 - `tests/contract/`: the output contract as golden files, driven through the
-  single seam `tests/support/harness.produce()`, and every command HHE
-  suggests in a message checked against the parser and the key registry.
+  single seam `tests/support/harness.py` (`produce()` for exports, `derive()`
+  for conversions), and every command HHE suggests in a message checked
+  against the parser and the key registry.
 - `tests/system/`: `python -m ha_history_exporter` in a process of its own.
+- `tests/repo/` (marker `repo`): the repository rather than the product:
+  import contracts, privacy audit, tool pins, the release tools. It is not
+  part of the source distribution.
 
-Regenerate golden files only for a reviewed, intended output change:
-`python tools/refresh_golden.py`.
+Tests that need the optional `pyarrow` carry the marker `parquet` or skip
+themselves without it. Regenerate golden files only for a reviewed, intended
+output change: `python tools/refresh_golden.py`.
 
 ## Run locally
 
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pip install -e ".[parquet]"
-python -m pytest --cov=ha_history_exporter --cov-report=term-missing
+python -m pytest --cov=ha_history_exporter
+```
+
+Without `pyarrow`, deselect what needs it:
+
+```bash
+python -m pytest -m "not parquet"
 ```

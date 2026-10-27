@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tarfile
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -153,19 +154,32 @@ def scan_archive(path: Path, denylist: tuple[str, ...] = ()) -> set[Finding]:
     raise ValueError(f"Unsupported distribution type: {path.name}")
 
 
-def _git(root: Path, *args: str) -> bytes:
+def _git(root: Path, *args: str, stdin: bytes | None = None) -> bytes:
     executable = shutil.which("git")
     if executable is None:
         raise RuntimeError("Git is required for repository privacy auditing.")
     return subprocess.run(  # noqa: S603 - fixed executable and internal arguments
         [executable, *args],
         cwd=root,
+        input=stdin,
         check=True,
         capture_output=True,
     ).stdout
 
 
+def _objects(output: bytes) -> Iterator[tuple[str, str, bytes]]:
+    """Name, type and content of each object in ``git cat-file --batch`` output."""
+    position = 0
+    while position < len(output):
+        header_end = output.index(b"\n", position)
+        name, kind, size = output[position:header_end].decode("ascii").split()
+        start = header_end + 1
+        yield name, kind, output[start : start + int(size)]
+        position = start + int(size) + 1
+
+
 def scan_git_history(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]:
+    """Commit metadata and every blob any reference reaches, in four Git processes."""
     findings: set[Finding] = set()
     metadata = _git(
         root,
@@ -174,21 +188,21 @@ def scan_git_history(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]
         "--format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%B%x00",
     )
     findings.update(_scan_bytes(metadata, "git-metadata", denylist))
-    revisions = _git(root, "rev-list", "--all").decode("ascii").splitlines()
-    seen_blobs: set[str] = set()
-    for revision in revisions:
-        tree = _git(root, "ls-tree", "-r", "-z", revision)
-        for record in tree.split(b"\x00"):
-            if not record:
-                continue
-            metadata_bytes, name = record.split(b"\t", 1)
-            blob = metadata_bytes.split()[2].decode("ascii")
-            if blob in seen_blobs:
-                continue
-            seen_blobs.add(blob)
-            data = _git(root, "cat-file", "blob", blob)
-            location = f"git-blob:{blob}:{name.decode('utf-8', errors='replace')}"
-            findings.update(_scan_bytes(data, location, denylist))
+    paths: dict[str, str] = {}
+    for line in _git(root, "rev-list", "--objects", "--all").decode("utf-8").splitlines():
+        name, _, path = line.partition(" ")
+        if path:
+            paths.setdefault(name, path)
+    request = "".join(f"{name}\n" for name in paths).encode("ascii")
+    kinds = _git(root, "cat-file", "--batch-check=%(objectname) %(objecttype)", stdin=request)
+    blobs = [
+        name
+        for name, kind in (line.split() for line in kinds.decode("ascii").splitlines())
+        if kind == "blob"
+    ]
+    contents = _git(root, "cat-file", "--batch", stdin="".join(f"{b}\n" for b in blobs).encode())
+    for name, _, data in _objects(contents):
+        findings.update(_scan_bytes(data, f"git-blob:{name}:{paths[name]}", denylist))
     return findings
 
 

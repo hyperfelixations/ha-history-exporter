@@ -13,9 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers import day_path, make_config
+from tests.support.builders import day_path, make_config
 from tests.support.harness import produce
 from tests.support.scenarios import DST_DAY, NORMAL_DAY, REFERENCE, REFERENCE_ENTITY_IDS
+
+#: Every assertion reads the reference export, which includes Parquet.
+pytestmark = pytest.mark.parquet
 
 MANIFEST_FIELDS = [
     "schema_version",
@@ -207,6 +210,7 @@ def test_entities_without_history_are_recorded_not_failed(produced: Path) -> Non
     dst = json.loads(day_file(produced, DST_DAY, "manifest.json").read_text("utf-8"))
     assert normal["zero_history_entities"] == ["sensor.never_recorded"]
     assert dst["zero_history_entities"] == ["sensor.never_recorded", "sensor.status_note"]
-    assert normal["failed_batches"] == [] and dst["failed_batches"] == []
+    assert normal["failed_batches"] == []
+    assert dst["failed_batches"] == []
     assert normal["entity_count_current"] == REFERENCE.entity_count_total
     assert normal["entity_count_requested"] == len(REFERENCE_ENTITY_IDS)

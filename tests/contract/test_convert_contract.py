@@ -16,8 +16,8 @@ import pytest
 
 from ha_history_exporter.app.results import ArtifactStatus, ConversionOutcome
 from ha_history_exporter.app.verify import Depth, verify_archive
-from tests.helpers import make_config
 from tests.support import golden
+from tests.support.builders import make_config
 from tests.support.clock import FixedClock
 from tests.support.harness import derive, produce
 from tests.support.scenarios import REFERENCE

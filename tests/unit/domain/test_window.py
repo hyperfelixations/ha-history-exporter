@@ -127,7 +127,7 @@ def test_an_empty_window_is_refused() -> None:
 
 
 def test_bounds_must_be_aware() -> None:
-    naive = datetime(2026, 7, 28)
+    naive = datetime(2026, 7, 28)  # noqa: DTZ001 - naive on purpose
     with pytest.raises(ValueError, match="timezone-aware"):
         DayWindow(date(2026, 7, 28), BERLIN, naive, naive + timedelta(days=1))
 

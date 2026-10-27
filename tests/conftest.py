@@ -14,7 +14,7 @@ _HOST_CONFIGURATION_ENV_VARS = (*registry.BY_ENV, registry.TOKEN_ENV, *registry.
 
 
 @pytest.fixture(autouse=True)
-def isolated_user_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+def isolated_user_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolate every test from real credentials, user files, and project files.
 
     One fixture owns the whole environment so no ordering between autouse
@@ -40,7 +40,7 @@ def isolated_user_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     # would write into the real profile.
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home_dir))
 
-    yield config_dir
+    return config_dir
 
 
 @pytest.fixture(autouse=True)

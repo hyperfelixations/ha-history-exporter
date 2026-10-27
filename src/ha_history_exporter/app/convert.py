@@ -132,8 +132,8 @@ class _Conversion:
         except HHEError as exc:
             logger.error("Day %s was not converted: %s", day, exc.summary)
             return DayConversion(day, ConversionOutcome.FAILED, reason=exc.summary)
-        except Exception as exc:
-            logger.error("Day %s failed with an unexpected error.", day, exc_info=exc)
+        except Exception:
+            logger.exception("Day %s failed with an unexpected error.", day)
             raise InternalError.during(f"the conversion of {day}") from None
 
     def _convert(self, window: DayWindow) -> DayConversion:
