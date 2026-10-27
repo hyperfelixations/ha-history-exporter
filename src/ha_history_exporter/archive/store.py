@@ -5,16 +5,16 @@ from __future__ import annotations
 from ..domain.manifest import StoredManifest, decode_manifest
 from ..domain.window import DayIdentity
 from ..errors import ExportError, Remedy
-from ..layout import ExportLayout
+from .layout import ArchiveLayout
 
 
-def load_manifest(layout: ExportLayout, identity: DayIdentity) -> StoredManifest | None:
+def load_manifest(layout: ArchiveLayout, identity: DayIdentity) -> StoredManifest | None:
     """The day's manifest, or None when the day has none.
 
     An unreadable or invalid manifest is an error, never "missing": the
     manifest is the durable record of the day.
     """
-    path = layout.day_file(identity.day, "manifest.json")
+    path = layout.manifest_file(identity.day)
     try:
         raw = path.read_bytes()
     except (FileNotFoundError, NotADirectoryError):

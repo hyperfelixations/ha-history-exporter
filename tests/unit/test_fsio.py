@@ -55,6 +55,20 @@ def test_atomic_write_flushes_file_and_directory(
     assert synced == ["file", f"dir:{tmp_path.name}"]
 
 
+def test_ensure_dir_names_every_new_directory_durably_in_its_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    synced: list[Path] = []
+    monkeypatch.setattr(fsio, "fsync_dir", synced.append)
+    (tmp_path / "a").mkdir()
+
+    fsio.ensure_dir(tmp_path / "a" / "b" / "c")
+    fsio.ensure_dir(tmp_path / "a" / "b" / "c")
+
+    assert (tmp_path / "a" / "b" / "c").is_dir()
+    assert synced == [tmp_path / "a", tmp_path / "a" / "b"]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes only")
 def test_atomic_write_applies_the_mode_to_a_new_file(tmp_path: Path) -> None:
     target = tmp_path / "secret"

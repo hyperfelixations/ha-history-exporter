@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
 import requests
 
 from ha_history_exporter.domain.formats import Format
-from ha_history_exporter.planner import DayDecision, ExportPlan
+from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
 from ha_history_exporter.settings import (
     Config,
     EntitySettings,
@@ -88,8 +88,7 @@ def make_export_plan(day: date) -> ExportPlan:
         requested_start=day,
         requested_end=day,
         today=date(2026, 7, 30),
-        latest_complete=date(2026, 7, 29),
-        decisions=[DayDecision(day=day, action="export")],
+        decisions=(DayDecision(day, DayAction.EXPORT),),
     )
 
 
@@ -123,8 +122,27 @@ class FakeHomeAssistantClient:
         self.total_requests = 0
         self.total_retries = 0
 
-    def get_history(self, **kwargs):
-        self.calls.append(kwargs)
+    def get_history(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+        entity_ids: list[str],
+        minimal_response: bool = False,
+        no_attributes: bool = False,
+        significant_changes_only: bool = False,
+        skip_initial_state: bool = True,
+    ) -> list[list[dict[str, Any]]]:
+        self.calls.append(
+            {
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+                "entity_ids": entity_ids,
+                "minimal_response": minimal_response,
+                "no_attributes": no_attributes,
+                "significant_changes_only": significant_changes_only,
+                "skip_initial_state": skip_initial_state,
+            }
+        )
         self.total_requests += 1
         response = next(self._responses)
         if isinstance(response, Exception):

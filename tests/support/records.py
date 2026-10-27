@@ -43,7 +43,7 @@ def make_record(
 
 
 _text = st.text(
-    alphabet=st.characters(blacklist_categories=("Cs",)),
+    alphabet=st.characters(exclude_categories=["Cs"]),
     max_size=12,
 )
 _json_scalars = st.none() | st.booleans() | st.integers(-(2**53), 2**53) | _text

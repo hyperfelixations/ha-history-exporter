@@ -9,18 +9,20 @@ implementation can be rebuilt without touching a contract test.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from ha_history_exporter.app.export import run_export
+from ha_history_exporter.archive.layout import ArchiveLayout
+from ha_history_exporter.archive.metadata import write_snapshot
 from ha_history_exporter.archive.store import load_manifest
+from ha_history_exporter.archive.workspace import new_run_id
+from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
+from ha_history_exporter.domain.snapshot import snapshot_document
 from ha_history_exporter.domain.window import DayIdentity
-from ha_history_exporter.entity_snapshot import build_snapshot, save_snapshot
 from ha_history_exporter.errors import AuthError, HAAPIError, HAConnectionError, HHEError
-from ha_history_exporter.exporter import run_export
-from ha_history_exporter.planner import DayDecision, ExportPlan
-from ha_history_exporter.runtime.workspace import new_run_id
 from ha_history_exporter.settings import HistoryRequestSettings
 from ha_history_exporter.time_utils import local_day_bounds
 from tests.helpers import FakeHomeAssistantClient, make_config
@@ -97,19 +99,17 @@ def produce(scenario: Scenario, root: Path) -> Production:
             for response in scenario.responses
         ]
     )
-    decisions = [
-        DayDecision(
-            day=day,
-            action="export_partial" if day == scenario.partial_day else "export",
-        )
-        for day in scenario.days
-    ]
     plan = ExportPlan(
         requested_start=scenario.days[0],
         requested_end=scenario.days[-1],
         today=scenario.today,
-        latest_complete=date.fromordinal(scenario.today.toordinal() - 1),
-        decisions=decisions,
+        decisions=tuple(
+            DayDecision(
+                day,
+                DayAction.EXPORT_PARTIAL if day == scenario.partial_day else DayAction.EXPORT,
+            )
+            for day in scenario.days
+        ),
     )
     try:
         exit_code = run_export(
@@ -119,7 +119,6 @@ def produce(scenario: Scenario, root: Path) -> Production:
             entity_count_total=scenario.entity_count_total,
             client=client,
             tz=ZoneInfo(scenario.timezone),
-            dry_run=False,
             sleep=lambda _seconds: None,
             now=scenario.now,
         )
@@ -130,8 +129,13 @@ def produce(scenario: Scenario, root: Path) -> Production:
 
 def produce_snapshot(states: list[dict[str, Any]], output_dir: Path) -> Path:
     """Write the entity snapshot of one run for *states*; return its path."""
-    snapshot = build_snapshot(states, ZoneInfo("Europe/Berlin"))
-    return save_snapshot(snapshot, output_dir / "metadata", run_id=new_run_id())
+    created_local = datetime.now(ZoneInfo("Europe/Berlin"))
+    return write_snapshot(
+        ArchiveLayout(output_dir),
+        snapshot_document(states, created_local),
+        created_local,
+        new_run_id(created_local.astimezone(UTC)),
+    )
 
 
 def stored_status(output_dir: Path, day: date, timezone: str = "Europe/Berlin") -> str | None:

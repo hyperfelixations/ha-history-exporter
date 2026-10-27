@@ -17,8 +17,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ha_history_exporter import cli, ha_client, planner
+from ha_history_exporter import cli, ha_client
+from ha_history_exporter.app.export import plan_export
 from ha_history_exporter.cli.commands import export as export_command
+from ha_history_exporter.domain.plan import DayAction, ExportPlan, build_plan
 from ha_history_exporter.time_utils import (
     local_day_bounds,
     partial_day_bounds,
@@ -35,6 +37,18 @@ def today() -> date:
 
 def yesterday() -> date:
     return today() - timedelta(days=1)
+
+
+def plan(start: date, end: date, partial_day: date | None = None) -> ExportPlan:
+    return build_plan(
+        start,
+        end,
+        today=today(),
+        completed=lambda _day: None,
+        force=False,
+        partial_day=partial_day,
+        purge_keep_days=None,
+    )
 
 
 def history_row_for(day: date, state: str = "1", fraction: float = 0.5) -> dict:
@@ -146,60 +160,56 @@ def test_nothing_else_reaches_into_the_running_day(argv):
     assert export_command.requested_partial_day(args, BERLIN) is None
 
 
-def test_a_range_ending_today_still_skips_today(tmp_path):
-    cfg = make_config(tmp_path)
-    plan = planner.build_plan(yesterday(), today(), BERLIN, cfg, force=False, partial_day=None)
-    assert plan.days_skipped_incomplete == [today()]
-    assert plan.partial_days == []
+def test_a_range_ending_today_still_skips_today():
+    decided = plan(yesterday(), today())
+    assert decided.days(DayAction.SKIP_INCOMPLETE) == [today()]
+    assert decided.partial_days == []
 
 
 # ── the plan ──────────────────────────────────────────────────────────────────
 
 
-def test_the_planner_schedules_the_named_day_as_partial(tmp_path):
-    cfg = make_config(tmp_path)
-    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
+def test_the_planner_schedules_the_named_day_as_partial():
+    decided = plan(today(), today(), partial_day=today())
 
-    assert plan.days_to_export == [today()]
-    assert plan.partial_days == [today()]
-    assert plan.days_skipped_incomplete == []
+    assert decided.days_to_export == [today()]
+    assert decided.partial_days == [today()]
+    assert decided.days(DayAction.SKIP_INCOMPLETE) == []
 
 
-def test_only_the_named_day_becomes_partial_never_its_neighbours(tmp_path):
+def test_only_the_named_day_becomes_partial_never_its_neighbours():
     """Future days in the same range stay skipped, not partially exported.
 
     The command line cannot currently produce this combination, but the planner
     is the place where the rule lives, so it is pinned here.
     """
-    cfg = make_config(tmp_path)
-    plan = planner.build_plan(
-        today(),
-        today() + timedelta(days=2),
-        BERLIN,
-        cfg,
-        force=False,
-        partial_day=today(),
-    )
+    decided = plan(today(), today() + timedelta(days=2), partial_day=today())
 
-    assert plan.partial_days == [today()]
-    assert plan.days_skipped_incomplete == [
+    assert decided.partial_days == [today()]
+    assert decided.days(DayAction.SKIP_INCOMPLETE) == [
         today() + timedelta(days=1),
         today() + timedelta(days=2),
     ]
 
 
-def test_a_complete_day_beside_the_partial_one_is_exported_in_full(tmp_path):
-    cfg = make_config(tmp_path)
-    plan = planner.build_plan(yesterday(), today(), BERLIN, cfg, force=False, partial_day=today())
+def test_a_complete_day_beside_the_partial_one_is_exported_in_full():
+    decided = plan(yesterday(), today(), partial_day=today())
 
-    assert plan.days_to_export == [yesterday(), today()]
-    assert plan.partial_days == [today()]
+    assert decided.days_to_export == [yesterday(), today()]
+    assert decided.partial_days == [today()]
 
 
-def test_the_plan_summary_marks_the_partial_day(tmp_path, capsys):
-    cfg = make_config(tmp_path)
-    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
-    plan.print_summary(entity_count=1, unknown_count=0, unavailable_count=0, batch_size=5)
+def test_the_plan_summary_marks_the_partial_day(capsys):
+    export_command.print_plan(
+        plan(today(), today(), partial_day=today()),
+        entity_count=1,
+        unknown_count=0,
+        unavailable_count=0,
+        batch_size=5,
+        output_dir="/archive",
+        config_source="built-in defaults only",
+        log_file=None,
+    )
     assert "partial - today is not over yet" in capsys.readouterr().out
 
 
@@ -317,8 +327,15 @@ def test_a_partial_day_is_exported_again_in_full_later(
         ]
     ]
     cfg = make_config(tmp_path)
-    plan = planner.build_plan(today(), today(), BERLIN, cfg, force=False, partial_day=today())
-    assert plan.days_to_export == [today()], "a partial day counts as not exported"
+    decided = plan_export(
+        cfg,
+        requested_start=today(),
+        requested_end=today(),
+        today=today(),
+        tz=BERLIN,
+        partial_day=today(),
+    )
+    assert decided.days_to_export == [today()], "a partial day counts as not exported"
 
     assert cli.main(["export", "--date", "today"]) == 0
     assert day_file(tmp_path, today(), "jsonl").read_bytes() != partial_bytes

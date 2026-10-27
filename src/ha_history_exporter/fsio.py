@@ -42,6 +42,18 @@ def fsync_dir(path: Path) -> None:
         os.close(descriptor)
 
 
+def ensure_dir(path: Path) -> None:
+    """Create *path* and its missing parents, each durably named in its parent."""
+    missing = []
+    current = path
+    while not current.is_dir() and current.parent != current:
+        missing.append(current)
+        current = current.parent
+    for directory in reversed(missing):
+        directory.mkdir(exist_ok=True)
+        fsync_dir(directory.parent)
+
+
 def replace(
     source: Path,
     target: Path,
@@ -101,7 +113,7 @@ def atomic_write(
     replaces *path*. *mode* applies to a newly created file and is subject to
     the umask.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(path.parent)
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, mode)
     try:
@@ -118,7 +130,7 @@ def atomic_write(
 
 def append_durable(path: Path, data: bytes) -> None:
     """Append *data* to *path* and flush it; creates the file when missing."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(path.parent)
     created = not path.exists()
     with path.open("ab") as handle:
         handle.write(data)
@@ -126,6 +138,14 @@ def append_durable(path: Path, data: bytes) -> None:
         os.fsync(handle.fileno())
     if created:
         fsync_dir(path.parent)
+
+
+def same_device(first: Path, second: Path) -> bool:
+    """True when both existing paths live on the same file system."""
+    try:
+        return first.stat().st_dev == second.stat().st_dev
+    except OSError:
+        return False
 
 
 def is_within(root: Path, path: Path) -> bool:

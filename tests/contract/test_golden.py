@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -101,7 +102,7 @@ def test_manifest_physical_metadata_matches_the_produced_artifacts(
 
 
 def test_stable_manifest_neutralises_only_volatile_values() -> None:
-    manifest = {
+    manifest: dict[str, Any] = {
         "export_started_at": "2026-10-27T10:00:00+01:00",
         "export_finished_at": "2026-10-27T10:00:01+01:00",
         "duration_seconds": 1.0,

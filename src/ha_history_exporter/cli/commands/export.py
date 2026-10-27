@@ -9,23 +9,20 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ... import ha_client
+from ...app.export import plan_export, run_export
+from ...archive.metadata import write_snapshot
+from ...archive.workspace import new_run_id
 from ...domain.formats import Format
-from ...entity_snapshot import (
-    apply_optional_excludes,
-    build_snapshot,
-    extract_entity_ids,
-    save_snapshot,
-)
+from ...domain.plan import DayAction, ExportPlan
+from ...domain.snapshot import EntitySelection, select_entities, snapshot_document
 from ...errors import ConfigError, Remedy, UsageError
-from ...exporter import run_export
-from ...planner import build_plan
-from ...runtime.workspace import new_run_id
 from ...settings import Config, resolve, schema
 from ...time_utils import (
     last_n_complete_days,
@@ -119,11 +116,12 @@ def run(args: argparse.Namespace) -> int:
             partial_day,
         )
 
-    plan = build_plan(
+    plan = plan_export(
+        cfg,
         requested_start=requested_start,
         requested_end=requested_end,
+        today=today_local(tz),
         tz=tz,
-        cfg=cfg,
         force=args.force,
         partial_day=partial_day,
     )
@@ -132,8 +130,8 @@ def run(args: argparse.Namespace) -> int:
         logger.info(
             "Nothing to export - %d day(s) skipped (existing) and %d day(s) "
             "skipped (not yet complete).",
-            len(plan.days_skipped_existing),
-            len(plan.days_skipped_incomplete),
+            len(plan.days(DayAction.SKIP_EXISTING)),
+            len(plan.days(DayAction.SKIP_INCOMPLETE)),
         )
         return 0
 
@@ -151,8 +149,14 @@ def run(args: argparse.Namespace) -> int:
         logger.info("Fetching entity list from /api/states ...")
         states = client.get_states()
 
-        snapshot = build_snapshot(states, tz)
-        save_snapshot(snapshot, cfg.layout.metadata_dir, run_id=new_run_id())
+        created_local = datetime.now(tz)
+        snapshot = snapshot_document(states, created_local)
+        snapshot_path = write_snapshot(
+            cfg.layout, snapshot, created_local, new_run_id(created_local.astimezone(UTC))
+        )
+        logger.info(
+            "Entity snapshot saved: %s (%d entities).", snapshot_path.name, snapshot["entity_count"]
+        )
 
         if cfg.snapshot_only:
             logger.info(
@@ -162,27 +166,25 @@ def run(args: argparse.Namespace) -> int:
             )
             return 0
 
-        entity_ids = extract_entity_ids(
+        selected = select_entities(
             states,
-            include_unknown=cfg.entities.include_unknown,
-            include_unavailable=cfg.entities.include_unavailable,
+            EntitySelection(
+                include_unknown=cfg.entities.include_unknown,
+                include_unavailable=cfg.entities.include_unavailable,
+                exclude_domains=cfg.entities.exclude_domains,
+                exclude_patterns=cfg.entities.exclude_patterns,
+            ),
         )
-        entity_count_total = len(entity_ids)
-
-        entity_ids, excluded = apply_optional_excludes(
-            entity_ids,
-            cfg.entities.exclude_domains,
-            cfg.entities.exclude_patterns,
-        )
-        if excluded:
+        if selected.excluded_count:
             logger.info(
                 "Optional excludes removed %d entities (%d remain).",
-                excluded,
-                len(entity_ids),
+                selected.excluded_count,
+                len(selected.entity_ids),
             )
 
-        plan.print_summary(
-            entity_count=len(entity_ids),
+        print_plan(
+            plan,
+            entity_count=len(selected.entity_ids),
             unknown_count=snapshot["entity_count_unknown"],
             unavailable_count=snapshot["entity_count_unavailable"],
             batch_size=cfg.requests.batch_size,
@@ -202,18 +204,17 @@ def run(args: argparse.Namespace) -> int:
         logger.info(
             "Starting export: %d day(s), %d entities, batch size %d.",
             len(plan.days_to_export),
-            len(entity_ids),
+            len(selected.entity_ids),
             cfg.requests.batch_size,
         )
 
         exit_code = run_export(
             cfg=cfg,
             plan=plan,
-            entity_ids=entity_ids,
-            entity_count_total=entity_count_total,
+            entity_ids=selected.entity_ids,
+            entity_count_total=selected.candidate_count,
             client=client,
             tz=tz,
-            dry_run=False,
         )
 
         for day in plan.partial_days:
@@ -226,6 +227,60 @@ def run(args: argparse.Namespace) -> int:
         if log_file is not None:
             logger.info("Log file: %s", log_file)
         return exit_code
+
+
+def print_plan(
+    plan: ExportPlan,
+    *,
+    entity_count: int,
+    unknown_count: int,
+    unavailable_count: int,
+    batch_size: int,
+    output_dir: str,
+    config_source: str,
+    log_file: str | None,
+) -> None:
+    """Print the plan: where the run writes and what configured it come first."""
+    batches_per_day = math.ceil(entity_count / batch_size) if entity_count else 0
+    lines = ["", "=" * 60, "  Home Assistant REST History Exporter", "=" * 60]
+    for label, value in (
+        ("Output", output_dir),
+        ("Configuration", config_source),
+        ("Log file", log_file),
+    ):
+        if value is not None:
+            lines.append(f"  {label:<16}: {value}")
+    lines += [
+        "",
+        f"  Requested range : {plan.requested_start} -> {plan.requested_end}",
+        f"  Current local   : {plan.today}",
+        f"  Latest complete : {plan.latest_complete}",
+        "",
+        f"  Entities (from /api/states): {entity_count}",
+        f"    unknown     : {unknown_count}",
+        f"    unavailable : {unavailable_count}",
+        f"  Batch size      : {batch_size}",
+        f"  Requests / day  : ~{batches_per_day}",
+        "",
+    ]
+    partial = set(plan.partial_days)
+    if plan.days_to_export:
+        lines.append(f"  Will export ({len(plan.days_to_export)}):")
+        for day in plan.days_to_export:
+            marker = "  (partial - today is not over yet)" if day in partial else ""
+            lines.append(f"    {day}{marker}")
+    else:
+        lines.append("  Nothing to export.")
+    for action, heading in (
+        (DayAction.SKIP_EXISTING, "Will skip - already exported"),
+        (DayAction.SKIP_INCOMPLETE, "Will skip - not yet complete"),
+    ):
+        days = plan.days(action)
+        if days:
+            lines.append(f"\n  {heading} ({len(days)}):")
+            lines.extend(f"    {day}" for day in days)
+    lines.append("=" * 60 + "\n")
+    print("\n".join(lines))
 
 
 def requested_partial_day(args: argparse.Namespace, tz: ZoneInfo) -> date | None:
@@ -322,8 +377,6 @@ def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> Path | None:
     stacking them, so a library user or a test may call the CLI more than once.
     Returns ``None`` when no log file could be opened.
     """
-    from datetime import datetime as _dt
-
     root = logging.getLogger()
     for handler in list(root.handlers):
         if getattr(handler, _HHE_HANDLER, False):
@@ -340,16 +393,15 @@ def configure_logging(level: int, cfg: Config, tz: ZoneInfo) -> Path | None:
     setattr(stream_handler, _HHE_HANDLER, True)
     root.addHandler(stream_handler)
 
-    ts = _dt.now(tz).strftime("%Y-%m-%d_%H%M%S")
-    log_dir = cfg.layout.logs_dir
     log_file: Path | None = None
     try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"ha_history_export_{ts}.log"
-        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        path = cfg.layout.log_file(datetime.now(tz))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(path, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(fmt, datefmt))
         setattr(file_handler, _HHE_HANDLER, True)
         root.addHandler(file_handler)
+        log_file = path
     except Exception as exc:
         logger.warning("Could not create log file: %s", exc)
         log_file = None

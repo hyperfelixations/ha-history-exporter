@@ -16,8 +16,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..archive.layout import ArchiveLayout
 from ..domain.formats import Format
-from ..layout import ExportLayout
 
 
 @dataclass(frozen=True)
@@ -97,13 +97,13 @@ class Config:
     storage: StorageSettings = StorageSettings()
 
     @property
-    def layout(self) -> ExportLayout:
+    def layout(self) -> ArchiveLayout:
         """Every output path below the configured output directory.
 
         The layout is a contract of its own; see
-        :mod:`ha_history_exporter.layout`.
+        :mod:`ha_history_exporter.archive.layout`.
         """
-        return ExportLayout(Path(self.export.output_dir))
+        return ArchiveLayout(Path(self.export.output_dir))
 
     @property
     def resolved_temp_dir(self) -> Path:
