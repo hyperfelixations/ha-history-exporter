@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.4",
+  "status": "ok",
+  "source": "home_assistant_rest_history",
+  "date": "2026-10-24",
+  "timezone": "Europe/Berlin",
+  "start_local": "2026-10-24T00:00:00+02:00",
+  "end_local": "2026-10-25T00:00:00+02:00",
+  "start_utc": "2026-10-23T22:00:00+00:00",
+  "end_utc": "2026-10-24T22:00:00+00:00",
+  "export_started_at": "<volatile>",
+  "export_finished_at": "<volatile>",
+  "duration_seconds": "<volatile>",
+  "entity_count_current": 7,
+  "entity_count_requested": 5,
+  "entity_count_with_history": 4,
+  "entity_count_zero_history": 1,
+  "state_object_count": 5,
+  "batch_size_entities": 2,
+  "request_count": 3,
+  "failed_request_count": 0,
+  "retried_request_count": 0,
+  "history_request_options": {
+    "minimal_response": false,
+    "no_attributes": false,
+    "significant_changes_only": false,
+    "skip_initial_state": true
+  },
+  "capture_profile": {
+    "response": "full",
+    "attributes": "full",
+    "state_changes": "all",
+    "initial_state": "omitted"
+  },
+  "retention": {
+    "status": "known_safe",
+    "purge_keep_days": 14
+  },
+  "output_files": {
+    "jsonl": "2026-10-24.jsonl",
+    "csv": "2026-10-24.csv",
+    "parquet": "2026-10-24.parquet"
+  },
+  "artifacts": {
+    "jsonl": {
+      "filename": "2026-10-24.jsonl",
+      "size_bytes": 1456,
+      "sha256": "7b95e71ebd28717627ebd1b57c6345029ba0d0b0024e472ab55a301583b45dc1",
+      "row_count": 5,
+      "logical_sha256": "a544dd21f479cbf58dab7077194459ea273f5e35060c530dcfc0059fff0af29a"
+    },
+    "csv": {
+      "filename": "2026-10-24.csv",
+      "size_bytes": 1110,
+      "sha256": "60f9a7b5d7e0b3ed790012194024c815ec74a3ad6ca42d517fba2d0d02ac15d4",
+      "row_count": 5,
+      "logical_sha256": "a544dd21f479cbf58dab7077194459ea273f5e35060c530dcfc0059fff0af29a"
+    },
+    "parquet": {
+      "filename": "2026-10-24.parquet",
+      "size_bytes": "<volatile>",
+      "sha256": "<volatile>",
+      "row_count": 5,
+      "logical_sha256": "a544dd21f479cbf58dab7077194459ea273f5e35060c530dcfc0059fff0af29a"
+    }
+  },
+  "zero_history_entities": [
+    "sensor.never_recorded"
+  ],
+  "failed_batches": [],
+  "skipped_reason": null,
+  "error": null,
+  "error_code": null,
+  "script_version": "<volatile>"
+}

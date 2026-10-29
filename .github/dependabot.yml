@@ -1,6 +1,6 @@
 # Version updates run on the 1st and 15th at 05:00 UTC: minor and major releases only, each at least
 # 7 days old; majors stay single pull requests. Security updates are alert-driven and unaffected by
-# schedule, cooldown and the patch rule. See internal dev doc "Lieferkette".
+# schedule, cooldown and the patch rule. See internal dev doc § "Supply chain".
 # Actions are pinned to commit SHAs; Dependabot moves the SHA and its version comment together.
 # The runtime lower bounds in pyproject.toml are a promise to users and are never raised here.
 

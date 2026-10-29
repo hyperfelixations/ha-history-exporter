@@ -1,372 +1,207 @@
-"""Merge every configuration source into one immutable configuration.
+"""Merging every configuration source into one immutable configuration.
 
-Precedence, highest first:
-
-    1. command-line options
-    2. environment variables
-    3. the file named by --config, or else the user configuration file
-    4. built-in defaults
-
-There is no discovery in the working directory. A tool whose behaviour depends
-on the directory it was started from cannot be reasoned about, and the previous
-two-file arrangement was indistinguishable to a user.
-
-The access token follows its own, deliberately narrower rule: it comes from the
-environment or from the credentials file, never from a configuration file, and
-it is returned beside the configuration rather than inside it.
+Precedence, highest first: command-line options, HHE_* environment
+variables, the configuration file, built-in defaults. The configuration file
+is the one named by ``--config`` or else the user file; nothing is read from
+the working directory. The token comes from ``HHE_TOKEN`` or from the
+credentials file and stays outside ``Config``. Everything the resolution
+depends on - the environment, the working directory - is passed in. See
+internal dev doc § "Configuration registry".
 """
 
 from __future__ import annotations
 
-import os
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
-from ..errors import ConfigError, CredentialsError, Remedy
-from . import paths, schema, secrets, sources
-from .model import (
-    Config,
-    EntitySettings,
-    ExportSettings,
-    HistoryRequestSettings,
-    HomeAssistantSettings,
-    RecorderSettings,
-    RequestSettings,
-    StorageSettings,
-)
-from .schema import KeyStatus
-from .sources import Entry
+from ..errors import ConfigError, CredentialsError, Remedy, env_assignment
+from . import paths, secrets, sources
+from .model import Config
+from .registry import KEYS, TOKEN_ENV, TOKEN_KEY, URL_ENV, build_config, unknown_environment
+from .sources import DEFAULT, Entry, Origin
 
-TOKEN_KEY = "homeassistant.token"  # noqa: S105 - key path, not a secret
-URL_KEY = "homeassistant.url"
+
+@dataclass(frozen=True)
+class Connection:
+    """How to reach Home Assistant."""
+
+    url: str
+    token: str = field(repr=False)
+    ca_bundle: Path | None = None
 
 
 @dataclass(frozen=True)
 class ResolvedSettings:
-    """The runtime configuration, the token, and where each value came from."""
-
     config: Config
-    token: str = ""
-    origins: Mapping[str, str] = field(default_factory=dict)
-    values: Mapping[str, Any] = field(default_factory=dict)
-    config_file: Path | None = None
-    credentials_file: Path | None = None
+    origins: Mapping[str, Origin]
+    config_file: Path | None
+    credentials_file: Path
+    #: HHE_* variables that set nothing, typically misspelt key names.
+    unknown_environment: tuple[str, ...] = ()
+    token: str | None = field(default=None, repr=False)
+    token_origin: Origin | None = None
 
-    def origin(self, key_path: str) -> str:
-        return self.origins.get(key_path, "default")
+    def origin(self, key_path: str) -> Origin:
+        if key_path == TOKEN_KEY:
+            return self.token_origin or DEFAULT
+        return self.origins.get(key_path, DEFAULT)
 
-
-def discover_config_file(explicit: Path | None = None) -> Path | None:
-    """The configuration file to read, or None when there is none.
-
-    An explicit path replaces the user file entirely; asking for a specific
-    file must never silently mix in another one.
-
-    "Not there" and "cannot be examined" are different answers: falling back to
-    built-in defaults after an unreadable file would move the whole export to
-    another output directory. See internal dev doc, Einrichtung.
-    """
-    if explicit is not None:
-        return Path(explicit)
-
-    user_file = paths.user_config_file()
-    try:
-        mode = user_file.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    except OSError as exc:
-        raise _unexaminable_config_file(user_file, exc) from exc
-    return user_file if stat.S_ISREG(mode) else None
+    def connection(self) -> Connection:
+        """The URL and the token; an error that says how to set what is missing."""
+        if not self.config.homeassistant.url:
+            raise missing_url(self.config_file or paths.CONFIG_FILENAME)
+        if not self.token:
+            raise missing_token(self.credentials_file)
+        return Connection(
+            self.config.homeassistant.url, self.token, self.config.homeassistant.ca_bundle
+        )
 
 
 def resolve(
     *,
-    explicit_config: Path | str | None = None,
-    cli_overrides: Mapping[str, Any] | None = None,
-    environ: Mapping[str, str] | None = None,
-    require_credentials: bool = True,
+    environ: Mapping[str, str],
+    cwd: Path,
+    explicit_config: Path | None = None,
+    cli: Mapping[str, str] | None = None,
 ) -> ResolvedSettings:
-    """Build the runtime configuration from every source."""
-    environ = os.environ if environ is None else environ
+    """The configuration of one invocation.
 
-    explicit = Path(explicit_config) if explicit_config is not None else None
-    if explicit is not None and not explicit.is_file():
-        raise _missing_config_file(explicit)
-
-    config_file = discover_config_file(explicit)
-
-    entries: dict[str, Entry] = sources.default_entries()
+    *cli* maps key paths to the raw text of command-line options.
+    """
+    config_file = configuration_file(environ, cwd, explicit_config)
+    entries: dict[str, Entry] = {key.path: Entry(key.default(), DEFAULT) for key in KEYS}
     if config_file is not None:
-        file_values = sources.file_entries(config_file)
-        _reject_token_in_file(file_values, config_file)
-        entries.update(file_values)
-    entries.update(sources.env_entries(environ))
-    entries.update(sources.cli_entries(cli_overrides))
+        entries.update(sources.file_entries(config_file, environ))
+    entries.update(sources.env_entries(environ, cwd))
+    entries.update(sources.cli_entries(cli or {}, environ, cwd))
 
-    values: dict[str, Any] = {}
-    origins: dict[str, str] = {}
-    for key in schema.KEYS:
-        entry = entries[key.path]
-        values[key.path] = key.coerce(entry.value)
-        origins[key.path] = entry.origin
+    config = build_config({path: entry.value for path, entry in entries.items()})
+    check_config(config)
 
-    token = _resolve_token(values, origins, environ)
-    config = _build_config(values)
-    _check_across_keys(config)
-
-    if require_credentials:
-        if not config.homeassistant.url:
-            raise _missing_url()
-        if not token:
-            raise _missing_token()
-
+    credentials_file = paths.user_credentials_file(environ)
+    token, token_origin = _token(environ, credentials_file)
     return ResolvedSettings(
         config=config,
-        token=token,
-        origins=origins,
-        values=values,
+        origins={path: entry.origin for path, entry in entries.items()},
         config_file=config_file,
-        credentials_file=secrets.credentials_path(),
+        credentials_file=credentials_file,
+        unknown_environment=unknown_environment(environ),
+        token=token,
+        token_origin=token_origin,
     )
 
 
-def _build_config(values: Mapping[str, Any]) -> Config:
-    return Config(
-        homeassistant=HomeAssistantSettings(
-            url=validate_home_assistant_url(str(values[URL_KEY])),
-        ),
-        export=ExportSettings(
-            output_dir=values["export.output_dir"],
-            timezone=values["export.timezone"],
-            formats=values["export.formats"],
-        ),
-        requests=RequestSettings(
-            batch_size=values["requests.batch_size"],
-            sleep_between_requests=values["requests.sleep_between_requests"],
-            sleep_between_days=values["requests.sleep_between_days"],
-            timeout=values["requests.timeout"],
-            max_retries=values["requests.max_retries"],
-            backoff=values["requests.backoff"],
-        ),
-        history_request=HistoryRequestSettings(
-            minimal_response=values["history_request.minimal_response"],
-            no_attributes=values["history_request.no_attributes"],
-            significant_changes_only=values["history_request.significant_changes_only"],
-            skip_initial_state=values["history_request.skip_initial_state"],
-        ),
-        entities=EntitySettings(
-            include_unknown=values["entities.include_unknown"],
-            include_unavailable=values["entities.include_unavailable"],
-            exclude_domains=values["entities.exclude_domains"],
-            exclude_patterns=values["entities.exclude_patterns"],
-        ),
-        recorder=RecorderSettings(
-            purge_keep_days=values["recorder.purge_keep_days"],
-        ),
-        storage=StorageSettings(
-            temp_dir=values["storage.temp_dir"],
-            locked_file_retries=values["storage.locked_file_retries"],
-            locked_file_retry_sleep=values["storage.locked_file_retry_sleep"],
-        ),
-    )
+def configuration_from(values: Mapping[str, Any]) -> Config:
+    """``Config`` from defaults overridden by *values*, checked across keys."""
+    merged = {key.path: key.default() for key in KEYS} | dict(values)
+    config = build_config(merged)
+    check_config(config)
+    return config
 
 
-def validate_home_assistant_url(raw: str) -> str:
-    """Validate and normalize a base URL without reflecting invalid input."""
-    value = raw.strip()
-    if not value:
-        return ""
+def configuration_file(environ: Mapping[str, str], cwd: Path, explicit: Path | None) -> Path | None:
+    """The configuration file to read, or None when the user file does not exist.
+
+    A named file must exist. A user file that cannot be examined is an error,
+    not an absent file: falling back to defaults would export elsewhere.
+    """
+    if explicit is not None:
+        path = explicit if explicit.is_absolute() else cwd / explicit
+        if not path.is_file():
+            raise ConfigError(
+                f"Configuration file not found: {path}",
+                remedies=(
+                    Remedy("Create the user configuration with the guided setup:", "hhe init"),
+                ),
+                context={"config_file": str(path)},
+            )
+        return path
+    path = paths.user_config_file(environ)
     try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError as exc:
-        raise _invalid_url() from exc
-    if (
-        raw != value
-        or parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
-        or (port is not None and not 1 <= port <= 65535)
-    ):
-        raise _invalid_url()
-    return value.rstrip("/")
-
-
-def _invalid_url() -> ConfigError:
-    return ConfigError(
-        "homeassistant.url is not a valid Home Assistant base URL.",
-        details=(
-            "Use an http:// or https:// base URL with a host and optional port. "
-            "User information, path components, query strings, and fragments "
-            "are not accepted. The invalid value is deliberately not shown."
-        ),
-        remedies=(
-            Remedy(
-                "Store a base URL without credentials or query parameters:",
-                "hhe config set homeassistant.url http://homeassistant.local:8123",
-            ),
-        ),
-    )
-
-
-def _check_across_keys(config: Config) -> None:
-    """Rules that span more than one key and cannot live in the registry."""
-    if config.requests.max_retries > 0 and not config.requests.backoff:
+        mode = path.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
         raise ConfigError(
-            "requests.backoff must contain at least one wait time when "
-            "requests.max_retries is greater than 0.",
+            f"Cannot examine the configuration file ({exc.strerror or type(exc).__name__}).",
             details=(
-                "Retries are enabled but no wait time is configured, so the "
-                "client would have no backoff schedule to follow."
+                "HHE cannot tell whether the file holds settings; continuing with "
+                "defaults could export to another directory."
             ),
             remedies=(
-                Remedy(
-                    "Give the retries a schedule:",
-                    "hhe config set requests.backoff 2,5,15",
-                ),
-                Remedy(
-                    "Or turn retries off:",
-                    "hhe config set requests.max_retries 0",
-                ),
+                Remedy("Check the permissions of the configuration directory:", "hhe config path"),
+            ),
+            context={"config_file": str(path)},
+        ) from None
+    if not stat.S_ISREG(mode):
+        raise ConfigError(
+            "The configuration file is not a regular file.",
+            context={"config_file": str(path)},
+        )
+    return path
+
+
+def check_config(config: Config) -> None:
+    """Rules that span more than one key."""
+    if config.requests.max_retries > 0 and not config.requests.backoff:
+        raise ConfigError(
+            "requests.backoff needs at least one wait time while requests.max_retries is above 0.",
+            remedies=(
+                Remedy("Give the retries a schedule:", "hhe config set requests.backoff 2,5,15"),
+                Remedy("Or turn retries off:", "hhe config set requests.max_retries 0"),
             ),
         )
 
 
-def _resolve_token(
-    values: dict[str, Any],
-    origins: dict[str, str],
-    environ: Mapping[str, str],
-) -> str:
-    """Take the token from the environment, else from the credentials file."""
-    token = str(values.get(TOKEN_KEY) or "").strip()
-    if token and origins.get(TOKEN_KEY, "default").startswith("env:"):
-        values[TOKEN_KEY] = "<set>"
-        return token
-
-    stored = secrets.read_token()
+def _token(environ: Mapping[str, str], credentials_file: Path) -> tuple[str | None, Origin | None]:
+    if value := environ.get(TOKEN_ENV, "").strip():
+        return value, Origin("env", TOKEN_ENV)
+    stored = secrets.read_token(credentials_file)
     if stored:
-        origins[TOKEN_KEY] = f"file:{secrets.credentials_path()}"
-        values[TOKEN_KEY] = "<set>"
-        return stored
-
-    origins[TOKEN_KEY] = "default"
-    values[TOKEN_KEY] = "<not set>"
-    return ""
+        return stored, Origin("file", str(credentials_file))
+    return None, None
 
 
-def _reject_token_in_file(entries: Mapping[str, Entry], path: Path) -> None:
-    """A configuration file is world-readable in spirit; a token is not."""
-    for key_path, entry in entries.items():
-        key = schema.BY_PATH.get(key_path)
-        if key is not None and key.status is KeyStatus.SECRET:
-            raise ConfigError(
-                f"The access token must not be stored in {path.name}.",
-                details=(
-                    "Configuration files are meant to be readable, copied, and "
-                    "shared. HHE keeps the token in a separate credentials file "
-                    "that only your account can read."
-                ),
-                remedies=(
-                    Remedy(
-                        "Remove the key from the file and store the token "
-                        "properly (the input stays hidden):",
-                        "hhe config set homeassistant.token",
-                    ),
-                ),
-                context={"config_file": str(entry.location or path)},
-            )
-
-
-def _unexaminable_config_file(path: Path, exc: OSError) -> ConfigError:
-    return ConfigError(
-        f"Cannot examine configuration file {path}: {exc.strerror or exc}",
-        details=(
-            "The file is there but its status could not be read, so HHE cannot "
-            "tell whether it holds settings. Continuing with built-in defaults "
-            "would export to a different directory."
-        ),
-        remedies=(
-            Remedy(
-                "Check the permissions on the configuration directory:",
-                "hhe config path",
-            ),
-            Remedy(
-                "Or point at a configuration file HHE can read:",
-                "hhe export --config <path>",
-            ),
-        ),
-        context={"config_file": str(path)},
-    )
-
-
-def _missing_config_file(path: Path) -> ConfigError:
-    return ConfigError(
-        f"Config file not found: {path}",
-        details=(
-            "HHE was asked to read this configuration file, but no file exists at that location."
-        ),
-        remedies=(
-            Remedy("Create the user configuration with the guided setup:", "hhe init"),
-            Remedy(
-                "Or point at a configuration file that exists:",
-                "hhe export --config <path>",
-            ),
-        ),
-        context={"config_file": str(path)},
-    )
-
-
-def _missing_url() -> CredentialsError:
+def missing_url(config_file: Path | str) -> CredentialsError:
     return CredentialsError(
-        "No Home Assistant URL configured.",
+        "No Home Assistant URL is configured.",
         details=(
-            "HHE needs the base URL of your Home Assistant instance. Any "
-            "address this machine can reach works: a local hostname, an IP "
-            "address, a Tailscale address, or an external HTTPS endpoint."
+            "HHE needs the base URL of Home Assistant: a local host name, an IP "
+            "address, a Tailscale address or an external HTTPS address."
         ),
         remedies=(
             Remedy("Run the guided setup:", "hhe init"),
             Remedy(
-                "Or store the URL directly:",
+                "Or store the URL:",
                 "hhe config set homeassistant.url http://homeassistant.local:8123",
             ),
             Remedy(
-                "Or set it for the current shell session only:",
-                '$env:HHE_URL = "http://homeassistant.local:8123"',
+                "Or set it for this shell session:",
+                env_assignment(URL_ENV, "http://homeassistant.local:8123"),
             ),
         ),
-        context={"config_file": str(paths.user_config_file())},
+        context={"config_file": str(config_file)},
     )
 
 
-def _missing_token() -> CredentialsError:
+def missing_token(credentials_file: Path) -> CredentialsError:
     return CredentialsError(
-        "No Home Assistant access token configured.",
+        "No Home Assistant access token is configured.",
         details=(
-            "HHE authenticates with a long-lived access token. Create one in "
-            "Home Assistant under Profile, Security, Long-Lived Access Tokens. "
-            "The token is stored in a separate credentials file that only your "
-            "account can read, and is never written to a log, a manifest, or "
-            "an export."
+            "Create a long-lived access token in Home Assistant under Profile, "
+            "Security. HHE keeps it in a credentials file that only your account "
+            "can read and never writes it to a log, a manifest or an export."
         ),
         remedies=(
             Remedy("Run the guided setup:", "hhe init"),
             Remedy(
-                "Or store the token now (the input stays hidden):",
+                "Or store the token (the input stays hidden):",
                 "hhe config set homeassistant.token",
             ),
-            Remedy(
-                "Or set it for the current shell session only:",
-                '$env:HHE_TOKEN = "<your-token>"',
-            ),
+            Remedy("Or set it for this shell session:", env_assignment(TOKEN_ENV, "<token>")),
         ),
-        context={"credentials_file": str(paths.user_credentials_file())},
+        context={"credentials_file": str(credentials_file)},
     )

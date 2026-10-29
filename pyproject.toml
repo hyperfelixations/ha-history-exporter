@@ -7,7 +7,7 @@ name = "ha-history-exporter"
 dynamic = ["version"]
 description = "Local command-line tool that exports Home Assistant state history to JSONL, CSV, and Parquet through the REST API."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -18,15 +18,16 @@ classifiers = [
   "Environment :: Console",
   "Intended Audience :: End Users/Developers",
   "Topic :: Home Automation",
-  "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
   "requests>=2.31.0",
-  "PyYAML>=6.0",
   "platformdirs>=4.2",
   "tzdata>=2024.1",
 ]
@@ -35,8 +36,8 @@ dependencies = [
 parquet = ["pyarrow>=15.0"]
 
 [project.scripts]
-ha-history-exporter = "ha_history_exporter.cli:main"
-hhe = "ha_history_exporter.cli:main"
+ha-history-exporter = "ha_history_exporter.cli:ha_history_exporter"
+hhe = "ha_history_exporter.cli:hhe"
 
 [project.urls]
 Homepage = "https://github.com/hyperfelixations/ha-history-exporter"
@@ -52,39 +53,47 @@ include = ["ha_history_exporter*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-ha_history_exporter = ["py.typed"]
+ha_history_exporter = ["schemas/*.json"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ha_history_exporter.__version__" }
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 100
 extend-exclude = [".venv", "dist", "build"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
+select = [
+  "E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "RUF", "S",
+  "BLE", "PT", "DTZ", "T20", "RET", "PIE", "TRY",
+]
 ignore = [
   "S101",     # assert is the idiom the test suite is built on
   "RUF002",   # en dashes and other typography in prose are intentional
+  "TRY003",   # errors carry their message where they are raised
+  "TRY400",   # an expected error is logged without its traceback; defects use exception()
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106", "S603", "S607"]
+# The one module that writes to the terminal, and the command-line tools.
+"src/ha_history_exporter/cli/output.py" = ["T201"]
+"tools/*" = ["T201"]
+# setting() returns dataclasses.field() with the key metadata.
+"src/ha_history_exporter/settings/model.py" = ["RUF009"]
 
 [tool.ruff.format]
 line-ending = "lf"
 
 [tool.mypy]
-python_version = "3.10"
-files = ["src/ha_history_exporter"]
-warn_redundant_casts = true
-warn_unused_configs = true
-warn_unused_ignores = true
-no_implicit_optional = true
-disallow_untyped_defs = true
+python_version = "3.12"
+files = ["src/ha_history_exporter", "tests", "tools"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
-strict_equality = true
 
 [tool.pytest.ini_options]
 addopts = [
@@ -95,6 +104,10 @@ addopts = [
   "--import-mode=importlib",
 ]
 testpaths = ["tests"]
+markers = [
+  "parquet: needs the optional pyarrow; deselect with -m 'not parquet' where it is absent",
+  "repo: checks the repository, not the product; not part of the sdist",
+]
 
 [tool.coverage.run]
 branch = true
@@ -103,8 +116,29 @@ source = ["ha_history_exporter"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 85
+fail_under = 90
 exclude_also = [
   "if TYPE_CHECKING:",
   "if __name__ == .__main__.:",
 ]
+
+[tool.importlinter]
+root_packages = ["ha_history_exporter"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Each layer imports only the layers below it"
+type = "layers"
+layers = [
+  "ha_history_exporter.cli",
+  "ha_history_exporter.app",
+  "ha_history_exporter.settings : ha_history_exporter.source : ha_history_exporter.archive : ha_history_exporter.formats",
+  "ha_history_exporter.domain",
+  "ha_history_exporter.fsio : ha_history_exporter.errors",
+]
+
+[[tool.importlinter.contracts]]
+name = "The domain does no input or output"
+type = "forbidden"
+source_modules = ["ha_history_exporter.domain"]
+forbidden_modules = ["ha_history_exporter.fsio", "requests", "pyarrow", "platformdirs"]

@@ -1,0 +1,2 @@
+{"entity_id": "binary_sensor.front_door", "state": "on", "last_changed": "2026-10-22T22:00:00+00:00", "last_updated": "2026-10-22T22:00:00+00:00", "attributes": {"friendly_name": "Front door", "device_class": "door"}, "local_offset": "+02:00"}
+{"entity_id": "binary_sensor.front_door", "state": "off", "last_changed": "2026-10-23T21:59:59.999999+00:00", "last_updated": "2026-10-23T21:59:59.999999+00:00", "attributes": {"friendly_name": "Front door", "device_class": "door"}, "local_offset": "+02:00"}

@@ -9,7 +9,6 @@ tooling is never audited: none of it ships.
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 import tempfile
@@ -17,13 +16,9 @@ import venv
 from collections.abc import Sequence
 from pathlib import Path
 
+from _venv import program
+
 INSTALL_TARGET = ".[parquet]"
-
-
-def _python(environment: Path) -> Path:
-    directory = "Scripts" if os.name == "nt" else "bin"
-    executable = "python.exe" if os.name == "nt" else "python"
-    return environment / directory / executable
 
 
 def install_command(python: Path) -> list[str]:
@@ -62,7 +57,7 @@ def audit_runtime(repository: Path, ignored: Sequence[str]) -> int:
         environment = Path(temporary).resolve() / "environment"
         # Without pip in the environment, pip itself is not part of what gets audited.
         venv.EnvBuilder(with_pip=False).create(environment)
-        python = _python(environment)
+        python = program(environment, "python")
         subprocess.run(  # noqa: S603 - arguments are constructed, never shell-parsed
             install_command(python), check=True, cwd=repository
         )

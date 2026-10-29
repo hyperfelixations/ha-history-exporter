@@ -2,8 +2,8 @@
 
 Every error carries a one-line summary, optional details, zero or more
 remedies (a description plus a copy-pasteable command), and a context mapping
-restricted to registered keys. The exit code is part of the CLI contract; see
-internal dev doc, section "Fehlerbild und Exit-Codes".
+restricted to registered keys. Exit codes and persisted error codes are part
+of the contract; see internal dev doc § "Errors and exit codes".
 
 Nothing in an error may contain a token, a URL query string, or an unverified
 response body.
@@ -11,8 +11,11 @@ response body.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import IntEnum, StrEnum
+from pathlib import Path
 
 #: Context keys the console renderer is allowed to print. Anything else is
 #: dropped, so an accidental secret can never reach the terminal through the
@@ -21,13 +24,11 @@ CONTEXT_LABELS: dict[str, str] = {
     "config_file": "Configuration file",
     "credentials_file": "Credentials file",
     "output_dir": "Output directory",
-    "temp_dir": "Temporary directory",
     "log_file": "Log file",
     "url": "Home Assistant URL",
     "endpoint": "Endpoint",
     "status": "HTTP status",
     "day": "Day",
-    "documentation": "Documentation",
 }
 
 
@@ -39,11 +40,55 @@ class Remedy:
     command: str | None = None
 
 
+def env_assignment(name: str, value: str) -> str:
+    """The shell command that sets *name* for the current session on this platform."""
+    if os.name == "nt":
+        return f'$env:{name} = "{value}"'
+    return f'export {name}="{value}"'
+
+
+def stdin_from_file(placeholder: str, command: str) -> str:
+    """*command* reading standard input from the file *placeholder* on this platform."""
+    if os.name == "nt":
+        return f"Get-Content {placeholder} | {command}"
+    return f"{command} < {placeholder}"
+
+
+class ExitCode(IntEnum):
+    """The process exit codes; see internal dev doc § "Errors and exit codes"."""
+
+    OK = 0
+    #: A day failed, or the run could not complete for a reason that is not one below.
+    FAILED = 1
+    USAGE = 2
+    AUTHENTICATION = 3
+    #: Home Assistant unreachable, unavailable, answering unusably, or TLS failed.
+    HOME_ASSISTANT = 4
+    INTERNAL = 70
+    INTERRUPTED = 130
+
+
+class ErrorCode(StrEnum):
+    """Error codes persisted in day manifests; the values are a contract."""
+
+    USAGE = "usage_error"
+    CONFIGURATION = "configuration_error"
+    CREDENTIALS = "credentials_error"
+    AUTHENTICATION = "authentication_error"
+    CONNECTION = "home_assistant_connection_error"
+    API = "home_assistant_api_error"
+    TLS = "tls_error"
+    VALIDATION = "validation_error"
+    EXPORT = "export_error"
+    UNEXPECTED = "unexpected_error"
+    INTERRUPTED = "interrupted"
+
+
 class HHEError(Exception):
     """Base class for every user-facing HHE error."""
 
-    exit_code: int = 1
-    code: str = "internal_error"
+    exit_code: ExitCode = ExitCode.INTERNAL
+    code: ErrorCode = ErrorCode.UNEXPECTED
 
     def __init__(
         self,
@@ -52,81 +97,120 @@ class HHEError(Exception):
         details: str | None = None,
         remedies: Sequence[Remedy] = (),
         context: Mapping[str, str] | None = None,
-        code: str | None = None,
     ) -> None:
         super().__init__(summary)
         self.summary = summary
         self.details = details
         self.remedies: tuple[Remedy, ...] = tuple(remedies)
         self.context: dict[str, str] = dict(context or {})
-        self.code = code or type(self).code
 
 
 class UsageError(HHEError):
     """Invalid, missing, or contradictory command-line arguments."""
 
-    exit_code = 2
-    code = "usage_error"
+    exit_code = ExitCode.USAGE
+    code = ErrorCode.USAGE
 
 
 class ConfigError(HHEError):
-    """Invalid configuration file, schema, type, or value range."""
+    """An invalid configuration file, value or combination of values."""
 
-    exit_code = 2
-    code = "configuration_error"
+    exit_code = ExitCode.USAGE
+    code = ErrorCode.CONFIGURATION
 
 
 class CredentialsError(ConfigError):
     """No usable Home Assistant URL or access token is configured."""
 
-    exit_code = 2
-    code = "credentials_error"
+    code = ErrorCode.CREDENTIALS
 
 
 class AuthError(HHEError):
-    """Home Assistant rejected the token (HTTP 401/403) — never retried."""
+    """Home Assistant rejected the token (HTTP 401/403); never retried."""
 
-    code = "authentication_error"
+    exit_code = ExitCode.AUTHENTICATION
+    code = ErrorCode.AUTHENTICATION
 
 
 class HAConnectionError(HHEError):
-    """Home Assistant stayed unreachable after every retry."""
+    """Home Assistant stayed unreachable or unavailable after every retry."""
 
-    code = "home_assistant_connection_error"
+    exit_code = ExitCode.HOME_ASSISTANT
+    code = ErrorCode.CONNECTION
 
 
 class HAAPIError(HHEError):
-    """Unexpected response structure or undecodable payload."""
+    """Home Assistant answered, but not with what the request needs."""
 
-    code = "home_assistant_api_error"
+    exit_code = ExitCode.HOME_ASSISTANT
+    code = ErrorCode.API
+
+
+class TLSError(HHEError):
+    """The HTTPS connection to Home Assistant could not be verified; never retried."""
+
+    exit_code = ExitCode.HOME_ASSISTANT
+    code = ErrorCode.TLS
+
+
+class InternalError(HHEError):
+    """A defect: an exception HHE does not expect. Its traceback goes to a log file."""
+
+    exit_code = ExitCode.INTERNAL
+    code = ErrorCode.UNEXPECTED
+    #: What the defect stopped, for example ``the export of 2026-07-28``.
+    activity = ""
+
+    @classmethod
+    def during(cls, activity: str, log_file: Path | None = None) -> InternalError:
+        """The error for a defect in *activity* whose traceback is in *log_file*."""
+        if log_file is None:
+            where = "Its traceback could not be saved."
+            context = {}
+        else:
+            where = (
+                "Its traceback is in the log file named below; it may name entities, "
+                "so review it before sharing it in a bug report."
+            )
+            context = {"log_file": str(log_file)}
+        error = cls(
+            f"An unexpected internal error stopped {activity}.",
+            details=(
+                f"This is a defect in HHE or a condition of this machine it does not foresee. "
+                f"{where}"
+            ),
+            context=context,
+        )
+        error.activity = activity
+        return error
 
 
 class ValidationError(HHEError):
-    """An output file failed validation before finalization."""
+    """Data that breaks the record contract: from Home Assistant or a stored file."""
 
-    code = "validation_error"
+    exit_code = ExitCode.FAILED
+    code = ErrorCode.VALIDATION
 
 
 class ExportError(HHEError):
-    """One or more days could not be exported."""
+    """An export step that cannot proceed."""
 
-    code = "export_error"
+    exit_code = ExitCode.FAILED
+    code = ErrorCode.EXPORT
 
 
 @dataclass(frozen=True)
 class ErrorRecord:
     """The deliberately small error representation safe to persist."""
 
-    code: str
+    code: ErrorCode
     summary: str
 
 
-def safe_error_record(
-    exc: BaseException,
-    *,
-    unexpected_summary: str = "Unexpected internal error.",
-) -> ErrorRecord:
+def safe_error_record(exc: BaseException) -> ErrorRecord:
     """Return stable metadata without persisting arbitrary exception text."""
     if isinstance(exc, HHEError):
         return ErrorRecord(code=exc.code, summary=exc.summary)
-    return ErrorRecord(code="unexpected_error", summary=unexpected_summary)
+    if isinstance(exc, KeyboardInterrupt):
+        return ErrorRecord(code=ErrorCode.INTERRUPTED, summary="The run was interrupted.")
+    return ErrorRecord(code=ErrorCode.UNEXPECTED, summary="Unexpected internal error.")

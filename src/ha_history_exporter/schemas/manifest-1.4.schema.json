@@ -1,0 +1,602 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hyperfelixations/ha-history-exporter/main/src/ha_history_exporter/schemas/manifest-1.4.schema.json",
+  "title": "Home Assistant History Exporter day manifest, schema 1.4",
+  "description": "The record of one exported calendar day: <day>.manifest.json next to the day's files. It states the day's boundaries, what was requested and how, and size, SHA-256, row count and logical digest of every file. Every artifact of a day has the same row count and logical digest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "source",
+    "date",
+    "timezone",
+    "start_local",
+    "end_local",
+    "start_utc",
+    "end_utc",
+    "export_started_at",
+    "export_finished_at",
+    "duration_seconds",
+    "entity_count_current",
+    "entity_count_requested",
+    "entity_count_with_history",
+    "entity_count_zero_history",
+    "state_object_count",
+    "batch_size_entities",
+    "request_count",
+    "failed_request_count",
+    "retried_request_count",
+    "history_request_options",
+    "capture_profile",
+    "retention",
+    "output_files",
+    "artifacts",
+    "zero_history_entities",
+    "failed_batches",
+    "skipped_reason",
+    "error",
+    "error_code",
+    "script_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.4"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "ok",
+        "partial",
+        "failed"
+      ],
+      "description": "ok: the complete day. partial: the running day up to end_local. failed: the last attempt failed; error and error_code say why."
+    },
+    "source": {
+      "const": "home_assistant_rest_history"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "description": "IANA time zone of the calendar day."
+    },
+    "start_local": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$",
+      "description": "Local midnight that opens the day; included."
+    },
+    "end_local": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$",
+      "description": "The next local midnight, or the cut-off of a partial day; excluded."
+    },
+    "start_utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+    },
+    "end_utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+    },
+    "export_started_at": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+        }
+      ]
+    },
+    "export_finished_at": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+        }
+      ]
+    },
+    "duration_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "entity_count_current": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "entity_count_requested": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "entity_count_with_history": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "entity_count_zero_history": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "state_object_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "batch_size_entities": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_request_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retried_request_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Retries of every history request of the day, including failed ones."
+    },
+    "history_request_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimal_response",
+        "no_attributes",
+        "significant_changes_only",
+        "skip_initial_state"
+      ],
+      "properties": {
+        "minimal_response": {
+          "type": "boolean"
+        },
+        "no_attributes": {
+          "type": "boolean"
+        },
+        "significant_changes_only": {
+          "type": "boolean"
+        },
+        "skip_initial_state": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capture_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "response",
+        "attributes",
+        "state_changes",
+        "initial_state"
+      ],
+      "properties": {
+        "response": {
+          "enum": [
+            "full",
+            "minimal"
+          ]
+        },
+        "attributes": {
+          "enum": [
+            "full",
+            "initial_only",
+            "omitted"
+          ]
+        },
+        "state_changes": {
+          "enum": [
+            "all",
+            "significant_only"
+          ]
+        },
+        "initial_state": {
+          "enum": [
+            "included",
+            "omitted"
+          ]
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "purge_keep_days"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "known_safe",
+            "unknown",
+            "partial_current"
+          ]
+        },
+        "purge_keep_days": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "known_safe"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "purge_keep_days": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "purge_keep_days": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "output_files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jsonl",
+        "csv",
+        "parquet"
+      ],
+      "properties": {
+        "jsonl": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.jsonl$"
+            }
+          ]
+        },
+        "csv": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.csv$"
+            }
+          ]
+        },
+        "parquet": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.parquet$"
+            }
+          ]
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jsonl",
+        "csv",
+        "parquet"
+      ],
+      "properties": {
+        "jsonl": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "filename",
+                "size_bytes",
+                "sha256",
+                "row_count",
+                "logical_sha256"
+              ],
+              "properties": {
+                "filename": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.jsonl$"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "row_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "logical_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "csv": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "filename",
+                "size_bytes",
+                "sha256",
+                "row_count",
+                "logical_sha256"
+              ],
+              "properties": {
+                "filename": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.csv$"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "row_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "logical_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "parquet": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "filename",
+                "size_bytes",
+                "sha256",
+                "row_count",
+                "logical_sha256"
+              ],
+              "properties": {
+                "filename": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}\\.parquet$"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "row_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "logical_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "zero_history_entities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "failed_batches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "batch_index",
+          "entity_count",
+          "error_code",
+          "error"
+        ],
+        "properties": {
+          "batch_index": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "entity_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "error_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "error": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "skipped_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "One of usage_error, configuration_error, credentials_error, authentication_error, home_assistant_connection_error, home_assistant_api_error, tls_error, validation_error, export_error, unexpected_error, interrupted."
+    },
+    "script_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "partial"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "null"
+          },
+          "error_code": {
+            "type": "null"
+          },
+          "failed_batches": {
+            "maxItems": 0
+          },
+          "artifacts": {
+            "anyOf": [
+              {
+                "required": [
+                  "jsonl"
+                ],
+                "properties": {
+                  "jsonl": {
+                    "type": "object"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "csv"
+                ],
+                "properties": {
+                  "csv": {
+                    "type": "object"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "parquet"
+                ],
+                "properties": {
+                  "parquet": {
+                    "type": "object"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "minLength": 1
+          },
+          "error_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artifacts": {
+            "properties": {
+              "jsonl": {
+                "type": "null"
+              },
+              "csv": {
+                "type": "null"
+              },
+              "parquet": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

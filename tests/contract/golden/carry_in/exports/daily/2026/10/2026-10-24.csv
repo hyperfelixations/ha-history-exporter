@@ -1,0 +1,5 @@
+entity_id,state,last_changed,last_updated,attributes_json,local_offset,extra_json
+binary_sensor.front_door,off,2026-10-23T22:00:00+00:00,2026-10-23T22:00:00+00:00,"{""friendly_name"": ""Front door"", ""device_class"": ""door""}",+02:00,
+sensor.kitchen_temperature,20.0,2026-10-23T22:00:00+00:00,2026-10-23T22:00:00+00:00,"{""friendly_name"": ""Küche Temperatur — über dem Herd"", ""unit_of_measurement"": ""°C"", ""device_class"": ""temperature""}",+02:00,
+sensor.kitchen_temperature,21.5,2026-10-24T08:30:00+00:00,2026-10-24T08:30:00+00:00,"{""friendly_name"": ""Küche Temperatur — über dem Herd"", ""unit_of_measurement"": ""°C"", ""device_class"": ""temperature""}",+02:00,
+sensor.status_note,idle,2026-10-23T22:00:00+00:00,2026-10-23T22:00:00+00:00,"{""friendly_name"": ""Status note"", ""description"": ""line one\nline two, with a comma""}",+02:00,

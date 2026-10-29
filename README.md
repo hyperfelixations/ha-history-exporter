@@ -2,10 +2,9 @@
 
 Keep your own copy of your Home Assistant history.
 
-HHE is a command-line tool that reads raw Recorder state changes through the
-official Home Assistant REST API and writes them to your disk, one complete
-local day at a time, as JSONL, Parquet, or CSV. Everything it does with Home
-Assistant is read-only.
+HHE is a command-line tool that reads the raw Recorder state changes through
+the Home Assistant REST API and writes them to your disk, one complete local
+day at a time, as JSONL, CSV or Parquet. It only reads from Home Assistant.
 
 ```console
 $ pipx install ha-history-exporter
@@ -15,350 +14,375 @@ $ hhe export
 
 ## Contents
 
-- [Why](#why)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Join the community](#join-the-community)
+- [Features](#features)
+- [What you need](#what-you-need)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
 - [Configuration](#configuration)
-- [Credentials and security](#credentials-and-security)
-- [Command reference](#command-reference)
+- [Commands](#commands)
 - [Output](#output)
-- [Troubleshooting](#troubleshooting)
+- [Exit codes](#exit-codes)
 - [Automating daily exports](#automating-daily-exports)
-- [License](#license)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Security](#security)
+- [Links](#links)
 
-## Why
+## Features
 
-The Home Assistant Recorder keeps a limited window of history — often two or
-three weeks — and then purges it. Long-term statistics survive, but they are
-hourly aggregates: they tell you the average temperature of an hour, not that a
-door opened at 18:42:07 and closed nineteen seconds later.
+- Exports every raw Recorder state change of every entity in `/api/states`,
+  including entities that are currently `unknown` or `unavailable`.
+- Writes complete local calendar days, including the 23-hour and 25-hour days
+  of daylight-saving changes; every row carries its local UTC offset.
+- Writes JSONL, CSV and Parquet with identical content, proven by a logical
+  digest before a day is published.
+- Records every day in a manifest with size, SHA-256, row count and logical
+  digest of each file; a day with a successful manifest is skipped on the next
+  run.
+- Publishes each day completely or not at all, also after a crash or power
+  loss, and lets one run at a time write an archive.
+- Checks a stored archive against its manifests (`hhe verify`), shows its gaps
+  (`hhe status`) and adds formats to stored days without asking Home Assistant
+  again (`hhe convert`).
+- Prints machine-readable results with `--json` and distinct exit codes for
+  automation.
+- Runs on your machine and talks to your Home Assistant only: no cloud
+  service, no add-on, no change to your Home Assistant configuration.
 
-HHE exports those raw state changes before they are purged, into an archive
-that outlives your Home Assistant database and can be analysed with DuckDB,
-Pandas, or Polars.
+## What you need
 
-**It runs entirely on your machine.** HHE talks to one address: the Home
-Assistant instance you name. A local hostname, a LAN IP, a Tailscale address —
-anything this computer can reach. It needs no internet connection, no cloud
-account, and no service in between; nothing is uploaded anywhere, and your
-history never leaves your own disk. It also needs no add-on, no database
-access, and no change to your Home Assistant configuration.
+- Python 3.12 or newer on Linux, macOS or Windows.
+- A Home Assistant instance this computer can reach, by host name, IP address
+  or Tailscale address.
+- A long-lived access token: in Home Assistant, **Profile → Security →
+  Long-Lived Access Tokens**.
+- The Recorder retention of your Home Assistant (`purge_keep_days`, 10 unless
+  you changed it). HHE uses it to refuse days that may already be purged.
 
-**What is exported**
+## Installation
 
-- every raw Recorder state change of every entity currently in `/api/states`
-- entities whose current state is `unknown` or `unavailable` (they may still
-  have history)
-- complete local calendar days, including the 23-hour and 25-hour days at
-  daylight-saving transitions
-
-**What is not exported**
-
-- long-term statistics — the History API does not serve them
-- entities that no longer exist in Home Assistant
-- today, unless you ask for it by name (see
-  [Exporting today](#exporting-today))
-
-## Install
-
-### pipx (recommended)
-
-[pipx](https://pipx.pypa.io/) puts the tool in its own environment and the
-commands on your `PATH`:
+[pipx](https://pipx.pypa.io/) installs HHE into an environment of its own and
+puts the commands on your `PATH`:
 
 ```bash
 pipx install ha-history-exporter
 ```
 
-Two commands are installed and behave identically: the long
-`ha-history-exporter` and the short `hhe`. `python -m ha_history_exporter`
-works as well.
+This installs `hhe` and its long name `ha-history-exporter`;
+`python -m ha_history_exporter` runs the same program.
 
-Parquet output needs [pyarrow](https://arrow.apache.org/docs/python/), a large
-platform-specific package, so it is optional:
+Parquet output needs [pyarrow](https://arrow.apache.org/docs/python/), which is
+optional:
 
 ```bash
 pipx inject ha-history-exporter pyarrow
-#   or, when installing with pip inside a virtual environment:
-pip install "ha-history-exporter[parquet]"
 ```
 
-Requires Python 3.10 or newer. The release test matrix covers Linux and Windows
-on Python 3.10 and 3.13. macOS uses the same Python interfaces but is not yet
-part of the continuous test matrix.
+In a virtual environment of your own, install the extra:
+`pip install "ha-history-exporter[parquet]"`.
 
-### From a clone
-
-```bash
-git clone https://github.com/hyperfelixations/ha-history-exporter.git
-cd ha-history-exporter
-pip install .
-hhe export
-```
-
-The project uses a `src` layout, so install it before running either console
-command or `python -m ha_history_exporter` from a clone.
-
-## Quick start
+## Quickstart
 
 ```console
 $ hhe init
 Home Assistant URL [http://homeassistant.local:8123]: https://ha.example.net
 Long-lived access token (input hidden): ********
   -> Contacting https://ha.example.net ...
-     OK (1258 entities)
+     OK: Home Assistant 2026.10.1, 1258 entities, Europe/Berlin
 Output directory [/home/you/ha-history-exports]:
-Output formats [jsonl]: jsonl,parquet
-Timezone [Europe/Berlin]:
+Output formats (jsonl, csv, parquet, or none) [jsonl]: jsonl,parquet
+Time zone of the exported days (Home Assistant's) [Europe/Berlin]:
+Recorder retention of Home Assistant in days (purge_keep_days) [10]:
 
-Wrote /home/you/.config/ha-history-exporter/config.yaml
-Wrote /home/you/.config/ha-history-exporter/credentials.yaml (access token, not readable by other users)
+Wrote /home/you/.config/ha-history-exporter/config.toml
+Wrote /home/you/.config/ha-history-exporter/credentials.toml (the access token, readable by your account only)
 
 Next:  hhe export
 ```
 
-Create the token in Home Assistant under **Profile → Security → Long-Lived
-Access Tokens**. Then export:
+Then export:
 
 ```bash
 hhe export                        # the most recent complete day
 hhe export --last-days 7          # the seven most recent complete days
-hhe export --date 2026-06-15 --force
 hhe export --start-date 2026-06-01 --end-date yesterday
 ```
 
-Days that already have a successful manifest are skipped, so running the same
-command twice costs nothing and re-running a range only fetches what is
-missing.
-
-`hhe doctor` checks everything at once and prints the command that fixes each
-problem it finds.
-
-## Join the community
-
-Questions, setups and ideas are welcome as
-[issues](https://github.com/hyperfelixations/ha-history-exporter/issues). The
-links below are for following along as new things are built.
-
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/hyperfelixations)
-[![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@hyperfelixations)
-[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/hyperfelixations/)
+`hhe doctor` checks the installation, the configuration, the archive and the
+connection, and prints the command that fixes each problem it finds.
 
 ## Configuration
 
-Nothing has to be configured: with `HHE_URL` and `HHE_TOKEN` in the
-environment, `hhe export` already works and writes to
-`<your home directory>/ha-history-exports`.
+With `HHE_URL` and `HHE_TOKEN` set in the environment, `hhe export` works
+without a configuration file and writes to `ha-history-exports` in your home
+directory.
 
-### Where settings come from
+### Sources
 
-Sources are merged, highest precedence first:
+Settings are merged, highest precedence first:
 
 | # | Source | Example |
 |---|---|---|
-| 1 | command-line options | `--batch-size 15` |
-| 2 | environment variables | `HHE_REQUESTS_BATCH_SIZE=15` |
-| 3 | your configuration file | see `hhe config path` |
+| 1 | `hhe export` options | `--batch-size 10` |
+| 2 | environment variables | `HHE_REQUESTS_BATCH_SIZE=10` |
+| 3 | the configuration file | `config.toml`, see `hhe config path` |
 | 4 | built-in defaults | |
 
-There is **one** configuration file. HHE never picks one up from the directory
-you happen to be standing in — a tool whose behaviour depends on that is a tool
-nobody can reason about. To use a different file for one run, name it:
-`hhe export --config ./other.yaml`. That file then replaces the usual one
-entirely.
+The configuration file is [TOML](https://toml.io/). `--config FILE` reads
+exactly that file for one command, in place of your configuration file.
 
-`hhe config list --origin` shows every effective value together with the source
-it came from, which is the fastest way to answer "why is it doing that?".
+Paths may use `~`, `$NAME` and `${NAME}`, on Windows also `%NAME%`; naming an
+undefined variable is an error. A relative path in the file is relative to the
+file; a relative path in a variable or an option is relative to the working
+directory.
 
-### Where the files live
+`hhe config list --origin` shows every effective value and where it comes from.
+
+### Files
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| configuration | `~/.config/ha-history-exporter/config.yaml` | `~/Library/Application Support/ha-history-exporter/config.yaml` | `%APPDATA%\ha-history-exporter\config.yaml` |
-| credentials | same directory, `credentials.yaml` | same | same |
-| exports | `~/ha-history-exports` | same | `%USERPROFILE%\ha-history-exports` |
+| configuration | `~/.config/ha-history-exporter/config.toml` | `~/Library/Application Support/ha-history-exporter/config.toml` | `%APPDATA%\ha-history-exporter\config.toml` |
+| access token | `credentials.toml` in the same directory | same | same |
+| archive | `~/ha-history-exports` | same | `%USERPROFILE%\ha-history-exports` |
 
-`hhe config path` prints the resolved paths on your machine.
+`hhe config path` prints the paths on your machine. `HHE_CONFIG_DIR` names
+another configuration directory.
 
 ### Changing settings
 
 ```bash
 hhe config set export.formats jsonl,parquet
 hhe config set export.output_dir /mnt/archive/ha-history
-hhe config set requests.batch_size 15
 hhe config get export.formats
-hhe config unset export.formats      # back to the default
-hhe config edit                      # open the file in $EDITOR
+hhe config unset export.formats       # back to the default
+hhe config set homeassistant.token    # asks for the token, hidden
+hhe config edit                       # opens the file in your editor
 ```
 
-Writes always go to your configuration file, never to a file you passed with
-`--config`. The file lists every key with its documentation; keys you have not
-set appear commented out, showing the built-in default for your machine, so it
-is also the reference you can read offline.
+`hhe config set` checks the value before it writes the file, and `hhe config
+edit` checks the file after the editor closes. `config edit` uses `VISUAL` or
+`EDITOR`; without them, Windows opens the file with its default application. The file lists every key with
+its documentation; keys you have not set appear as comments with their default
+or an example:
 
-### Environment variables
+```toml
+[export]
+output_dir = "/mnt/archive/ha-history"
+formats = ["jsonl", "parquet"]
 
-Every key has one: `HHE_` followed by the key path in upper case with dots
-replaced by underscores, for example `HHE_EXPORT_OUTPUT_DIR`,
-`HHE_EXPORT_FORMATS`, `HHE_REQUESTS_BATCH_SIZE`.
-
-The two credential keys have short names of their own: `HHE_URL` and
-`HHE_TOKEN`. `HA_URL` and `HA_TOKEN` keep working and take precedence, so an
-existing setup does not have to change.
-
-### Key reference
-
-| Key | Default | Meaning |
-|---|---|---|
-| `homeassistant.url` | – | Base URL of your Home Assistant instance |
-| `homeassistant.token` | – | Access token; stored in `credentials.yaml` only |
-| `export.output_dir` | `~/ha-history-exports` | Receives exports, metadata, and logs |
-| `export.timezone` | `Europe/Berlin` | IANA time zone defining local days |
-| `export.formats` | `[jsonl]` | Any of `jsonl`, `csv`, `parquet`; empty for snapshot only |
-| `requests.batch_size` | `15` | Entities per history request |
-| `requests.sleep_between_requests` | `0.7` | Seconds between requests |
-| `requests.sleep_between_days` | `5.0` | Seconds between days |
-| `requests.timeout` | `120` | HTTP timeout per request, in seconds |
-| `requests.max_retries` | `3` | Retries on timeouts and 5xx |
-| `requests.backoff` | `[2, 5, 15]` | Seconds to wait between retries |
-| `history_request.minimal_response` | `false` | Ask HA for a reduced payload |
-| `history_request.no_attributes` | `false` | Ask HA to omit attributes |
-| `history_request.significant_changes_only` | `false` | Ask HA for significant changes only |
-| `history_request.skip_initial_state` | `true` | Omit the synthetic state at the window start |
-| `entities.include_unknown` | `true` | Request history for `unknown` entities |
-| `entities.include_unavailable` | `true` | Request history for `unavailable` entities |
-| `entities.exclude_domains` | `[]` | Entity domains to skip |
-| `entities.exclude_patterns` | `[]` | Glob patterns of entity IDs to skip |
-| `recorder.purge_keep_days` | unset | Block new exports at the known Recorder boundary |
-| `storage.temp_dir` | platform temp | Working directory during a run |
-| `storage.locked_file_retries` | `5` | Retries when another program locks an output file |
-| `storage.locked_file_retry_sleep` | `2.0` | Seconds between those retries |
-
-Every key name matches the command-line option that overrides it:
-`--batch-size` sets `requests.batch_size`, `--timeout` sets `requests.timeout`.
-
-Larger batches finish sooner but put more load on Home Assistant. The
-defaults are the sizing proven over months of daily exports on an instance with
-roughly 1400 entities. If your Home Assistant runs on modest hardware and feels
-sluggish during an export, lower `requests.batch_size` and raise
-`requests.sleep_between_requests`.
-
-The default profile sends `significant_changes_only=0` explicitly and requests
-every Recorder state row strictly inside the day. `skip_initial_state=true`
-omits Home Assistant's synthetic carry-in state at the exact start boundary;
-set it to `false` only when that context row is useful to you.
-
-`minimal_response`, `no_attributes`, and `significant_changes_only` all request
-less information. Minimal responses omit attribute snapshots and other fields
-from reduced follow-up rows and may remove repeated equal states. HHE restores
-a consistent row structure and entity identity, but it never invents omitted
-values: unavailable attributes are stored as `null`. The selected fidelity is
-recorded in every schema 1.4 manifest.
-
-## Credentials and security
-
-- Every request is a read-only `GET`. HHE never writes to Home Assistant.
-- The token is sent in the `Authorization` header only — never in a URL, a log
-  line, a manifest, an error message, or an export file. It is not part of the
-  configuration object at all, so it cannot reach a log through one.
-- `hhe config get`/`list` report a stored token as `<set>`, never its value.
-- The token lives in `credentials.yaml`, separate from `config.yaml`, created
-  with owner-only permissions (`0600` on Linux and macOS; on Windows it
-  inherits the user-profile ACL). `hhe doctor` checks and reports this. A token
-  written into `config.yaml` by hand is refused with an explanation.
-- `HHE_TOKEN` (or `HA_TOKEN`) in the environment takes precedence over the
-  stored token, which keeps CI and one-off shells free of any file.
-- A token is never accepted as a command-line value. Use the hidden prompt with
-  `hhe config set homeassistant.token`, or pipe an intentional stdin source with
-  `Get-Content <token-file> | hhe config set homeassistant.token --stdin` on
-  PowerShell.
-- Failed API responses are reported by status code and endpoint only; response
-  bodies are never logged or stored, because they can contain private data.
-
-## Command reference
-
-```
-hhe [--version] [--help]
-hhe export  [selection] [output] [tuning]
-hhe init    [--force] [--non-interactive --url … --output-dir … --format … --timezone …]
-hhe config  get KEY | set KEY [VALUE] [--stdin] | unset KEY | list [--origin] | path | edit
-hhe doctor  [--offline] [--config FILE]
+[requests]
+batch_size = 10
 ```
 
-Every invocation names its command; there is no implicit one.
+### Keys
+
+Every key has an environment variable; the URL and the token have the short
+names `HHE_URL` and `HHE_TOKEN`. HHE reports a variable that starts with
+`HHE_` but names no key.
+
+<!-- keys:start -->
+| Key | Default | Environment variable | `hhe export` option | Meaning |
+|---|---|---|---|---|
+| `homeassistant.url` | not set | `HHE_URL` |  | Home Assistant base URL. |
+| `homeassistant.token` | not set | `HHE_TOKEN` |  | Long-lived access token of Home Assistant; kept in `credentials.toml`. |
+| `homeassistant.ca_bundle` | not set | `HHE_HOMEASSISTANT_CA_BUNDLE` |  | PEM file with the certificate authority that signed the HTTPS certificate of Home Assistant; unset uses the system's trusted authorities. |
+| `export.output_dir` | `ha-history-exports` in your home directory | `HHE_EXPORT_OUTPUT_DIR` | `--output-dir` | Directory that receives exports, metadata and logs. |
+| `export.timezone` | not set | `HHE_EXPORT_TIMEZONE` | `--timezone` | IANA time zone of the calendar days; unset takes the archive's time zone, and for a new archive the time zone of Home Assistant. |
+| `export.formats` | `["jsonl"]` | `HHE_EXPORT_FORMATS` | `--format` | Output formats: any of jsonl, csv, parquet; [] captures the entity snapshot only. |
+| `requests.batch_size` | `15` | `HHE_REQUESTS_BATCH_SIZE` | `--batch-size` | Entities per history request. |
+| `requests.sleep_between_requests` | `0.7` | `HHE_REQUESTS_SLEEP_BETWEEN_REQUESTS` | `--sleep-between-requests` | Pause between history requests, in seconds. |
+| `requests.sleep_between_days` | `5` | `HHE_REQUESTS_SLEEP_BETWEEN_DAYS` | `--sleep-between-days` | Pause between exported days, in seconds. |
+| `requests.timeout` | `120` | `HHE_REQUESTS_TIMEOUT` | `--timeout` | HTTP read timeout per request, in seconds. |
+| `requests.max_retries` | `3` | `HHE_REQUESTS_MAX_RETRIES` | `--max-retries` | Retries of a request after a timeout, a lost connection, HTTP 429, 500 or 502-504. |
+| `requests.backoff` | `[2, 5, 15]` | `HHE_REQUESTS_BACKOFF` |  | Wait times between retries, in seconds; the last one repeats. |
+| `history_request.minimal_response` | `false` | `HHE_HISTORY_REQUEST_MINIMAL_RESPONSE` |  | Ask Home Assistant for a reduced history payload. |
+| `history_request.no_attributes` | `false` | `HHE_HISTORY_REQUEST_NO_ATTRIBUTES` |  | Ask Home Assistant to omit entity attributes. |
+| `history_request.significant_changes_only` | `false` | `HHE_HISTORY_REQUEST_SIGNIFICANT_CHANGES_ONLY` |  | Ask Home Assistant for significant changes only. |
+| `history_request.skip_initial_state` | `true` | `HHE_HISTORY_REQUEST_SKIP_INITIAL_STATE` |  | Omit the state in effect at midnight that opens each entity's day. |
+| `entities.include_unknown` | `true` | `HHE_ENTITIES_INCLUDE_UNKNOWN` |  | Request history for entities currently in state unknown. |
+| `entities.include_unavailable` | `true` | `HHE_ENTITIES_INCLUDE_UNAVAILABLE` |  | Request history for entities currently in state unavailable. |
+| `entities.exclude_domains` | `[]` | `HHE_ENTITIES_EXCLUDE_DOMAINS` |  | Entity domains to exclude, for example update or button. |
+| `entities.exclude_patterns` | `[]` | `HHE_ENTITIES_EXCLUDE_PATTERNS` |  | Case-sensitive glob patterns of entity IDs to exclude, for example sensor.*_debug. |
+| `recorder.purge_keep_days` | not set | `HHE_RECORDER_PURGE_KEEP_DAYS` |  | Recorder retention of Home Assistant in days (purge_keep_days, 10 unless changed there); unset means unknown, and an empty day then fails. |
+| `storage.temp_dir` | `ha-history-exporter` in the system's temporary directory | `HHE_STORAGE_TEMP_DIR` |  | Directory for the working files of a run. |
+| `storage.locked_file_retries` | `5` | `HHE_STORAGE_LOCKED_FILE_RETRIES` |  | Retries while another program locks an output file. |
+| `storage.locked_file_retry_sleep` | `2` | `HHE_STORAGE_LOCKED_FILE_RETRY_SLEEP` |  | Pause between file-lock retries, in seconds. |
+<!-- keys:end -->
+
+### Request load
+
+`requests.batch_size` entities are asked for per request, with
+`requests.sleep_between_requests` seconds between requests and
+`requests.sleep_between_days` between days. The defaults suit an instance with
+about 1400 entities. If Home Assistant feels slow during an export, lower the
+batch size and raise the pauses.
+
+### Capture options
+
+By default, every Recorder row of a day is requested with its attributes, from
+local midnight up to the next local midnight; a change at exactly midnight
+belongs to the day it opens.
+
+- `history_request.skip_initial_state = false` adds the state in effect at
+  midnight as the first row of each entity, stamped at midnight.
+- `minimal_response`, `no_attributes` and `significant_changes_only` ask Home
+  Assistant for less. Values Home Assistant omits are stored as `null`. Every
+  manifest records the options and the resulting fidelity.
+
+## Commands
+
+```
+hhe export   [day selection] [--dry-run] [--force] [setting options] [--json]
+hhe convert  --format LIST [day selection] [--output-dir DIR] [--json]
+hhe verify   [day selection] [--deep] [--output-dir DIR] [--json]
+hhe status   [day selection] [--output-dir DIR] [--json]
+hhe init     [--non-interactive] [--force] [--url URL] [--output-dir DIR] [--format LIST]
+             [--timezone ZONE] [--purge-keep-days N]
+hhe config   get KEY | set KEY [VALUE] [--stdin] | unset KEY | list [--origin] | path | edit
+hhe doctor   [--offline] [--json]
+```
+
+Every command accepts `--config FILE`; `export` and `convert` accept
+`--log-level DEBUG|INFO|WARNING|ERROR`.
+
+### Day selection
+
+| Option | Days |
+|---|---|
+| `--date DAY` | one day: `YYYY-MM-DD`, `yesterday` or `today` |
+| `--start-date DAY --end-date DAY` | an inclusive range |
+| `--last-days N` | the N most recent complete days, ending yesterday |
+
+Without a selection, `export` takes the most recent complete day; `convert`,
+`verify` and `status` take every day of the archive.
 
 ### `hhe export`
 
-At most one day selection. Without one, the most recent complete day is
-exported — which is what a daily run wants:
+Fetches the selected days from Home Assistant and publishes them. A day with a
+successful manifest is skipped; `--force` exports it again.
 
-| Option | Meaning |
+| Option | Effect |
 |---|---|
-| *(none)* | The most recent complete day |
-| `--last-days N` | The N most recent complete days, ending yesterday |
-| `--date DATE` | `YYYY-MM-DD`, `yesterday`, or `today` |
-| `--start-date DATE --end-date DATE` | An inclusive range |
+| `--dry-run` | shows the plan with the entity count; fetches no history and writes nothing |
+| `--force` | exports days again that have a successful manifest |
+| `--format LIST` | the complete set of formats for this run: `jsonl`, `csv`, `parquet`, or `none` |
+| `--output-dir DIR`, `--timezone ZONE`, `--batch-size N`, `--sleep-between-requests S`, `--sleep-between-days S`, `--timeout N`, `--max-retries N` | override the setting of the same name |
 
-`yesterday` and `today` work in all three date options, so
-`--start-date 2026-08-01 --end-date yesterday` is a valid range.
+`--format none` records the current entity list and states only: no history
+request, no day manifest.
 
-| Option | Meaning |
-|---|---|
-| `--format LIST` | `jsonl`, `csv`, `parquet`, `none`, comma-separated; states the complete set |
-| `--output-dir DIR` | Output directory for this run |
-| `--dry-run` | Show the plan and the entity count; fetch no history |
-| `--force` | Re-export days that already have a successful manifest |
-| `--config FILE` | Use exactly this configuration file |
-| `--timezone TZ`, `--batch-size N`, `--sleep-between-requests S`, `--sleep-between-days S`, `--timeout S`, `--max-retries N` | Override the matching setting |
-| `--log-level LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+`--date today` exports the running day up to the moment of the run, recorded
+as `partial`. The next run that includes the day exports it completely. A
+range or `--last-days` covers complete days only.
 
-`--format none` runs in snapshot-only mode: HHE records the current entity list
-and states, makes no History API request, and writes no daily manifest.
+### `hhe convert`
 
-### Exporting today
-
-Today is skipped by default, because it is not over. To capture it anyway —
-useful while debugging, or to look at what happened this morning — name it:
+Adds formats to stored days from a file they already have, without Home
+Assistant:
 
 ```bash
-hhe export --date today
+hhe convert --format parquet
+hhe convert --format csv --last-days 30
 ```
 
-The day is fetched from local midnight up to the moment of the run and its
-manifest is recorded as `status: partial`. Because only `status: ok` counts as
-exported, the next run that includes that day fetches it again in full and
-replaces the files. Nothing else reaches into an unfinished day: a range or
-`--last-days` that happens to span today still skips it.
+A day is converted when its manifest (schema 1.4) says `ok`. The source file
+is compared with its manifest first; the new files hold exactly the same
+records, and the manifest gains them. A day whose source is missing or
+changed, and a day with a manifest of schema 1.1 to 1.3, which records no
+checksums, is reported as `blocked`.
 
-### Exit codes
+### `hhe verify`
 
-| Code | Meaning |
+Compares every stored file with its manifest: size and SHA-256, and with
+`--deep` also every record against the row count and logical digest. It
+reports each file as:
+
+| Result | Meaning |
 |---|---|
-| `0` | Success |
-| `1` | Runtime failure — authentication, connectivity, a failed day |
-| `2` | Usage or configuration problem |
-| `130` | Interrupted with Ctrl-C |
+| `ok` | the file matches its manifest |
+| `present` | the file exists; its manifest (schema 1.1 to 1.3) records no checksum |
+| `missing` | the manifest declares the file, but it is not there |
+| `mismatch` | size, SHA-256, row count or logical digest differ |
+| `unreadable` | the file cannot be read or decoded |
+| `unexpected` | a day file that no manifest declares |
+
+`verify` exits with `1` for `mismatch`, `unreadable`, `unexpected` and invalid
+manifests. A missing file is reported only, so you can move stored days to
+other storage.
+
+### `hhe status`
+
+Lists the days of the archive month by month as `ok`, `partial`, `failed`,
+`pending`, `invalid` or `missing`. Without a selection, the list runs from the
+first to the last exported day.
+
+### `hhe init`
+
+Asks for the URL, the token, the output directory, the formats, the time zone
+and the Recorder retention, checks them against Home Assistant and writes
+`config.toml` and `credentials.toml` together. It offers the time zone of Home
+Assistant.
+
+- `--non-interactive` asks nothing: the URL comes from `--url` or `HHE_URL`,
+  the token from `HHE_TOKEN` or standard input.
+- `--force` replaces an existing configuration.
+
+### `hhe config`
+
+Reads and changes the configuration file; see
+[Changing settings](#changing-settings). `get` and `list` show a stored token as
+`<set>`. The token is read by a hidden prompt or, with `--stdin`, from standard
+input:
+
+```bash
+hhe config set homeassistant.token --stdin < token.txt
+```
+
+In PowerShell: `Get-Content token.txt | hhe config set homeassistant.token --stdin`.
+
+### `hhe doctor`
+
+Checks the installation, the configuration and its file permissions, the
+directories and free disk space, the archive (time zone, running export,
+interrupted transactions, invalid manifests, undeclared or missing day files)
+and, unless `--offline`, the connection, version and time zone of Home
+Assistant. It changes nothing and exits with `1` when a check fails.
+
+### JSON output
+
+With `--json`, `export`, `convert`, `verify`, `status` and `doctor` print one
+JSON document on standard output; logs and messages stay on standard error.
+Every document names its `command` and `exit_code`. A command that ends with
+an error prints a document with `error.code`, `error.summary`, `error.details`
+and `error.remedies`.
+
+```bash
+hhe verify --json | jq '.summary'
+```
 
 ## Output
 
 ```
 <output_dir>/
+  hhe-archive.json                      the archive's time zone
   exports/daily/2026/06/
-    2026-06-15.jsonl            one JSON object per state change
-    2026-06-15.parquet          typed, compressed, ~15x smaller than JSONL
-    2026-06-15.csv              optional, flat
-    2026-06-15.manifest.json    what the run did
+    2026-06-15.jsonl                    one JSON object per state change
+    2026-06-15.csv
+    2026-06-15.parquet
+    2026-06-15.manifest.json            the record of the day
   metadata/
-    entity_snapshot_<time>_<run>.json   the entity list at export time
-    export_runs.jsonl                   one line per exported day
+    entity_snapshot_<local time>_<run id>.json   the entities and states at export time
+    export_runs.jsonl                            one line per exported day
   logs/
-    ha_history_export_<time>.log
+    ha_history_export_<local time>.log
 ```
 
-Each JSONL line holds one validated canonical history record. Home Assistant
-timestamps are normalized to UTC, missing fields are represented explicitly,
-unknown top-level API fields are retained, and HHE adds `local_offset`:
+New directories are readable by your account only on Linux and macOS.
+
+### Formats
+
+JSONL holds one object per state change, timestamps in UTC:
 
 ```json
 {"entity_id": "sensor.kitchen_temperature", "state": "21.5",
@@ -368,14 +392,14 @@ unknown top-level API fields are retained, and HHE adds `local_offset`:
  "local_offset": "+02:00"}
 ```
 
-`local_offset` is computed per row from the event time in `last_updated`, so on
-a daylight-saving transition day the rows before and after the change carry
-the correct offsets even when `last_changed` is older.
-
-CSV stores attributes in `attributes_json`; Parquet uses required
-`timestamp[us, UTC]` columns and the same JSON representation. Both formats
-preserve unknown top-level API fields in `extra_json`, and all enabled formats
-must produce the same logical digest before any file is published.
+- `local_offset` is the UTC offset of `last_updated` in the archive's time
+  zone, so the rows of a daylight-saving day carry both offsets.
+- Fields of the API that HHE does not know stay in the row, after
+  `attributes`.
+- CSV has the columns `entity_id, state, last_changed, last_updated,
+  attributes_json, local_offset, extra_json`, with CRLF line endings.
+- Parquet has the same columns with `timestamp[us, UTC]` timestamps, Snappy
+  compression and row groups of 200 000 rows.
 
 ```sql
 SELECT entity_id, state, last_changed
@@ -384,102 +408,161 @@ WHERE entity_id = 'sensor.kitchen_temperature'
 ORDER BY last_changed;
 ```
 
-### Manifests and resuming
+### Manifests
 
-Every exported day gets a schema 1.4 manifest recording status, timing, entity
-and row counts, request options, capture fidelity, Retention assessment, safe
-failure codes, and per-artifact filename, byte size, SHA-256, row count, and
-logical digest. `status` is one of:
+Each day's `.manifest.json` records its boundaries, timing, entity and row
+counts, request options, capture fidelity, Recorder retention, and filename,
+size, SHA-256, row count and logical digest of every file. The
+[JSON Schema of manifest 1.4](https://github.com/hyperfelixations/ha-history-exporter/blob/main/src/ha_history_exporter/schemas/manifest-1.4.schema.json)
+describes it; it is installed with the package as
+`ha_history_exporter/schemas/manifest-1.4.schema.json`.
 
-| Status | Meaning |
+| `status` | Meaning |
 |---|---|
-| `ok` | The day was captured completely |
-| `partial` | The day was captured while it was still running |
-| `failed` | The run reached the day but could not finish it |
-| `pending` | Incomplete in-memory or legacy state; never a successful day |
+| `ok` | the complete day |
+| `partial` | the running day, up to the moment of the export |
+| `failed` | the last attempt failed; `error` and `error_code` say why |
+| `pending` | not completed; never a successful day |
 
-A manifest with `status: ok` is the single durable record that the day was
-captured: you may move, archive, or delete the exported files afterwards, and
-HHE will still skip that day instead of asking Home Assistant again. Only
-`--force` overrides that. Every other status means the day is not done, so a
-later run exports it again.
+A manifest with `status: ok` marks the day as done, also after you move or
+delete its files. HHE reads manifests of schema 1.1 to 1.4 and leaves a
+manifest it cannot trust untouched, also with `--force`.
 
-Legacy schema 1.1–1.3 manifests remain readable and an existing legacy
-`status: ok` remains a completed day. Malformed, unknown, or contradictory
-manifests fail closed and are not overwritten, including with `--force`.
+### Archive time zone
 
-### One run at a time
+All days of an archive are calendar days in one time zone, recorded in
+`hhe-archive.json`. A new archive takes `export.timezone`, or the time zone of
+Home Assistant when it is not set. An archive without `hhe-archive.json` takes
+the time zone its manifests name.
 
-A run holds a lock on its output directory and works in its own temporary
-directory, so two runs cannot interfere. All requested formats are written and
-validated first. A crash-recoverable day transaction then publishes the
-artifacts and the manifest last; a failed force-export restores the previous
-generation byte-for-byte.
+### One writer at a time
 
-## Troubleshooting
+`export` and `convert` lock the archive (`.hhe-archive.lock`) for as long as
+they run; the lock ends with the process, also after a crash. A day is
+published as one transaction: after an interruption, the next writing command
+restores the previous files of that day. `status`, `verify`, `doctor` and
+`export --dry-run` read without the lock.
 
-Run `hhe doctor` first — it checks configuration, credentials, directories,
-formats, and connectivity, and prints the command that fixes each problem.
+## Exit codes
 
-**`No Home Assistant URL configured.` / `No Home Assistant access token configured.`**
-Nothing is set up yet. Run `hhe init`, or set the values directly with
-`hhe config set homeassistant.url …` and `hhe config set homeassistant.token`.
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `1` | a day failed, `verify` found a problem, `convert` was blocked, or another export holds the archive |
+| `2` | usage or configuration problem |
+| `3` | Home Assistant rejected the access token |
+| `4` | Home Assistant is unreachable or unavailable, answered unusably, or the TLS check failed |
+| `70` | unexpected internal error; the message names the log file that holds the traceback |
+| `130` | interrupted with Ctrl-C |
 
-**`Authentication failed: Home Assistant rejected the access token (HTTP 401).`**
-The token is wrong, expired, or was revoked. Create a new one under Profile →
-Security → Long-Lived Access Tokens and store it with
-`hhe config set homeassistant.token`.
-
-**`Cannot reach Home Assistant at …`**
-The address is not reachable from this machine, or Home Assistant did not
-answer in time. Check the URL with `hhe config get homeassistant.url`, try it in
-a browser, and raise `--timeout` if the instance is simply slow.
-
-**`Parquet output is enabled but pyarrow is not installed.`**
-Run `pipx inject ha-history-exporter pyarrow`, or drop Parquet from the format
-list with `hhe config set export.formats jsonl`.
-
-**`Unknown configuration key '…'`**
-A typo in the configuration file. The message names the file, the line, and the
-closest valid key; `hhe config list` shows all of them.
-
-**`Another export is already running for this output directory.`**
-Wait for the other run. If none is running, the message names the lock file to
-remove.
-
-**`Recorder retention blocks one or more requested days.`**
-Set `recorder.purge_keep_days` to the value used by your Home Assistant
-Recorder. HHE refuses a new export when a requested local day touches or
-exceeds that known boundary; `--force` does not bypass it. Existing successful
-legacy manifests are still skipped without being reclassified.
-
-**`Empty history ... cannot be verified without Recorder retention.`**
-With unknown retention an empty response could mean either a genuinely quiet
-day or purged data, so HHE publishes neither daily artifacts nor `status: ok`.
-Within a configured safe retention window, an empty day is valid.
+When a day fails, the export continues with the next day. A rejected token, an
+unavailable Home Assistant, a TLS failure or an internal error ends the run
+after the running day is recorded as failed.
 
 ## Automating daily exports
 
-A daily run of `hhe export --last-days 2` keeps the archive complete even if a
-day is missed: the extra day is skipped when it is already there.
+`hhe export --last-days 2` once a day keeps the archive complete when a run is
+missed; a day that is already exported is skipped.
 
-**Linux and macOS** — `crontab -e`:
+**Linux and macOS**, `crontab -e`:
 
 ```cron
 30 3 * * * /home/you/.local/bin/hhe export --last-days 2
 ```
 
-**Windows** — Task Scheduler, daily, action:
+**Windows**, Task Scheduler, a daily task with the action:
 
 ```
 Program:   %USERPROFILE%\.local\bin\hhe.exe
 Arguments: export --last-days 2
 ```
 
-The stored `credentials.yaml` means the scheduled task needs no environment
-variables and no token in a script file. An export run never asks a question,
-so it cannot block waiting for an answer nobody is there to give.
+The stored `credentials.toml` gives the task its token, and an export never
+asks a question.
 
-## License
+## Troubleshooting
 
-MIT — see [LICENSE](LICENSE).
+Run `hhe doctor` first.
+
+**`No Home Assistant URL is configured.` / `No Home Assistant access token is configured.`**
+Run `hhe init`, or `hhe config set homeassistant.url …` and
+`hhe config set homeassistant.token`.
+
+**`Home Assistant rejected the access token (HTTP 401).`**
+Create a new token under Profile → Security → Long-Lived Access Tokens and store
+it with `hhe config set homeassistant.token`.
+
+**`Home Assistant is not available at …` / `Home Assistant did not answer in time.`**
+Check the URL with `hhe config get homeassistant.url` and in a browser. For a
+slow instance, raise `--timeout` or lower `--batch-size`.
+
+**`The HTTPS certificate of Home Assistant could not be verified.`**
+For a certificate of your own authority, set
+`hhe config set homeassistant.ca_bundle <path-to-ca.pem>`.
+
+**`… is reached over plain HTTP outside the local network …`**
+The access token travels unencrypted. Use the `https://` address of your Home
+Assistant.
+
+**`export.timezone is …, but this archive's days are in …`**
+Run `hhe config unset export.timezone`, or export into a new output directory.
+
+**`Parquet output is enabled but pyarrow is not installed.`**
+Run `pipx inject ha-history-exporter pyarrow`, or
+`hhe config set export.formats jsonl`.
+
+**`Unknown configuration key '…'`**
+The message names the file, the line and the closest valid key.
+
+**`Another export is already running for this output directory.`**
+Wait for the run the message names.
+
+**`Recorder retention blocks one or more requested days.`**
+A requested day touches the Recorder retention boundary, so its history may
+already be purged. Choose days inside `recorder.purge_keep_days`.
+
+**`Empty history … cannot be verified without Recorder retention.`**
+Set `recorder.purge_keep_days` to the retention of your Recorder. With a known
+retention, an empty day is exported as an empty day.
+
+**`verify` reports `unexpected` files**
+A file of a format the day's manifest does not declare. Check it, then move or
+delete it.
+
+## Known limitations
+
+- Long-term statistics are not exported; the History API does not serve them.
+- Only entities that exist in `/api/states` at export time are exported.
+- Spreadsheet applications treat a CSV cell that starts with `=`, `+`, `-` or
+  `@` as a formula. Import CSV files as text, or analyse the Parquet or JSONL
+  files.
+- Locks on network file systems (SMB, NFS) depend on the server; keep one
+  machine writing an archive.
+
+## Security
+
+- HHE sends only `GET` requests to Home Assistant.
+- The token travels in the `Authorization` header only, never in a URL, a log,
+  a manifest or an export file. Redirects are not followed.
+- `credentials.toml` is readable by your account only (`0600` on Linux and
+  macOS; on Windows the permissions of your profile).
+- HTTPS certificates are always verified; `homeassistant.ca_bundle` adds an
+  authority of your own.
+- Error messages name the HTTP status and endpoint only; response bodies are
+  never logged or stored.
+- Exports, snapshots and logs describe what happens in your home. Log files
+  list entity IDs and, after an internal error, a traceback; review a log
+  before you share it.
+
+Report a vulnerability as described in [SECURITY.md](https://github.com/hyperfelixations/ha-history-exporter/blob/main/SECURITY.md).
+
+## Links
+
+- [Issues](https://github.com/hyperfelixations/ha-history-exporter/issues) for
+  questions, setups and ideas.
+
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/hyperfelixations)
+[![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@hyperfelixations)
+[![Instagram](https://img.shields.io/badge/Instagram-Follow-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/hyperfelixations/)
+
+MIT License — see [LICENSE](https://github.com/hyperfelixations/ha-history-exporter/blob/main/LICENSE).

@@ -1,13 +1,13 @@
 # Local configuration and credentials
-/export_config.yaml
-/ha-history-exporter.yaml
-/config.yaml
+/config.toml
+/credentials.toml
 .env
 .env.*
 !.env.example
 
 # Python environments and bytecode
 .venv/
+.venv-*/
 venv/
 __pycache__/
 *.py[cod]
@@ -16,6 +16,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 .coverage
 htmlcov/
 
@@ -24,11 +25,13 @@ build/
 dist/
 *.egg-info/
 
-# Export output if a local override points into the repository
+# An archive, if a local override points into the repository
 /data/
 /exports/
 /metadata/
 /logs/
+/hhe-archive.json
+/.hhe-*
 *.log
 
 # Operating systems and editors
@@ -36,9 +39,6 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
-
-# Local helper scripts that are not part of the product
-/ha_history_export_last_10_days.bat
 
 # Local agent routing
 /AGENTS.md

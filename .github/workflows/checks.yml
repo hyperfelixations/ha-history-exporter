@@ -1,0 +1,150 @@
+# Every check a commit has to pass, called by tests.yml for pushes and pull requests and by
+# release.yml and test-publish.yml before they build. Tools come from requirements-dev.txt only.
+# No dependency cache: release builds must not read what another workflow wrote.
+
+name: Checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check ".[parquet]"
+      - name: Test with the coverage gate
+        run: python -m pytest -m "not repo" --cov=ha_history_exporter
+
+  without-pyarrow:
+    name: Without the optional pyarrow
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install without the parquet extra
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check .
+      - name: Test everything that does not need pyarrow
+        run: python -m pytest -m "not repo and not parquet"
+
+  lowest-direct:
+    name: Lowest direct dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the lower bounds of pyproject.toml
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m venv .lowest
+          python -m uv pip install --python .lowest/bin/python --resolution lowest-direct \
+            -r requirements-dev.txt ".[parquet]"
+      - name: Test against the lower bounds
+        run: .lowest/bin/python -m pytest -m "not repo"
+
+  static:
+    name: Lint, types and import contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check -e ".[parquet]"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Check formatting
+        run: python -m ruff format --check .
+      - name: Type check
+        run: python -m mypy
+      - name: Import contracts
+        run: lint-imports
+
+  policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check -e .
+      - name: Lint the workflows
+        run: actionlint
+      - name: Audit the workflows and Dependabot
+        run: zizmor --offline .github
+      - name: Repository tests
+        run: python -m pytest -m repo
+      - name: Audit the tree and the reachable history for private data
+        run: python tools/privacy_audit.py --repository . --history
+
+  packaging:
+    name: Distributions on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.15"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the build tools
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Build the sdist and the wheel
+        run: python -m build
+      - name: Check the distribution metadata
+        run: python -m twine check dist/*
+      - name: Check the sdist and smoke-test the wheel
+        run: python tools/verify_distributions.py dist
+      - name: Audit the distributions for private data
+        run: >-
+          python tools/privacy_audit.py --repository .
+          --artifact dist/*.whl --artifact dist/*.tar.gz

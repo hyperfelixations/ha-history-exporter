@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.4",
+  "status": "failed",
+  "source": "home_assistant_rest_history",
+  "date": "2026-10-24",
+  "timezone": "Europe/Berlin",
+  "start_local": "2026-10-24T00:00:00+02:00",
+  "end_local": "2026-10-25T00:00:00+02:00",
+  "start_utc": "2026-10-23T22:00:00+00:00",
+  "end_utc": "2026-10-24T22:00:00+00:00",
+  "export_started_at": "<volatile>",
+  "export_finished_at": "<volatile>",
+  "duration_seconds": "<volatile>",
+  "entity_count_current": 3,
+  "entity_count_requested": 3,
+  "entity_count_with_history": 0,
+  "entity_count_zero_history": 0,
+  "state_object_count": 0,
+  "batch_size_entities": 2,
+  "request_count": 0,
+  "failed_request_count": 1,
+  "retried_request_count": 0,
+  "history_request_options": {
+    "minimal_response": false,
+    "no_attributes": false,
+    "significant_changes_only": false,
+    "skip_initial_state": true
+  },
+  "capture_profile": {
+    "response": "full",
+    "attributes": "full",
+    "state_changes": "all",
+    "initial_state": "omitted"
+  },
+  "retention": {
+    "status": "known_safe",
+    "purge_keep_days": 14
+  },
+  "output_files": {
+    "jsonl": null,
+    "csv": null,
+    "parquet": null
+  },
+  "artifacts": {
+    "jsonl": null,
+    "csv": null,
+    "parquet": null
+  },
+  "zero_history_entities": [],
+  "failed_batches": [
+    {
+      "batch_index": 1,
+      "entity_count": 2,
+      "error_code": "home_assistant_connection_error",
+      "error": "Cannot reach Home Assistant at http://home-assistant.invalid."
+    }
+  ],
+  "skipped_reason": null,
+  "error": "Cannot reach Home Assistant at http://home-assistant.invalid.",
+  "error_code": "home_assistant_connection_error",
+  "script_version": "<volatile>"
+}

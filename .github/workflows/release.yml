@@ -86,40 +86,14 @@ jobs:
       - name: Audit the publishable tree and reachable history
         run: python tools/privacy_audit.py --repository . --history
 
-  test:
-    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+  checks:
+    name: Checks
     needs: validate
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.13"]
-    env:
-      HA_URL: ""
-      HA_TOKEN: ""
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - run: |
-          python -m pip install --disable-pip-version-check -r requirements-dev.txt
-          python -m pip install --disable-pip-version-check ".[parquet]"
-      - run: python -m pytest --cov=ha_history_exporter --cov-report=term-missing
-      - run: |
-          python -m ruff check .
-          python -m ruff format --check .
-          python -m mypy
+    uses: ./.github/workflows/checks.yml
 
   build:
     name: Build release artifacts
-    needs: [validate, test]
+    needs: [validate, checks]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -138,7 +112,7 @@ jobs:
           set -euo pipefail
           python -m build --outdir "$DIST_DIR"
           python -m twine check "$DIST_DIR"/*
-          python tools/verify_wheel.py "$DIST_DIR"
+          python tools/verify_distributions.py "$DIST_DIR"
           python tools/privacy_audit.py --repository . \
             --artifact "$DIST_DIR"/*.whl --artifact "$DIST_DIR"/*.tar.gz
           cd "$DIST_DIR"
@@ -201,6 +175,8 @@ jobs:
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url \
             | sed 's/^/url=/' >> "$GITHUB_OUTPUT"
       - name: Summarize the manual publication gate
+        env:
+          DRAFT_URL: ${{ steps.draft.outputs.url }}
         run: |
-          echo "Draft: ${{ steps.draft.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft: $DRAFT_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Publishing this release triggers the separate PyPI workflow." >> "$GITHUB_STEP_SUMMARY"
