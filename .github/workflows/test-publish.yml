@@ -33,16 +33,17 @@ jobs:
       - name: Validate owner, branch, SHA, and version
         shell: bash
         env:
+          ACTOR: ${{ github.actor }}
           ACTUAL_SHA: ${{ github.sha }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           RELEASE_VERSION: ${{ inputs.version }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           SELECTED_REF: ${{ github.ref }}
-          TRIGGERING_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           expected_sha="$(echo "$EXPECTED_SHA" | xargs | tr '[:upper:]' '[:lower:]')"
-          [[ "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
+          [[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
           [[ "$SELECTED_REF" == "refs/heads/main" ]]
           [[ "$expected_sha" =~ ^[0-9a-f]{40}$ && "$expected_sha" == "$ACTUAL_SHA" ]]
           [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
@@ -94,6 +95,13 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Refuse a run not started by the owner
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: '[[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: testpypi-distributions

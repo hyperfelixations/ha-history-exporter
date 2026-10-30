@@ -20,7 +20,8 @@ def test_the_import_contracts_are_kept() -> None:
         [sys.executable, "-c", LINT],
         cwd=tooling.ROOT,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
         check=False,
     )
