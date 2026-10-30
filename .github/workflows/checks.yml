@@ -112,11 +112,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check -r requirements-dev.txt
           python -m pip install --disable-pip-version-check -e .
-      - name: Lint the workflows
-        run: actionlint
-      - name: Audit the workflows and Dependabot
-        run: zizmor --offline .github
-      - name: Repository tests
+      - name: Repository tests, with actionlint, shellcheck and zizmor on the workflows
         run: python -m pytest -m repo
       - name: Audit the tree and the reachable history for private data
         run: python tools/privacy_audit.py --repository . --history

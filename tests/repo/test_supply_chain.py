@@ -1,16 +1,19 @@
 """What the repository promises about its tools and distributions.
 
-Syntax and security of the workflows are checked by actionlint and zizmor
-(pinned actions, persisted credentials, permissions, Trusted Publishing,
-Dependabot cooldown). These tests keep the rules those tools do not know.
+Syntax and security of the workflows are checked by actionlint with shellcheck
+and by zizmor in test_workflow_audits.py (pinned actions, persisted
+credentials, permissions, Trusted Publishing, Dependabot cooldown). These
+tests keep the rules those tools do not know.
 """
 
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
+import trove_classifiers
 
 from tests.repo import tooling
 
@@ -32,6 +35,14 @@ def test_every_development_tool_is_pinned_exactly() -> None:
         line = line.strip()
         if line and not line.startswith("#"):
             assert re.fullmatch(r"[A-Za-z0-9_.-]+==\d[\w.]*", line), line
+
+
+def test_every_classifier_is_on_the_official_list() -> None:
+    """PyPI rejects an upload with an unknown classifier; ``twine check`` does not look."""
+    with (tooling.ROOT / "pyproject.toml").open("rb") as file:
+        classifiers = tomllib.load(file)["project"]["classifiers"]
+    assert classifiers
+    assert [name for name in classifiers if name not in trove_classifiers.classifiers] == []
 
 
 def install_arguments(text: str) -> list[list[str]]:

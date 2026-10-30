@@ -51,19 +51,20 @@ jobs:
         id: metadata
         shell: bash
         env:
+          ACTOR: ${{ github.actor }}
           ACTUAL_SHA: ${{ github.sha }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           RELEASE_KIND: ${{ inputs.release_kind }}
           RELEASE_VERSION: ${{ inputs.version }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           SELECTED_REF: ${{ github.ref }}
-          TRIGGERING_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           actual_sha="$(echo "$ACTUAL_SHA" | tr '[:upper:]' '[:lower:]')"
           expected_sha="$(echo "$EXPECTED_SHA" | xargs | tr '[:upper:]' '[:lower:]')"
           version="$(echo "$RELEASE_VERSION" | xargs)"
-          [[ "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
+          [[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
           [[ "$SELECTED_REF" == "refs/heads/main" ]]
           [[ "$expected_sha" =~ ^[0-9a-f]{40}$ && "$expected_sha" == "$actual_sha" ]]
           case "$RELEASE_KIND" in
@@ -80,7 +81,10 @@ jobs:
           package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' src/ha_history_exporter/__init__.py)"
           [[ "$package_version" == "$version" ]]
           tag="v$version"
-          ! git show-ref --verify --quiet "refs/tags/$tag"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "Tag $tag already exists." >&2
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "title=$title" >> "$GITHUB_OUTPUT"
       - name: Audit the publishable tree and reachable history
@@ -141,6 +145,13 @@ jobs:
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       RELEASE_TITLE: ${{ needs.validate.outputs.title }}
     steps:
+      - name: Refuse a run not started by the owner
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: '[[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-${{ needs.validate.outputs.tag }}
@@ -152,8 +163,21 @@ jobs:
           cd release-assets
           sha256sum --check --strict checksums.txt
           cd ..
-          ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
-          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1
+          # Only "not found" means free; any other failure of gh stops the run.
+          if output="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" 2>&1)"; then
+            echo "Release $RELEASE_TAG already exists." >&2
+            exit 1
+          elif [[ "$output" != *"release not found"* ]]; then
+            echo "$output" >&2
+            exit 1
+          fi
+          if output="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" 2>&1)"; then
+            echo "Tag $RELEASE_TAG already exists." >&2
+            exit 1
+          elif [[ "$output" != *"HTTP 404"* ]]; then
+            echo "$output" >&2
+            exit 1
+          fi
       - name: Create the unpublished draft
         id: draft
         shell: bash

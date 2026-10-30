@@ -26,18 +26,23 @@ jobs:
         with:
           python-version: "3.13"
       - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
-      - name: Validate tag, target, version, assets, and checksums
+      - name: Validate owner, tag, target, version, assets, and checksums
         shell: bash
         env:
+          ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
           TARGET_COMMITISH: ${{ github.event.release.target_commitish }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
+          [[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
           tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
           target_commit="$(git rev-parse "$TARGET_COMMITISH^{commit}")"
           [[ "$tag_commit" == "$target_commit" ]]
+          git merge-base --is-ancestor "$tag_commit" origin/main
           version="${RELEASE_TAG#v}"
           package_version="$(sed -n -E 's/^__version__ = "(.*)"$/\1/p' src/ha_history_exporter/__init__.py)"
           [[ "$package_version" == "$version" ]]
@@ -53,7 +58,7 @@ jobs:
           sha256sum --check --strict checksums.txt
           [[ -f "ha_history_exporter-$version-py3-none-any.whl" ]]
           [[ -f "ha_history_exporter-$version.tar.gz" ]]
-          python -m twine check *.whl *.tar.gz
+          python -m twine check ./*.whl ./*.tar.gz
           cd ..
           python tools/verify_distributions.py verified-assets
           cd verified-assets
@@ -122,6 +127,13 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Refuse a run not started by the owner
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: '[[ "$ACTOR" == "$REPOSITORY_OWNER" && "$TRIGGERING_ACTOR" == "$REPOSITORY_OWNER" ]]'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: verified-pypi-distributions
