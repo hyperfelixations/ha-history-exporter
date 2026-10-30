@@ -1,0 +1,4 @@
+# History findings of `python tools/privacy_audit.py --history` that were reviewed and leak
+# nothing. One line per finding: <40-hex blob or commit id>:<rule>  # <file or commit> - <reason>
+# Only blobs that are no longer part of HEAD and commits qualify, never the external denylist,
+# and every entry must still cover a finding.

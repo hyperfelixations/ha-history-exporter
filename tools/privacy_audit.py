@@ -1,4 +1,8 @@
-"""Audit publishable files, distributions, and Git history for private data."""
+"""Audit publishable files, distributions, and Git history for private data.
+
+Exit 1 lists every finding by rule and location without its text; exit 2 rejects the
+acknowledged history findings. See internal dev doc § "Privacy audit".
+"""
 
 from __future__ import annotations
 
@@ -51,17 +55,56 @@ SECRET_QUERY_KEYS = frozenset(
 ALLOWED_EMAIL_DOMAINS = frozenset(
     {"example.com", "example.net", "example.org", "users.noreply.github.com"}
 )
+#: GitHub commits merges and Dependabot updates, and Dependabot signs them off, under these.
+ALLOWED_EMAILS = frozenset({"noreply@github.com", "support@github.com"})
 ALLOWED_HOME_NAMES = frozenset({"you", "user", "runner"})
 DOCUMENTATION_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32")
 )
+#: Every rule except the numbered ones of the external denylist.
+RULES = (
+    "absolute_user_path",
+    "personal_email",
+    "url_userinfo",
+    "secret_url_query",
+    "private_network_endpoint",
+    "jwt",
+    "bearer_token",
+    "known_token_shape",
+)
+ACKNOWLEDGED_FILE = ".github/privacy-audit-acknowledged.txt"
+ACKNOWLEDGED_LINE = re.compile(r"([0-9a-f]{40}):([a-z0-9_]+)\s+#\s*\S.*")
+#: Fields per commit in the ``git log`` output of scan_git_history().
+COMMIT_FIELDS = 6
 
 
 @dataclass(frozen=True, order=True)
 class Finding:
     location: str
     rule: str
+
+
+@dataclass(frozen=True)
+class Acknowledged:
+    """A reviewed history finding: a blob outside HEAD or a commit, and one rule."""
+
+    object_id: str
+    rule: str
+    line: int
+
+    def covers(self, finding: Finding) -> bool:
+        return finding.rule == self.rule and (
+            finding.location.startswith(f"git-blob:{self.object_id}:")
+            or finding.location == f"git-commit:{self.object_id}"
+        )
+
+
+class AcknowledgedError(ValueError):
+    """The acknowledged findings are malformed, unsafe or out of date."""
+
+    def __init__(self, line: int, problem: str) -> None:
+        super().__init__(f"{ACKNOWLEDGED_FILE}, line {line}: {problem}")
 
 
 def _is_text(data: bytes) -> bool:
@@ -76,8 +119,8 @@ def scan_text(text: str, location: str, denylist: tuple[str, ...] = ()) -> set[F
         if match.group(1).lower() not in ALLOWED_HOME_NAMES:
             findings.add(Finding(location, "absolute_user_path"))
     for match in EMAIL.finditer(text):
-        domain = match.group(0).rsplit("@", 1)[1].lower()
-        if domain not in ALLOWED_EMAIL_DOMAINS:
+        email = match.group(0).lower()
+        if email.rsplit("@", 1)[1] not in ALLOWED_EMAIL_DOMAINS and email not in ALLOWED_EMAILS:
             findings.add(Finding(location, "personal_email"))
     for match in URL.finditer(text):
         try:
@@ -154,7 +197,7 @@ def scan_archive(path: Path, denylist: tuple[str, ...] = ()) -> set[Finding]:
     raise ValueError(f"Unsupported distribution type: {path.name}")
 
 
-def _git(root: Path, *args: str, stdin: bytes | None = None) -> bytes:
+def _git(root: Path, *args: str, stdin: bytes | None = None, check: bool = True) -> bytes:
     executable = shutil.which("git")
     if executable is None:
         raise RuntimeError("Git is required for repository privacy auditing.")
@@ -162,7 +205,7 @@ def _git(root: Path, *args: str, stdin: bytes | None = None) -> bytes:
         [executable, *args],
         cwd=root,
         input=stdin,
-        check=True,
+        check=check,
         capture_output=True,
     ).stdout
 
@@ -179,7 +222,7 @@ def _objects(output: bytes) -> Iterator[tuple[str, str, bytes]]:
 
 
 def scan_git_history(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]:
-    """Commit metadata and every blob any reference reaches, in four Git processes."""
+    """Identities and message of every commit and every blob any reference reaches."""
     findings: set[Finding] = set()
     metadata = _git(
         root,
@@ -187,7 +230,13 @@ def scan_git_history(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]
         "--all",
         "--format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%B%x00",
     )
-    findings.update(_scan_bytes(metadata, "git-metadata", denylist))
+    # Git refuses NUL in names and messages, so it separates the fields unambiguously.
+    fields = metadata.decode("utf-8", errors="replace").split("\x00")
+    if (len(fields) - 1) % COMMIT_FIELDS:
+        raise RuntimeError("Unexpected git log output.")
+    for start in range(0, len(fields) - 1, COMMIT_FIELDS):
+        sha, *details = fields[start : start + COMMIT_FIELDS]
+        findings.update(scan_text("\n".join(details), f"git-commit:{sha.strip()}", denylist))
     paths: dict[str, str] = {}
     for line in _git(root, "rev-list", "--objects", "--all").decode("utf-8").splitlines():
         name, _, path = line.partition(" ")
@@ -204,6 +253,77 @@ def scan_git_history(root: Path, denylist: tuple[str, ...] = ()) -> set[Finding]
     for name, _, data in _objects(contents):
         findings.update(_scan_bytes(data, f"git-blob:{name}:{paths[name]}", denylist))
     return findings
+
+
+def _head_blobs(root: Path) -> set[str]:
+    if not _git(root, "rev-parse", "--verify", "--quiet", "HEAD", check=False).strip():
+        return set()
+    listing = _git(root, "ls-tree", "-r", "-z", "HEAD").decode("utf-8")
+    return {entry.split("\t", 1)[0].split()[2] for entry in listing.split("\x00") if entry}
+
+
+def _object_types(root: Path, object_ids: list[str]) -> dict[str, str]:
+    """``blob``, ``commit``, another type or ``missing`` for each id."""
+    if not object_ids:
+        return {}
+    request = "".join(f"{object_id}\n" for object_id in object_ids).encode("ascii")
+    output = _git(root, "cat-file", "--batch-check", stdin=request).decode("ascii")
+    return {
+        object_id: line.split()[1]
+        for object_id, line in zip(object_ids, output.splitlines(), strict=True)
+    }
+
+
+def load_acknowledged(root: Path) -> list[Acknowledged]:
+    """The entries of ACKNOWLEDGED_FILE: ``<40-hex id>:<rule>  # <reason>`` per line."""
+    path = root / ACKNOWLEDGED_FILE
+    if not path.is_file():
+        return []
+    entries: list[Acknowledged] = []
+    for number, text in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = text.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = ACKNOWLEDGED_LINE.fullmatch(line)
+        if match is None:
+            raise AcknowledgedError(number, 'expected "<40-hex id>:<rule>  # <reason>"')
+        object_id, rule = match.groups()
+        if rule.startswith("external_denylist_"):
+            raise AcknowledgedError(number, "the private denylist is never acknowledged")
+        if rule not in RULES:
+            raise AcknowledgedError(number, f"unknown rule {rule!r}")
+        if any(entry.object_id == object_id and entry.rule == rule for entry in entries):
+            raise AcknowledgedError(number, f"{object_id}:{rule} is listed twice")
+        entries.append(Acknowledged(object_id, rule, number))
+    types = _object_types(root, [entry.object_id for entry in entries])
+    head = _head_blobs(root)
+    for entry in entries:
+        if types[entry.object_id] not in {"blob", "commit"}:
+            raise AcknowledgedError(entry.line, f"{entry.object_id} is neither a blob nor a commit")
+        if entry.object_id in head:
+            raise AcknowledgedError(
+                entry.line, f"{entry.object_id} is part of HEAD; fix the file instead"
+            )
+    return entries
+
+
+def apply_acknowledged(
+    findings: set[Finding], entries: list[Acknowledged]
+) -> tuple[set[Finding], int]:
+    """The history findings no entry covers, and how many were covered."""
+    used: set[Acknowledged] = set()
+    remaining: set[Finding] = set()
+    for finding in findings:
+        covering = [entry for entry in entries if entry.covers(finding)]
+        used.update(covering)
+        if not covering:
+            remaining.add(finding)
+    for entry in entries:
+        if entry not in used:
+            raise AcknowledgedError(
+                entry.line, f"{entry.object_id}:{entry.rule} suppresses no finding; remove it"
+            )
+    return remaining, len(findings) - len(remaining)
 
 
 def load_external_denylist(path: Path | None, repository: Path) -> tuple[str, ...]:
@@ -230,7 +350,14 @@ def main() -> int:
     denylist = load_external_denylist(args.denylist_file, root)
     findings = scan_paths(root, denylist)
     if args.history:
-        findings.update(scan_git_history(root, denylist))
+        try:
+            history, _ = apply_acknowledged(
+                scan_git_history(root, denylist), load_acknowledged(root)
+            )
+        except AcknowledgedError as error:
+            print(error)
+            return 2
+        findings.update(history)
     for artifact in args.artifact:
         findings.update(scan_archive(artifact, denylist))
     for finding in sorted(findings):
