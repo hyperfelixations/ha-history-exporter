@@ -7,7 +7,7 @@ import itertools
 import json
 import logging
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -19,7 +19,7 @@ from ha_history_exporter.app.results import ExportResult
 from ha_history_exporter.archive.descriptor import ZoneSource
 from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.archive.lock import probe
-from ha_history_exporter.domain.plan import DaySelection
+from ha_history_exporter.domain.plan import DayAction, DaySelection
 from ha_history_exporter.errors import (
     AuthError,
     ConfigError,
@@ -36,9 +36,12 @@ from tests.support.fake_source import Answer, FakeHistorySource, Retried
 
 BERLIN = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 7, 28)
+YESTERDAY = date(2026, 7, 29)
+OLD_AND_SAFE = DaySelection(start=DAY, end=YESTERDAY)
 NOW = datetime(2026, 7, 30, 3, 30, 5, tzinfo=BERLIN)
 FORMATS = ("jsonl", "csv", "parquet")
 TEMPERATURE = "sensor.test_temperature"
+IN_YESTERDAY = "2026-07-29T10:00:00+00:00"
 
 
 def states(*entity_ids: str) -> list[dict[str, Any]]:
@@ -64,6 +67,7 @@ class Run:
         *,
         selection: DaySelection | None = None,
         force: bool = False,
+        dry_run: bool = False,
         now: datetime = NOW,
     ) -> ExportResult:
         def connect() -> FakeHistorySource:
@@ -75,7 +79,7 @@ class Run:
             self.lock_held_when_attached.append(probe(self.layout.lock_file).held)
 
         return run_export(
-            ExportRequest(selection or DaySelection.single(DAY), force=force),
+            ExportRequest(selection or DaySelection.single(DAY), force=force, dry_run=dry_run),
             self.cfg,
             connect,
             clock=FixedClock(now),
@@ -221,12 +225,152 @@ def test_a_snapshot_only_run_writes_the_snapshot_and_no_day(tmp_path: Path) -> N
     assert not export.layout.manifest_file(DAY).exists()
 
 
-def test_a_day_the_retention_blocks_ends_the_run_before_the_snapshot(tmp_path: Path) -> None:
-    run = Run(make_config(tmp_path, purge_keep_days=1))
-    with pytest.raises(ConfigError, match="Recorder retention blocks"):
-        run.export(FakeHistorySource(states=states(TEMPERATURE)))
-    assert not run.layout.metadata_dir.exists()
-    assert not run.layout.daily_root.exists()
+def test_a_day_outside_the_retention_is_skipped_and_the_safe_days_are_exported(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path, purge_keep_days=2)
+    ha = source([[[state_row(timestamp=IN_YESTERDAY)]]])
+    result = export.export(ha, selection=OLD_AND_SAFE)
+    assert result.plan is not None
+    assert result.plan.retention_skipped == [DAY]
+    assert [(day.day, day.status.value) for day in result.days] == [(YESTERDAY, "ok")]
+    assert result.exit_code is ExitCode.FAILED
+    assert [call.window.day for call in ha.calls] == [YESTERDAY]
+    assert not export.layout.manifest_file(DAY).exists()
+    assert export.manifest(YESTERDAY)["retention"] == {
+        "status": "known_safe",
+        "purge_keep_days": 2,
+    }
+    run_log = export.layout.run_log.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["day"] for line in run_log] == [str(YESTERDAY)]
+
+
+def test_only_days_outside_the_retention_of_a_known_archive_ask_home_assistant_nothing(
+    tmp_path: Path,
+) -> None:
+    export = Run(make_config(tmp_path, purge_keep_days=1))
+    result = export.export(source([]))
+    assert result.exit_code is ExitCode.FAILED
+    assert result.plan is not None
+    assert result.plan.retention_skipped == [DAY]
+    assert export.connected == 0
+    assert not export.cfg.export.output_dir.exists()
+
+
+def test_only_days_outside_the_retention_of_a_new_archive_leave_no_snapshot(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path, purge_keep_days=1)
+    result = export.export(source([]))
+    assert result.exit_code is ExitCode.FAILED
+    assert result.snapshot_file is None
+    assert result.log_file is not None
+    assert export.attached == [result.log_file]
+    assert export.layout.descriptor_file.is_file()
+    assert not export.layout.metadata_dir.exists()
+    assert not export.layout.daily_root.exists()
+
+
+def test_a_saved_day_outside_the_retention_cannot_be_forced_and_stays_as_it_is(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path, ("jsonl", "csv"))
+    assert export.export(source([[[state_row()]]])).exit_code is ExitCode.OK
+    directory = export.layout.day_dir(DAY)
+    before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    ha = source([])
+    result = export.export(ha, force=True, now=NOW + timedelta(days=30))
+    assert result.exit_code is ExitCode.FAILED
+    assert result.plan is not None
+    assert result.plan.retention_skipped == [DAY]
+    assert ha.calls == []
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
+
+
+def test_a_failed_day_and_a_skipped_day_are_both_reported(tmp_path: Path) -> None:
+    export = run(tmp_path, purge_keep_days=2)
+    result = export.export(source([HAAPIError("Synthetic failure.")]), selection=OLD_AND_SAFE)
+    assert result.exit_code is ExitCode.FAILED
+    assert [(day.day, day.status.value) for day in result.days] == [(YESTERDAY, "failed")]
+    assert result.plan is not None
+    assert result.plan.retention_skipped == [DAY]
+
+
+def test_a_failure_that_ends_the_run_keeps_its_own_exit_code_among_skipped_days(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path, purge_keep_days=2)
+    ha = source([AuthError("Home Assistant rejected the access token (HTTP 401).")])
+    with pytest.raises(AuthError) as caught:
+        export.export(ha, selection=OLD_AND_SAFE)
+    assert caught.value.exit_code is ExitCode.AUTHENTICATION
+    assert export.manifest(YESTERDAY)["status"] == "failed"
+    assert not export.layout.manifest_file(DAY).exists()
+
+
+def test_repeating_a_range_saves_nothing_twice_and_still_reports_the_skipped_day(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path, purge_keep_days=2)
+    export.export(source([[[state_row(timestamp=IN_YESTERDAY)]]]), selection=OLD_AND_SAFE)
+    assert export.connected == 1
+    result = export.export(source([]), selection=OLD_AND_SAFE)
+    assert export.connected == 1
+    assert result.exit_code is ExitCode.FAILED
+    assert result.plan is not None
+    assert result.plan.days(DayAction.SKIP_EXISTING) == [YESTERDAY]
+    assert result.plan.retention_skipped == [DAY]
+
+
+def test_a_saved_day_outside_the_retention_is_no_reason_to_report_anything(
+    tmp_path: Path,
+) -> None:
+    export = run(tmp_path)
+    export.export(source([[[state_row()]]]))
+    later = NOW + timedelta(days=30)
+    assert export.export(source([]), now=later).exit_code is ExitCode.OK
+
+
+def test_a_dry_run_predicts_the_exit_code_of_the_skipped_day(tmp_path: Path) -> None:
+    export = run(tmp_path, purge_keep_days=2)
+    ha = source([])
+    result = export.export(ha, selection=OLD_AND_SAFE, dry_run=True)
+    assert result.exit_code is ExitCode.FAILED
+    assert result.plan is not None
+    assert result.plan.days_to_export == [YESTERDAY]
+    assert ha.calls == []
+    assert not export.cfg.export.output_dir.exists()
+
+
+def test_the_warning_about_skipped_days_appears_once_and_before_the_first_day(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    export = Run(make_config(tmp_path, purge_keep_days=2))
+    with caplog.at_level(logging.INFO):
+        export.export(source([[[state_row(timestamp=IN_YESTERDAY)]]]), selection=OLD_AND_SAFE)
+    warning = "Skipped 1 day(s) outside the 2-day Recorder retention: 2026-07-28."
+    assert caplog.text.count(warning) == 1
+    assert caplog.text.index(warning) < caplog.text.index("== Day 1/1")
+
+
+@pytest.mark.parametrize("dry_run", [False, True], ids=["run", "dry run"])
+def test_the_warning_about_an_unknown_retention_appears_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, dry_run: bool
+) -> None:
+    export = Run(make_config(tmp_path, purge_keep_days=None))
+    with caplog.at_level(logging.WARNING):
+        export.export(source([[[state_row()]]]), dry_run=dry_run)
+    assert caplog.text.count("Recorder retention is not configured.") == 1
+
+
+def test_a_run_with_a_known_retention_does_not_warn_about_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    export = Run(make_config(tmp_path))
+    with caplog.at_level(logging.WARNING):
+        result = export.export(source([[[state_row()]]]))
+    assert result.exit_code is ExitCode.OK
+    assert "Recorder retention" not in caplog.text
 
 
 def test_an_empty_day_with_known_retention_is_published_empty(tmp_path: Path) -> None:

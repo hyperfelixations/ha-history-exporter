@@ -16,6 +16,12 @@ from tests.support.terminal import Terminal, states
 
 TOKEN = "synthetic-test-token"
 YESTERDAY = "2026-07-29"
+#: A known time zone makes a run plan twice: before Home Assistant and under the lock.
+RETENTION_OF_TWO_DAYS = {
+    "HHE_RECORDER_PURGE_KEEP_DAYS": "2",
+    "HHE_EXPORT_TIMEZONE": "Europe/Berlin",
+}
+SKIPPED_WARNING = "Skipped 1 day(s) outside the 2-day Recorder retention: 2026-07-28."
 
 
 @pytest.fixture
@@ -125,6 +131,67 @@ def test_failures_of_home_assistant_have_their_exit_codes(
 def test_a_failed_day_exits_with_one(terminal: Terminal) -> None:
     answer(terminal, [[state_row(timestamp="2026-07-31T10:00:00+00:00")]])
     assert terminal.run("export") == 1
+
+
+def test_a_day_outside_the_retention_is_reported_once_and_exits_with_one(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ.update(RETENTION_OF_TWO_DAYS)
+    answer(terminal, [[state_row(timestamp="2026-07-29T10:00:00+00:00")]])
+    assert terminal.run("export", "--last-days", "2") == 1
+    output = capsys.readouterr().out
+    assert "Will export (1):" in output
+    assert "Will skip - outside the Recorder retention (1):" in output
+    assert f"{YESTERDAY}  ok       1 state objects" in output
+    assert "2026-07-28  skipped  outside the Recorder retention" in output
+    assert terminal.stderr.count(SKIPPED_WARNING) == 1
+    log = next(layout(terminal).logs_dir.iterdir()).read_text(encoding="utf-8")
+    assert log.count(SKIPPED_WARNING) == 1
+
+
+def test_only_days_outside_the_retention_exit_with_one_without_home_assistant(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ.update(RETENTION_OF_TWO_DAYS)
+    answer(terminal)
+    assert terminal.run("export", "--date", "2026-07-28") == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "2026-07-28  skipped  outside the Recorder retention"
+    ]
+    assert terminal.stderr.count(SKIPPED_WARNING) == 1
+    assert "Nothing to export" in terminal.stderr
+    assert terminal.connected == []
+    assert not (terminal.root / "archive").exists()
+
+
+def test_a_dry_run_shows_the_day_outside_the_retention_and_exits_with_one(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ.update(RETENTION_OF_TWO_DAYS)
+    answer(terminal)
+    assert terminal.run("export", "--last-days", "2", "--dry-run") == 1
+    assert "Will skip - outside the Recorder retention (1):" in capsys.readouterr().out
+    assert terminal.stderr.count(SKIPPED_WARNING) == 1
+    assert not (terminal.root / "archive").exists()
+
+
+def test_the_json_document_names_the_day_outside_the_retention(
+    terminal: Terminal, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal.environ.update(RETENTION_OF_TWO_DAYS)
+    answer(terminal, [[state_row(timestamp="2026-07-29T10:00:00+00:00")]])
+    assert terminal.run("export", "--last-days", "2", "--json") == 1
+    document = json.loads(capsys.readouterr().out)
+    assert document["exit_code"] == 1
+    assert document["plan"]["days"] == [
+        {
+            "day": "2026-07-28",
+            "action": "skip_retention",
+            "reason": "Day 2026-07-28 touches or exceeds the 2-day Recorder retention.",
+        },
+        {"day": YESTERDAY, "action": "export", "reason": None},
+    ]
+    assert [day["day"] for day in document["days"]] == [YESTERDAY]
 
 
 def test_a_defect_exits_with_seventy_and_leaves_its_traceback_in_the_log_only(

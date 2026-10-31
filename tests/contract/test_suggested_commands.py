@@ -8,24 +8,17 @@ each one against the argument parser and the key registry.
 
 from __future__ import annotations
 
-import argparse
 import ast
 import shlex
 from pathlib import Path
 
 import pytest
 
-from ha_history_exporter.cli.parser import build_parser
 from ha_history_exporter.settings.registry import BY_PATH, TOKEN_KEY
 from ha_history_exporter.settings.validators import Formats, ParseContext
+from tests.support.commands import PLACEHOLDER, PROGRAMS, descend, strip_program
 
 PACKAGE = Path(__file__).parents[2] / "src" / "ha_history_exporter"
-
-#: How a suggestion may name the program.
-PROGRAMS = ("hhe", "ha-history-exporter", "python -m ha_history_exporter")
-
-#: Placeholders stand for a value the user supplies.
-PLACEHOLDER = ("<", "%", "$")
 
 
 def suggested_commands() -> list[tuple[str, str]]:
@@ -41,39 +34,6 @@ def suggested_commands() -> list[tuple[str, str]]:
                 continue
             found.append((f"{path.name}:{node.lineno}", text))
     return found
-
-
-def descend(tokens: list[str]) -> tuple[list[str], set[str], list[str]]:
-    """Walk the parser tree as far as the tokens name subcommands.
-
-    Returns the command path taken, every option those parsers accept, and the
-    remaining tokens. argparse exposes no public accessor for its subparsers;
-    reading the action list is still better than duplicating the grammar this
-    test exists to check.
-    """
-    parser = build_parser()
-    path: list[str] = []
-    options: set[str] = set()
-    rest = list(tokens)
-
-    while True:
-        options.update(option for action in parser._actions for option in action.option_strings)
-        action = next(
-            (item for item in parser._actions if isinstance(item, argparse._SubParsersAction)),
-            None,
-        )
-        if action is None or not rest or rest[0] not in action.choices:
-            return path, options, rest
-        parser = action.choices[rest[0]]
-        path.append(rest.pop(0))
-
-
-def strip_program(tokens: list[str]) -> list[str]:
-    for program in PROGRAMS:
-        parts = program.split()
-        if tokens[: len(parts)] == parts:
-            return tokens[len(parts) :]
-    raise AssertionError(tokens)
 
 
 CASES = suggested_commands()

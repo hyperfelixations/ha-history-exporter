@@ -31,9 +31,9 @@ instance.
 - `tests/system/`: `python -m ha_history_exporter` in a process of its own.
 - `tests/repo/` (marker `repo`): the repository rather than the product:
   import contracts, privacy audit, tool pins, package classifiers, the
-  workflows under actionlint, shellcheck and zizmor, the release tools. It
-  needs the tools of `requirements-dev.txt` and is not part of the source
-  distribution.
+  workflows under actionlint, shellcheck and zizmor, the release tools, and
+  the README: its key table, commands, links and images. It needs the tools of
+  `requirements-dev.txt` and is not part of the source distribution.
 
 Tests that need the optional `pyarrow` carry the marker `parquet` or skip
 themselves without it. Regenerate golden files only for a reviewed, intended
