@@ -17,6 +17,7 @@ from ha_history_exporter.archive.descriptor import ArchiveZone, ZoneSource
 from ha_history_exporter.cli.output import print_checks, print_export_result, print_plan
 from ha_history_exporter.domain.manifest import ManifestStatus
 from ha_history_exporter.domain.plan import DayAction, DayDecision, ExportPlan
+from ha_history_exporter.errors import ExitCode
 
 PLAN = ExportPlan(
     requested_start=date(2026, 7, 28),
@@ -26,6 +27,15 @@ PLAN = ExportPlan(
         DayDecision(date(2026, 7, 28), DayAction.EXPORT),
         DayDecision(date(2026, 7, 29), DayAction.SKIP_EXISTING),
         DayDecision(date(2026, 7, 30), DayAction.EXPORT_PARTIAL),
+    ),
+)
+SKIPPING_PLAN = ExportPlan(
+    requested_start=date(2026, 7, 16),
+    requested_end=date(2026, 7, 28),
+    today=date(2026, 7, 30),
+    decisions=(
+        DayDecision(date(2026, 7, 16), DayAction.SKIP_RETENTION),
+        DayDecision(date(2026, 7, 28), DayAction.EXPORT),
     ),
 )
 ENTITIES = EntitySummary(
@@ -102,6 +112,45 @@ def test_the_result_lists_every_day_and_where_the_log_is(
         "2026-07-28  ok       12 state objects",
         "2026-07-30  failed   0 state objects  - Synthetic failure.",
         "Log file: run.log",
+    ]
+
+
+def test_the_plan_lists_the_days_outside_the_retention(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    print_plan(
+        SKIPPING_PLAN,
+        ENTITIES,
+        ZONE,
+        batch_size=2,
+        output_dir=Path("archive"),
+        config_source="config.toml",
+        log_file=None,
+    )
+    output = capsys.readouterr().out
+    assert "Will skip - outside the Recorder retention (1):\n    2026-07-16" in output
+
+
+def test_the_result_lists_the_days_outside_the_retention_and_exits_with_one(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = ExportResult(
+        ZONE, SKIPPING_PLAN, ENTITIES, (DayResult(date(2026, 7, 28), ManifestStatus.OK, 12),)
+    )
+    print_export_result(result)
+    assert capsys.readouterr().out.splitlines() == [
+        "2026-07-28  ok       12 state objects",
+        "2026-07-16  skipped  outside the Recorder retention",
+    ]
+    assert result.exit_code is ExitCode.FAILED
+
+
+def test_a_result_without_any_saved_day_still_lists_the_skipped_days(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    print_export_result(ExportResult(ZONE, SKIPPING_PLAN))
+    assert capsys.readouterr().out.splitlines() == [
+        "2026-07-16  skipped  outside the Recorder retention"
     ]
 
 

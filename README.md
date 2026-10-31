@@ -259,7 +259,8 @@ count as done.
 
 ### 3. Save your first backup
 
-This saves everything Home Assistant still has, if it keeps 10 days of history:
+This saves every complete day Home Assistant still has, if it keeps 10 days of
+history:
 
 ```bash
 hhe export --last-days 9
@@ -267,8 +268,8 @@ hhe export --last-days 9
 
 The right number is always one less than your retention, because Home Assistant
 is already deleting the oldest day. With `purge_keep_days: 30`, use
-`--last-days 29`. If the number is too high, the export stops before it saves
-anything.
+`--last-days 29`. If the number is too high, the export saves the days it can,
+names the days it skipped and ends with [exit code](#exit-codes) 1.
 
 The export pauses between its requests to keep your Home Assistant responsive,
 so this can take a while. At the end, you see one line for each day:
@@ -301,7 +302,7 @@ saves yesterday.
 | `hhe export --start-date 2026-06-01 --end-date 2026-06-07` | Saves all days in this period. |
 | `hhe export --date today` | Saves today up to this moment. A later export of this day saves it completely. |
 | `hhe export --last-days 7 --dry-run` | Shows what would be saved, without saving anything. |
-| `hhe export --date 2026-06-15 --force` | Saves a day again, replacing the saved copy. |
+| `hhe export --date 2026-06-15 --force` | Saves a day again, replacing the saved copy. A day outside your retention keeps its saved copy. |
 | `hhe status` | Lists your saved days and any gaps, month by month. |
 | `hhe verify` | Checks that your saved files are unchanged. |
 | `hhe verify --deep` | Also reads every saved entry. This is slower and more thorough. |
@@ -554,14 +555,15 @@ scripts and scheduled tasks. Add `--json` to `hhe export`, `convert`, `verify`,
 | Code | Meaning |
 |---|---|
 | `0` | Everything worked. |
-| `1` | A day failed, `hhe verify` or `hhe doctor` found a problem, `hhe convert` could not convert a day, or another export is running. |
+| `1` | A day failed, a day was skipped because it is outside your retention, `hhe verify` or `hhe doctor` found a problem, `hhe convert` could not convert a day, or another export is running. |
 | `2` | A command or a setting is wrong. |
 | `3` | Home Assistant rejected the access token. |
 | `4` | Home Assistant could not be reached or gave an unusable answer, or its HTTPS certificate could not be verified. |
 | `70` | An unexpected internal error. The message names the file with the details. |
 | `130` | You stopped the command with Ctrl+C. |
 
-If one day fails, the export continues with the next day. A rejected token, an
+If one day fails, the export continues with the next day. A day outside your
+retention is skipped, and the export saves the other days. A rejected token, an
 unreachable Home Assistant, a certificate problem or an internal error ends the
 run.
 
@@ -695,10 +697,19 @@ hhe config set homeassistant.ca_bundle <path-to-ca.pem>
 Your access token travels unencrypted. Use the `https://` address of your Home
 Assistant.
 
-**`Recorder retention blocks one or more requested days.`**
-A requested day is too old, and the export stopped without saving anything. Ask
-for fewer days: at most one less than your retention. The message names the days
-concerned.
+**`Skipped … day(s) outside the …-day Recorder retention`**
+These days are too old. Home Assistant may already have deleted part of their
+history, so the export leaves them out. It saves all other days and ends with
+exit code 1. A day that is already saved stays as it is, even with `--force`.
+
+Ask for fewer days: at most one less than your retention. This also applies to a
+scheduled export, which ends with exit code 1 for as long as such a day is in
+its range. If the number in the message is not your retention, correct it, with
+your own number in place of 30:
+
+```bash
+hhe config set recorder.purge_keep_days 30
+```
 
 **`Empty history … cannot be verified without Recorder retention.`**
 Store the retention of your Home Assistant, with your own number in place of 10:
