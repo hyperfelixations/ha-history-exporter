@@ -120,6 +120,18 @@ def test_an_export_succeeds_and_a_second_one_has_nothing_to_do(
     assert "Nothing to export" in again.stderr
 
 
+def test_days_outside_the_retention_are_skipped_and_the_process_exits_with_one(
+    environ: dict[str, str], home_assistant: str
+) -> None:
+    environ.update({"HHE_URL": home_assistant, "HHE_RECORDER_PURGE_KEEP_DAYS": "2"})
+    result = hhe(environ, "export", "--last-days", "3")
+    assert result.returncode == 1, result.stderr
+    assert "Skipped 2 day(s) outside the 2-day Recorder retention" in result.stderr
+    assert "skipped  outside the Recorder retention" in result.stdout
+    archive = ArchiveLayout(Path(environ["HHE_EXPORT_OUTPUT_DIR"]))
+    assert len(list(archive.manifest_paths())) == 1
+
+
 def test_a_dry_run_leaves_no_trace(environ: dict[str, str], home_assistant: str) -> None:
     environ["HHE_URL"] = home_assistant
     result = hhe(environ, "export", "--last-days", "3", "--dry-run")

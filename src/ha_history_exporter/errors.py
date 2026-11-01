@@ -58,7 +58,8 @@ class ExitCode(IntEnum):
     """The process exit codes; see internal dev doc § "Errors and exit codes"."""
 
     OK = 0
-    #: A day failed, or the run could not complete for a reason that is not one below.
+    #: A day failed or lay outside the Recorder retention, or the run could not complete
+    #: for a reason that is not one below.
     FAILED = 1
     USAGE = 2
     AUTHENTICATION = 3

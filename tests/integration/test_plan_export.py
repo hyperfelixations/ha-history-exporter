@@ -14,7 +14,7 @@ from ha_history_exporter.archive.layout import ArchiveLayout
 from ha_history_exporter.domain.formats import Format
 from ha_history_exporter.domain.manifest import ManifestStatus
 from ha_history_exporter.domain.plan import DayAction, DaySelection, ExportPlan
-from ha_history_exporter.errors import ConfigError, ExportError
+from ha_history_exporter.errors import ExportError
 from ha_history_exporter.settings import Config, RecorderSettings
 from tests.support.builders import make_config
 from tests.support.manifests import DAY, manifest14, write_manifest
@@ -80,26 +80,25 @@ def test_an_unreadable_manifest_stops_the_plan(tmp_path: Path) -> None:
         plan(cfg)
 
 
-def test_known_retention_blocks_days_at_or_beyond_the_boundary(tmp_path: Path) -> None:
+def test_known_retention_skips_days_at_or_beyond_the_boundary(tmp_path: Path) -> None:
     cfg = make_config(tmp_path, purge_keep_days=14)
     assert plan(cfg, today=date(2026, 8, 10)).days_to_export == [DAY]
-    with pytest.raises(ConfigError, match="Recorder retention blocks") as caught:
-        plan(cfg, today=date(2026, 8, 11))
-    assert str(DAY) in (caught.value.details or "")
+    skipped = plan(cfg, today=date(2026, 8, 11))
+    assert skipped.days_to_export == []
+    assert skipped.retention_skipped == [DAY]
 
 
-def test_a_successful_day_beyond_retention_is_skipped_but_cannot_be_forced(tmp_path: Path) -> None:
+def test_a_successful_day_beyond_retention_is_skipped_as_saved_unless_forced(
+    tmp_path: Path,
+) -> None:
     cfg = make_config(tmp_path, purge_keep_days=14)
     write_manifest(output(cfg), manifest14())
     assert plan(cfg, today=date(2026, 8, 20)).days(DayAction.SKIP_EXISTING) == [DAY]
-    with pytest.raises(ConfigError, match="Recorder retention"):
-        plan(cfg, today=date(2026, 8, 20), force=True)
+    forced = plan(cfg, today=date(2026, 8, 20), force=True)
+    assert forced.days_to_export == []
+    assert forced.retention_skipped == [DAY]
 
 
-def test_unknown_retention_warns_but_allows_a_new_export(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_unknown_retention_allows_a_new_export(tmp_path: Path) -> None:
     cfg = replace(make_config(tmp_path), recorder=RecorderSettings())
-    with caplog.at_level("WARNING"):
-        assert plan(cfg, today=date(2026, 8, 20)).days_to_export == [DAY]
-    assert "retention is not configured" in caplog.text
+    assert plan(cfg, today=date(2026, 8, 20)).days_to_export == [DAY]

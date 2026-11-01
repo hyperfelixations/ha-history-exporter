@@ -115,9 +115,9 @@ class ExportResult:
 
     @property
     def exit_code(self) -> ExitCode:
-        if any(day.status is ManifestStatus.FAILED for day in self.days):
-            return ExitCode.FAILED
-        return ExitCode.OK
+        failed = any(day.status is ManifestStatus.FAILED for day in self.days)
+        skipped = self.plan is not None and bool(self.plan.retention_skipped)
+        return ExitCode.FAILED if failed or skipped else ExitCode.OK
 
     def to_json(self) -> dict[str, Any]:
         plan = self.plan

@@ -148,6 +148,7 @@ def print_plan(
     for action, heading in (
         (DayAction.SKIP_EXISTING, "Will skip - already exported"),
         (DayAction.SKIP_INCOMPLETE, "Will skip - not yet complete"),
+        (DayAction.SKIP_RETENTION, "Will skip - outside the Recorder retention"),
     ):
         days = plan.days(action)
         if days:
@@ -165,6 +166,9 @@ def print_export_result(result: ExportResult) -> None:
         if day.error:
             line += f"  - {day.error}"
         say(line)
+    if result.plan is not None:
+        for skipped in result.plan.retention_skipped:
+            say(f"{skipped}  {'skipped':<8} outside the Recorder retention")
     if result.snapshot_file is not None:
         say(f"Entity snapshot: {result.snapshot_file}")
     if result.log_file is not None:

@@ -9,12 +9,14 @@
 4. A dry run plans and reports; it writes nothing.
 5. Otherwise the archive session opens (lock, recovery, descriptor), the log
    file of the run starts, the plan is made under the lock, the entity
-   snapshot is written, and every day is captured and published. A plan that
-   the Recorder retention blocks ends the run before the snapshot.
+   snapshot is written, and every day is captured and published. A plan
+   without a day to export ends the run before the snapshot.
 
 A rejected token, an unavailable Home Assistant, a TLS failure or a defect
 ends the run after the running day is recorded as failed; any other failure
-fails its day only. See internal dev doc § "Export run".
+fails its day only. A day outside the Recorder retention is skipped with a
+warning, and the run exports the others and exits with 1. See internal dev doc
+§ "Export run".
 """
 
 from __future__ import annotations
@@ -94,6 +96,7 @@ def run_export(
                 cfg, layout, request, zone=known.zone, today=run.today(known.zone)
             )
             if not preview.days_to_export:
+                _warn_about_retention(preview, cfg)
                 _nothing_to_export(preview)
                 return ExportResult(known, preview)
 
@@ -115,6 +118,7 @@ def run_export(
             if not cfg.snapshot_only:
                 plan = plan_export(cfg, layout, request, zone=zone.zone, today=run.today(zone.zone))
             if plan is not None:
+                _warn_about_retention(plan, cfg)
                 hooks.planned(plan, entities, zone)
             logger.info("Dry run complete; nothing was fetched or written.")
             return ExportResult(zone, plan, entities, dry_run=True)
@@ -140,7 +144,11 @@ def run_export(
                 plan = plan_export(
                     cfg, layout, request, zone=archive_zone, today=run.today(archive_zone)
                 )
+                _warn_about_retention(plan, cfg)
                 hooks.planned(plan, entities, zone)
+                if not plan.days_to_export:
+                    _nothing_to_export(plan)
+                    return ExportResult(zone, plan, entities, log_file=log_file)
             snapshot = snapshot_document(states, local_start)
             snapshot_file = write_snapshot(layout, snapshot, local_start, run.run_id)
             logger.info(
@@ -173,10 +181,7 @@ def run_export(
 def plan_export(
     cfg: Config, layout: ArchiveLayout, request: ExportRequest, *, zone: ZoneInfo, today: date
 ) -> ExportPlan:
-    """Decide every requested day from its manifest, the calendar and the retention.
-
-    A day the known Recorder retention may already have purged stops the plan.
-    """
+    """Decide every requested day from its manifest, the calendar and the retention."""
     requested = request.selection.resolve(today)
 
     def completed(day: date) -> str | None:
@@ -197,37 +202,45 @@ def plan_export(
     for decision in plan.decisions:
         if decision.action is DayAction.SKIP_EXISTING:
             logger.info("Day %s: skipping - %s", decision.day, decision.reason)
-    blocked = plan.days(DayAction.BLOCKED_RETENTION)
-    if blocked:
-        raise ConfigError(
-            "Recorder retention blocks one or more requested days.",
-            details=(
-                "These days touch or exceed the configured retention boundary: "
-                f"{', '.join(str(day) for day in blocked)}. HHE will not publish a "
-                "potentially incomplete capture."
-            ),
-            remedies=(Remedy("Choose complete days wholly inside the Recorder retention window."),),
-        )
-    if cfg.recorder.purge_keep_days is None and plan.days_to_export:
-        logger.warning(
-            "Recorder retention is not configured. A non-empty validated response "
-            "may be exported, but an empty response cannot be verified and will fail."
-        )
     logger.info(
-        "Export plan: %d day(s) to export (%d partial), %d skip (existing), %d skip (incomplete).",
+        "Export plan: %d day(s) to export (%d partial), %d skip (existing), "
+        "%d skip (incomplete), %d skip (retention).",
         len(plan.days_to_export),
         len(plan.partial_days),
         len(plan.days(DayAction.SKIP_EXISTING)),
         len(plan.days(DayAction.SKIP_INCOMPLETE)),
+        len(plan.retention_skipped),
     )
     return plan
 
 
+def _warn_about_retention(plan: ExportPlan, cfg: Config) -> None:
+    """Warn once about the plan a run follows; a run can plan twice."""
+    keep_days = cfg.recorder.purge_keep_days
+    skipped = plan.retention_skipped
+    if skipped:
+        logger.warning(
+            "Skipped %d day(s) outside the %d-day Recorder retention: %s. Home Assistant may "
+            "already have deleted part of their history, so they are not exported. Request "
+            "fewer days, or correct recorder.purge_keep_days.",
+            len(skipped),
+            keep_days,
+            ", ".join(str(day) for day in skipped),
+        )
+    if keep_days is None and plan.days_to_export:
+        logger.warning(
+            "Recorder retention is not configured. A non-empty validated response "
+            "may be exported, but an empty response cannot be verified and will fail."
+        )
+
+
 def _nothing_to_export(plan: ExportPlan) -> None:
     logger.info(
-        "Nothing to export - %d day(s) already exported, %d day(s) not yet complete.",
+        "Nothing to export - %d day(s) already exported, %d day(s) not yet complete, "
+        "%d day(s) outside the Recorder retention.",
         len(plan.days(DayAction.SKIP_EXISTING)),
         len(plan.days(DayAction.SKIP_INCOMPLETE)),
+        len(plan.retention_skipped),
     )
 
 

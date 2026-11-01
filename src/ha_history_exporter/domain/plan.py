@@ -1,9 +1,10 @@
-"""Which requested day is exported, skipped or blocked, and why.
+"""Which requested day is exported or skipped, and why.
 
 A day before *today* is complete. A complete day whose manifest says ``ok`` is
 skipped unless forced. A complete day at or beyond the known Recorder
-retention boundary is blocked, because its history may already be purged.
-The running day is exported only when it was requested by name.
+retention boundary is skipped even when forced, because its history may
+already be purged. The running day is exported only when it was requested by
+name.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ class DayAction(StrEnum):
     EXPORT_PARTIAL = "export_partial"
     SKIP_EXISTING = "skip_existing"
     SKIP_INCOMPLETE = "skip_incomplete"
-    BLOCKED_RETENTION = "blocked_retention"
+    SKIP_RETENTION = "skip_retention"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,10 @@ class ExportPlan:
     @property
     def partial_days(self) -> list[date]:
         return self.days(DayAction.EXPORT_PARTIAL)
+
+    @property
+    def retention_skipped(self) -> list[date]:
+        return self.days(DayAction.SKIP_RETENTION)
 
 
 def build_plan(
@@ -98,11 +103,10 @@ def _decide(
     if existing is not None and not force:
         return DayDecision(day, DayAction.SKIP_EXISTING, existing)
     if purge_keep_days is not None and (today - day).days >= purge_keep_days:
-        return DayDecision(
-            day,
-            DayAction.BLOCKED_RETENTION,
-            f"Day {day} touches or exceeds the {purge_keep_days}-day Recorder retention.",
-        )
+        reason = f"Day {day} touches or exceeds the {purge_keep_days}-day Recorder retention."
+        if existing is not None:
+            reason += " The saved copy stays."
+        return DayDecision(day, DayAction.SKIP_RETENTION, reason)
     return DayDecision(day, DayAction.EXPORT)
 
 
